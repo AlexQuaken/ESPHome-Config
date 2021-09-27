@@ -1,0 +1,214 @@
+globals:
+  - id: var_energy_day
+    type: float
+    restore_value: yes
+    initial_value: '0'
+
+  - id: var_energy_night
+    type: float
+    restore_value: yes
+    initial_value: '0'
+
+  - id: var_energy_total
+    type: float
+    restore_value: yes
+    initial_value: '0'
+
+  - id: var_energy_cost
+    type: float
+    restore_value: yes
+    initial_value: '0'
+
+sensor:
+  - platform: mqtt_subscribe
+    name: mqtt_energy_day${mk}
+    id: mqtt_energy_cost
+    topic: ${topic}_cost
+    retain: true
+
+  - platform: mqtt_subscribe
+    name: mqtt_energy_day${mk}
+    id: mqtt_energy_day
+    topic: ${topic}_day
+    retain: true
+
+  - platform: mqtt_subscribe
+    name: mqtt_energy_night${mk}
+    id: mqtt_energy_night
+    topic: ${topic}_night
+    retain: true
+    
+  - platform: mqtt_subscribe
+    name: mqtt_energy_total${mk}
+    id: mqtt_energy_total
+    topic: ${topic}_total
+    retain: true
+    
+  - platform: mqtt_subscribe
+    name: mqtt_unaccounted_day${mk}
+    id: mqtt_unaccounted_day
+    topic: ${topic_var}_day
+    retain: true
+
+  - platform: mqtt_subscribe
+    name: mqtt_unaccounted_night${mk}
+    id: mqtt_unaccounted_night
+    topic: ${topic_var}_night
+    retain: true
+    
+  - platform: mqtt_subscribe
+    name: mqtt_unaccounted_total${mk}
+    id: mqtt_unaccounted_total
+    topic: ${topic_var}_total
+    retain: true
+
+time:
+  - platform: homeassistant
+    on_time:
+      - cron: '0,15,30,45 * 7-22 * * *'
+        then:
+          - if:
+              condition:
+                - lambda: !lambda |-
+                    if ((id(mqtt_energy_day).state + id(pzem_power).state / 240000) > 0) {
+                      return true;
+                    } else {
+                      return false;
+                    }
+              then:
+                - mqtt.publish:
+                    topic: ${topic}_day
+                    retain: true
+                    payload: !lambda "return to_string( id(mqtt_energy_day).state + id(pzem_power).state / 240000 );"
+                - logger.log:
+                      format: "The power sensor reports day value %.2f kWh plus %.6f kWh with power %.2f W"
+                      args: [ 'id(mqtt_energy_day).state', 'id(pzem_power).state / 240000', 'id(pzem_power).state' ]
+              else:
+                - logger.log: Something was wrong, check errors!
+
+      - cron: '0,15,30,45 * 0-6,23 * * *'
+        then:
+          - if:
+              condition:
+                - lambda: !lambda |-
+                    if ((id(mqtt_energy_night).state + id(pzem_power).state / 240000) > 0) {
+                      return true;
+                    } else {
+                      return false;
+                    }
+              then:
+                - mqtt.publish:
+                    topic: ${topic}_night
+                    retain: true
+                    payload: !lambda "return to_string( id(mqtt_energy_night).state + id(pzem_power).state / 240000 );"
+                - logger.log:
+                    format: "The power sensor reports night value %.2f kWh plus %.6f kWh with power %.2f W"
+                    args: [ 'id(mqtt_energy_night).state', 'id(pzem_power).state / 240000', 'id(pzem_power).state' ]
+              else:
+                - logger.log: Something was wrong, check errors!
+
+      - cron: '0,15,30,45 * * * * *'
+        then:
+          - mqtt.publish:
+              topic: ${topic}_total
+              retain: true
+              payload: !lambda "return to_string( id(mqtt_energy_day).state + id(mqtt_energy_night).state );"
+          - logger.log:
+              format: "The power sensor reports total value %.2f kWh plus %.6f kWh with power %.2f W"
+              args: [ 'id(mqtt_energy_day).state + id(mqtt_energy_night).state', 'id(pzem_power).state / 240000', 'id(pzem_power).state' ]
+
+      - cron: '0,15,30,45 * * * * *'
+        then:
+          - mqtt.publish:
+              topic: ${topic}_cost
+              retain: true
+              payload: !lambda "return to_string( (id(mqtt_energy_day).state * 1.68 + id(mqtt_energy_night).state * 0.84) - id(delta) );"
+          - logger.log:
+              format: "The power sensor reports total cost %.2f UAH"
+              args: [ 'id(mqtt_energy_cost).state' ]
+
+      - cron: '1,16,31,46 * 7-22 * * *'
+        then:
+          - if:
+              condition:
+                not:
+                  mqtt.connected:
+              then:
+                - lambda: "id(var_energy_day) = id(var_energy_day) + id(pzem_power).state / 240000;"
+                - logger.log: mqtt is disconnected, write to memory var_energy_day !lambda "return id(var_energy_day);"
+              else:
+                - logger.log: mqtt is connected, skipping write to memory var_energy_day
+
+      - cron: '1,16,31,46 * 0-6,23 * * *'
+        then:
+          - if:
+              condition:
+                not:
+                  mqtt.connected:
+              then:
+                - lambda: "id(var_energy_night) = id(var_energy_night) + id(pzem_power).state / 240000;"
+                - logger.log: mqtt is disconnected, write to memory var_energy_night !lambda "retun id(var_energy_night);"
+              else:
+                - logger.log: mqtt is connected, skipping write to memory var_energy_night
+
+      - cron: '1,16,31,46 * * * * *'
+        then:
+          - if:
+              condition:
+                not:
+                  mqtt.connected:
+              then:
+                - lambda: "id(var_energy_total) = id(var_energy_day) + id(var_energy_night);"
+                - logger.log: mqtt is disconnected, write to memory var_energy_night !lambda "retun id(var_energy_total);"
+              else:
+                - logger.log: mqtt is connected, skipping write to memory var_energy_total
+
+      - cron: '5 /1 * * * *'
+        then:
+          - if:
+              condition:
+                and:
+                  - mqtt.connected:
+                  - lambda: !lambda |-
+                      if (id(var_energy_total) > 0) {
+                        return true;
+                      } else {
+                        return false;
+                      }
+              then:
+                - mqtt.publish:
+                    topic: ${topic_var}_day
+                    payload: !lambda "return to_string( id(var_energy_day) );"
+
+                - mqtt.publish:
+                    topic: ${topic_var}_night
+                    payload: !lambda "return to_string( id(var_energy_night) );"
+
+                - mqtt.publish:
+                    topic: ${topic_var}_total
+                    payload: !lambda "return to_string( id(var_energy_total) );"
+
+                - logger.log: Energy unaccounted send to MQTT!
+
+                - mqtt.publish:
+                    topic: ${topic}_day
+                    payload: !lambda "return to_string( id(mqtt_energy_day).state + id(var_energy_day) );"
+
+                - mqtt.publish:
+                    topic: ${topic}_night
+                    payload: !lambda "return to_string( id(mqtt_energy_night).state + id(var_energy_night) );"
+
+                - mqtt.publish:
+                    topic: ${topic}_total
+                    payload: !lambda "return to_string( id(mqtt_energy_total).state + id(var_energy_total) );"
+
+                - logger.log: Energy unaccounted restored to correct value on MQTT!
+
+                - lambda: "id(var_energy_day) = 0;"
+                - lambda: "id(var_energy_night) = 0;"
+                - lambda: "id(var_energy_total) = 0;"
+
+                - logger.log: Energy unaccounted variables RESET!
+
+              else:
+                - logger.log: Evreything is OK!. Mqtt is connected, skipping send to MQTT Unaccounted energy.

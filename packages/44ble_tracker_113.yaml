@@ -1,0 +1,19 @@
+esp32_ble_tracker:
+  scan_parameters:
+    duration: ${scan_duration}
+
+binary_sensor:
+  - platform: ble_presence
+    mac_address: ${mifit_lila}
+    name: lila_113_ble_${number}
+  - platform: ble_presence
+    mac_address: ${mifit_ira}
+    name: ira_113_ble_${number}
+
+sensor:
+  - platform: ble_rssi
+    mac_address: ${mifit_lila}
+    name: lila_113_ble_${number} RSSI
+  - platform: ble_rssi
+    mac_address: ${mifit_lila}
+    name: ira_113_ble_${number} RSSI

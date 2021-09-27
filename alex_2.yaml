@@ -1,0 +1,21 @@
+substitutions:
+  board_name: 'alex-2'
+  static_ip: '192.168.0.18'
+  number: '2'
+  scan_duration: !secret scan_duration
+  update_interval: !secret update_interval
+  mifit_alex: !secret mifit_alex
+  mifit_ira: !secret mifit_ira
+  alex_ble: !secret alex_ble
+  ira_ble: !secret ira_ble
+
+esphome:
+  name: ${board_name}
+  platform: ESP32
+  board: esp32doit-devkit-v1
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+  led: !include packages/3status_led_esp32.yaml
+  ble: !include packages/4ble_tracker.yaml

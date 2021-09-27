@@ -1,0 +1,15 @@
+substitutions:
+  board_name: 'esp32-6-mini'
+  static_ip: '192.168.0.165'
+  number: '6'
+
+esphome:
+  name: ${board_name}
+  platform: ESP32
+  board: esp-wrover-kit
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+  led: !include packages/3status_led_esp32.yaml
+  ble: !include packages/4ble_tracker.yaml

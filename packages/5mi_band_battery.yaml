@@ -1,0 +1,216 @@
+substitutions:
+  mi_band_mac: !secret mifit_alex
+  mi_band_name_prefix: Mi Band Alex
+  mi_band_id_prefix: mi_band
+  mi_band_mac2: !secret mifit_ira
+  mi_band_name_prefix2: Mi Band Ira
+  mi_band_id_prefix2: mi_band2
+  flower1_mac: !secret flower1
+  flower1_name_prefix: flower1
+  flower1_id_prefix: flower1
+  flower2_mac: !secret flower2
+  flower2_name_prefix: flower2
+  flower2_id_prefix: flower2
+  flower3_mac: !secret flower3
+  flower3_name_prefix: flower3
+  flower3_id_prefix: flower3
+
+esp32_ble_tracker:
+  scan_parameters:
+    duration: 60s
+
+external_components:
+  - source: github://myhomeiot/esphome-components
+
+myhomeiot_ble_host:
+
+myhomeiot_ble_client:
+  - mac_address: ${mi_band_mac}
+    service_uuid: 'FEE0'
+    characteristic_uuid: '00000006-0000-3512-2118-0009AF100700'
+    update_interval: 6h
+    on_value:
+      then:
+        lambda: |-
+          switch (x.size()) {
+          case 10: { // Mi Band 1
+            id(${mi_band_id_prefix}_battery).publish_state(x[0]);
+            id(${mi_band_id_prefix}_battery).publish_state(x[9] == 2);
+            struct tm c_tm = {x[6], x[5], x[4], x[3], x[2], (uint16_t) (2000 + x[1]) - 1900, 0, 0, -1};
+            id(${mi_band_id_prefix}_last_charging_timestamp).publish_state(mktime(&c_tm));
+            break;
+          }
+          case 20: { // Mi Band 2/3/4
+            if (x[0] != 0x0F)
+            {
+              ESP_LOGE("myhomeiot_ble_client", "payload has wrong signature (0x%02X)", x[0]);
+              return;
+            };
+            id(${mi_band_id_prefix}_battery).publish_state(x[1]);
+            id(${mi_band_id_prefix}_battery).publish_state(x[2] == 1);
+            struct tm c_tm = {x[17], x[16], x[15], x[14], x[13] - 1, (uint16_t) (x[12] << 8 | x[11]) - 1900, 0, 0, -1};
+            id(${mi_band_id_prefix}_last_charging_timestamp).publish_state(mktime(&c_tm));
+            break;
+          };
+          default:
+            ESP_LOGE("myhomeiot_ble_client", "payload has wrong size (%d)", x.size());
+          }
+
+  - mac_address: ${mi_band_mac2}
+    service_uuid: 'FEE0'
+    characteristic_uuid: '00000006-0000-3512-2118-0009AF100700'
+    update_interval: 6h
+    on_value:
+      then:
+        lambda: |-
+          switch (x.size()) {
+          case 10: { // Mi Band 1
+            id(${mi_band_id_prefix}_battery).publish_state(x[0]);
+            id(${mi_band_id_prefix}_battery).publish_state(x[9] == 2);
+            struct tm c_tm = {x[6], x[5], x[4], x[3], x[2], (uint16_t) (2000 + x[1]) - 1900, 0, 0, -1};
+            id(${mi_band_id_prefix}_last_charging_timestamp).publish_state(mktime(&c_tm));
+            break;
+          }
+          case 20: { // Mi Band 2/3/4
+            if (x[0] != 0x0F)
+            {
+              ESP_LOGE("myhomeiot_ble_client", "payload has wrong signature (0x%02X)", x[0]);
+              return;
+            };
+            id(${mi_band_id_prefix}_battery).publish_state(x[1]);
+            id(${mi_band_id_prefix}_battery).publish_state(x[2] == 1);
+            struct tm c_tm = {x[17], x[16], x[15], x[14], x[13] - 1, (uint16_t) (x[12] << 8 | x[11]) - 1900, 0, 0, -1};
+            id(${mi_band_id_prefix}_last_charging_timestamp).publish_state(mktime(&c_tm));
+            break;
+          };
+          default:
+            ESP_LOGE("myhomeiot_ble_client", "payload has wrong size (%d)", x.size());
+          }
+
+  - mac_address: ${flower1_mac}
+    service_uuid: '1204'
+    characteristic_uuid: '1A02'
+    update_interval: 24h
+    on_value:
+      then:
+        lambda: |-
+          if (x.size() < 2)
+          {
+            ESP_LOGE("myhomeiot_ble_client", "payload has wrong size (%d)", x.size());
+            return;
+          };
+          id(${flower1_id_prefix}_battery).publish_state(x[0]);
+          std::string firmware(x.begin(), x.end());
+          id(${flower1_id_prefix}_firmware).publish_state(firmware.substr(2));
+
+  - mac_address: ${flower2_mac}
+    service_uuid: '1204'
+    characteristic_uuid: '1A02'
+    update_interval: 24h
+    on_value:
+      then:
+        lambda: |-
+          if (x.size() < 2)
+          {
+            ESP_LOGE("myhomeiot_ble_client", "payload has wrong size (%d)", x.size());
+            return;
+          };
+          id(${flower2_id_prefix}_battery).publish_state(x[0]);
+          std::string firmware(x.begin(), x.end());
+          id(${flower2_id_prefix}_firmware).publish_state(firmware.substr(2));
+
+  - mac_address: ${flower3_mac}
+    service_uuid: '1204'
+    characteristic_uuid: '1A02'
+    update_interval: 24h
+    on_value:
+      then:
+        lambda: |-
+          if (x.size() < 2)
+          {
+            ESP_LOGE("myhomeiot_ble_client", "payload has wrong size (%d)", x.size());
+            return;
+          };
+          id(${flower2_id_prefix}_battery).publish_state(x[0]);
+          std::string firmware(x.begin(), x.end());
+          id(${flower2_id_prefix}_firmware).publish_state(firmware.substr(2));
+
+binary_sensor:
+  - platform: template
+    id: ${mi_band_id_prefix}_battery_state
+    name: ${mi_band_name_prefix} Battery State
+    device_class: battery_charging
+
+  - platform: template
+    id: ${mi_band_id_prefix2}_battery_state
+    name: ${mi_band_name_prefix2} Battery State
+    device_class: battery_charging
+
+sensor:
+  - platform: template
+    id: ${mi_band_id_prefix}_battery
+    name: ${mi_band_name_prefix} Battery
+    device_class: battery
+    unit_of_measurement: '%'
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: template
+    id: ${mi_band_id_prefix}_last_charging_timestamp
+    name: ${mi_band_name_prefix} Last Charging Timestamp
+    device_class: timestamp
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: template
+    id: ${mi_band_id_prefix2}_battery
+    name: ${mi_band_name_prefix2} Battery
+    device_class: battery
+    unit_of_measurement: '%'
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: template
+    id: ${mi_band_id_prefix2}_last_charging_timestamp
+    name: ${mi_band_name_prefix2} Last Charging Timestamp
+    device_class: timestamp
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: template
+    id: ${flower1_id_prefix}_battery
+    name: ${flower1_id_prefix} Battery
+    device_class: battery
+    unit_of_measurement: '%'
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: template
+    id: ${flower2_id_prefix}_battery
+    name: ${flower2_id_prefix} Battery
+    device_class: battery
+    unit_of_measurement: '%'
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: template
+    id: ${flower3_id_prefix}_battery
+    name: ${flower3_id_prefix} Battery
+    device_class: battery
+    unit_of_measurement: '%'
+    state_class: measurement
+    accuracy_decimals: 0
+
+text_sensor:
+  - platform: template
+    id: ${flower1_id_prefix}_firmware
+    name: ${flower1_id_prefix} Firmware
+    icon: mdi:new-box
+  - platform: template
+    id: ${flower2_id_prefix}_firmware
+    name: ${flower2_id_prefix} Firmware
+    icon: mdi:new-box
+  - platform: template
+    id: ${flower3_id_prefix}_firmware
+    name: ${flower3_id_prefix} Firmware
+    icon: mdi:new-box

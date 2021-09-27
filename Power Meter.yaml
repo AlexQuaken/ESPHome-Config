@@ -1,0 +1,52 @@
+substitutions:
+  board_name: 'power-meter'
+  static_ip: '192.168.0.169'
+  topic: "communal_payments/118/energy/esp_energy"
+  topic_var: "communal_payments/118/energy/unaccounted/esp_energy"
+  mk: ''
+
+globals:
+  - id: delta
+    type: float
+    restore_value: no
+    initial_value: '20000'
+
+esphome:
+  name: ${board_name}
+  platform: ESP8266
+  board: nodemcuv2
+  esp8266_restore_from_flash: false
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+  led: !include packages/3status_led_esp32.yaml
+  pzemac: !include packages/6pzem_energy.yaml
+
+switch:
+  - platform: gpio
+    pin: D8
+    restore_mode: RESTORE_DEFAULT_ON
+    name: "Cameras"
+    icon: "mdi:cctv"
+
+uart:
+  tx_pin: D2
+  rx_pin: D1
+  stop_bits: 1
+  baud_rate: 9600
+
+sensor:
+  - platform: pzemac
+    current:
+      name: "PZEM Current"
+    voltage:
+      name: "PZEM Voltage"
+    power:
+      name: "PZEM Power"
+      id: "pzem_power"
+    frequency:
+      name: "PZEM Frequency"
+    power_factor:
+      name: "PZEM Power Factor"
+    update_interval: 15s

@@ -1,0 +1,14 @@
+substitutions:
+  board_name: 'esp32-cam2'
+  static_ip: '192.168.0.177'
+
+esphome:
+  name: ${board_name}
+  platform: ESP32
+  board: esp32cam
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+  led: !include packages/3status_led_esp32.yaml
+  esp32cam: !include packages/8esp32-cam.yaml

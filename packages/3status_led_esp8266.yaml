@@ -1,0 +1,4 @@
+status_led:
+    id: light_module_status
+    pin:
+      number: D4

@@ -1,0 +1,51 @@
+substitutions:
+  board_name: 'alex-3'
+  static_ip: '192.168.0.19'
+  number: '3'
+  scan_duration: !secret scan_duration
+  update_interval: !secret update_interval
+  mifit_alex: !secret mifit_alex
+  mifit_ira: !secret mifit_ira
+  alex_ble: !secret alex_ble
+  ira_ble: !secret ira_ble
+
+esphome:
+  name: ${board_name}
+  platform: ESP32
+  board: esp-wrover-kit
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+  led: !include packages/3status_led_esp32.yaml
+  ble: !include packages/4ble_tracker.yaml
+
+display:
+  platform: tm1637
+  clk_pin: GPIO2
+  dio_pin: GPIO4
+  update_interval: 1s
+  lambda: |-
+    it.print( id(display1).state.c_str() );
+    
+text_sensor:
+  - platform: homeassistant
+    name: "Display1"
+    id: display1
+    entity_id: input_text.eco2  
+    
+switch:
+  - platform: gpio
+    pin: 
+      number: GPIO5
+      inverted: yes
+    name: power_online
+    restore_mode: ALWAYS_ON
+    
+  - platform: gpio
+    pin: 
+      number: GPIO18
+      inverted: yes
+    name: power_online2
+    restore_mode: ALWAYS_ON
+

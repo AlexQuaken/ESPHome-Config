@@ -1,0 +1,21 @@
+esp32_ble_tracker:
+  scan_parameters:
+    duration: ${scan_duration}
+
+sensor:
+  - platform: am43
+    ble_client_id: am43_childroom
+    battery_level:
+      name: "childroom_curtain_battery"
+    illuminance:
+      name: "childroom_curtain_light"
+
+ble_client:
+  - mac_address: '02:29:42:87:08:81'
+    id: am43_childroom
+
+cover:
+  - platform: am43
+    name: "childroom_curtain"
+    pin: 8888
+    ble_client_id: am43_childroom

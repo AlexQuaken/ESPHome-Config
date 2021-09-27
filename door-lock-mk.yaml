@@ -1,0 +1,36 @@
+substitutions:
+  board_name: 'door_lock_mk'
+  static_ip: '192.168.0.174'
+
+esphome:
+  name: ${board_name}
+  platform: ESP8266
+  board: esp12e
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+  #led: !include packages/3status_led_esp8266.yaml
+
+switch:
+  - platform: gpio
+    pin: GPIO13
+    restore_mode: ALWAYS_OFF
+    id: ${board_name}_lock
+    name: ${board_name}_lock
+    icon: "mdi:alarm-light"
+    interlock: ${board_name}_unlock
+    on_turn_on:
+    - delay: 800ms
+    - switch.turn_off: ${board_name}_lock
+
+  - platform: gpio
+    pin: GPIO15
+    restore_mode: ALWAYS_OFF
+    id: ${board_name}_unlock
+    name: ${board_name}_unlock
+    icon: "mdi:alarm-light-off"
+    interlock: ${board_name}_lock
+    on_turn_on:
+    - delay: 800ms
+    - switch.turn_off: ${board_name}_unlock

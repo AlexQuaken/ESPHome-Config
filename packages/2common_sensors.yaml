@@ -1,0 +1,65 @@
+sensor:
+  - platform: uptime
+    name: ${board_name}_Uptime_s
+    id: uptime_sensor
+    update_interval: ${update_interval}
+
+  - platform: wifi_signal
+    name: ${board_name}_WiFi_RSSI     
+    id: wifis_signal
+    update_interval: ${update_interval}
+
+switch:
+  - platform: restart
+    name: ${board_name}_Restart
+
+text_sensor:
+  - platform: template
+    name: ${board_name}_Uptime
+    lambda: |-
+      uint32_t dur = id(uptime_sensor).state;
+      int dys = 0;
+      int hrs = 0;
+      int mnts = 0;
+      if (dur > 86399) {
+        dys = trunc(dur / 86400);
+        dur = dur - (dys * 86400);
+      }
+      if (dur > 3599) {
+        hrs = trunc(dur / 3600);
+        dur = dur - (hrs * 3600);
+      }
+      if (dur > 59) {
+        mnts = trunc(dur / 60);
+        dur = dur - (mnts * 60);
+      }
+      char buffer[17];
+      sprintf(buffer, "%ud %02uh %02um %02us", dys, hrs, mnts, dur);
+      return {buffer};
+    icon: mdi:clock-start
+    update_interval: ${update_interval}
+
+  - platform: template
+    name: ${board_name} WiFi Strength
+    icon: "mdi:wifi"
+    lambda: |-
+      if (id(wifis_signal).state > -45 ) {
+        return {"Excellent"};
+      } else if (id(wifis_signal).state > -55) {
+        return {"Very good"};
+      } else if (id(wifis_signal).state > -65) {
+        return {"Good"};
+      } else if (id(wifis_signal).state > -75) {
+        return {"Low"};   
+      } else if (id(wifis_signal).state > -85) {
+        return {"Very low"};
+      } else if (id(wifis_signal).state < -95) {
+        return {"No signal"};
+      } else {
+        return {"None"};
+      }
+    update_interval: ${update_interval}
+
+time:
+  - platform: homeassistant
+    id: homeassistant_time

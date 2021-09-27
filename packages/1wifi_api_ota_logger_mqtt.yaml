@@ -1,0 +1,51 @@
+substitutions:
+  scan_duration: !secret scan_duration
+  update_interval: !secret update_interval
+  mifit_alex: !secret mifit_alex
+  mifit_ira: !secret mifit_ira
+  mifit_lila: !secret mifit_lila
+  alex_ble: !secret alex_ble
+  ira_ble: !secret ira_ble
+  lila_ble: !secret lila_ble
+
+wifi:
+  ssid: !secret wifi
+  password: !secret wifipwd
+  reboot_timeout: !secret reboot_timeout
+  output_power: !secret output_power
+  fast_connect: true
+  manual_ip:
+    static_ip: ${static_ip}
+    gateway: 192.168.0.1
+    subnet: 255.255.255.0
+    dns1: 192.168.0.1
+    dns2: 8.8.8.8
+
+  ap:
+    ssid: ${board_name}_Fallback
+    password: !secret wifipwd
+
+api:
+  password: !secret wifipwd
+
+ota:
+  password: !secret wifipwd
+
+logger:
+  level: DEBUG
+  logs:
+    esp32_ble_tracker.component: WARN
+
+mqtt:
+  broker: !secret mqtt_ip
+  username: !secret mqtt_user
+  password: !secret mqtt_pwd
+  discovery: false
+  discovery_retain: false
+  topic_prefix: esp/${board_name}
+  birth_message:
+    topic: esp/status/status
+    payload: ${board_name} online
+  will_message:
+    topic: esp/status/status
+    payload: ${board_name} offline
