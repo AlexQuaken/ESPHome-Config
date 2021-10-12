@@ -32,7 +32,7 @@ ota:
   password: !secret wifipwd
 
 logger:
-  level: DEBUG
+  level: INFO
   logs:
     esp32_ble_tracker.component: WARN
 

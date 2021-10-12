@@ -6,5 +6,9 @@
 **/.piolibdeps/
 **/lib/
 **/src/
+**/esp*/
+**/al*/
+**/power*/
+**/door*/
 **/platformio.ini
 /secrets.yaml

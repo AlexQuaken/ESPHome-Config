@@ -5,7 +5,7 @@ sensor:
     update_interval: ${update_interval}
 
   - platform: wifi_signal
-    name: ${board_name}_WiFi_RSSI     
+    name: ${board_name}_WiFi_RSSI
     id: wifis_signal
     update_interval: ${update_interval}
 
