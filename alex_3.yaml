@@ -32,7 +32,7 @@ text_sensor:
   - platform: homeassistant
     name: "Display1"
     id: display1
-    entity_id: input_text.eco2  
+    entity_id: input_text.eco2
     
 switch:
   - platform: gpio
