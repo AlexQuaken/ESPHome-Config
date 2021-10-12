@@ -11,4 +11,5 @@
 **/power*/
 **/door*/
 **/platformio.ini
+**/partitions.csv
 /secrets.yaml
