@@ -21,7 +21,7 @@ globals:
 
 sensor:
   - platform: mqtt_subscribe
-    name: mqtt_energy_day${mk}
+    name: mqtt_energy_cost${mk}
     id: mqtt_energy_cost
     topic: ${topic}_cost
     retain: true
