@@ -11,7 +11,7 @@ substitutions:
 wifi:
   ssid: !secret wifi
   password: !secret wifipwd
-  reboot_timeout: 35min
+  reboot_timeout: 15min
   output_power: !secret output_power
   fast_connect: true
   manual_ip:

@@ -24,6 +24,9 @@ packages:
   pzemac: !include packages/6pzem_energy.yaml
   ble2: !include packages/44ble_tracker_113.yaml
 
+wifi:
+  reboot_timeout: 3min
+
 uart:
   tx_pin: GPIO19
   rx_pin: GPIO18
