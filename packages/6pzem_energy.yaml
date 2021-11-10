@@ -70,7 +70,7 @@ time:
           - if:
               condition:
                 - lambda: !lambda |-
-                    if ((id(mqtt_energy_day).state + id(pzem_power).state / 240000) > 0) {
+                    if ((id(mqtt_energy_day).state + id(pzem_power).state / 120000) > 0) {
                       return true;
                     } else {
                       return false;
@@ -79,10 +79,10 @@ time:
                 - mqtt.publish:
                     topic: ${topic}_day
                     retain: true
-                    payload: !lambda "return to_string( id(mqtt_energy_day).state + id(pzem_power).state / 240000 );"
+                    payload: !lambda "return to_string( id(mqtt_energy_day).state + id(pzem_power).state / 120000 );"
                 - logger.log:
                       format: "The power sensor reports day value %.2f kWh plus %.6f kWh with power %.2f W"
-                      args: [ 'id(mqtt_energy_day).state', 'id(pzem_power).state / 240000', 'id(pzem_power).state' ]
+                      args: [ 'id(mqtt_energy_day).state', 'id(pzem_power).state / 120000', 'id(pzem_power).state' ]
               else:
                 - logger.log: Something was wrong, check errors!
 
@@ -91,7 +91,7 @@ time:
           - if:
               condition:
                 - lambda: !lambda |-
-                    if ((id(mqtt_energy_night).state + id(pzem_power).state / 240000) > 0) {
+                    if ((id(mqtt_energy_night).state + id(pzem_power).state / 120000) > 0) {
                       return true;
                     } else {
                       return false;
@@ -100,10 +100,10 @@ time:
                 - mqtt.publish:
                     topic: ${topic}_night
                     retain: true
-                    payload: !lambda "return to_string( id(mqtt_energy_night).state + id(pzem_power).state / 240000 );"
+                    payload: !lambda "return to_string( id(mqtt_energy_night).state + id(pzem_power).state / 120000 );"
                 - logger.log:
                     format: "The power sensor reports night value %.2f kWh plus %.6f kWh with power %.2f W"
-                    args: [ 'id(mqtt_energy_night).state', 'id(pzem_power).state / 240000', 'id(pzem_power).state' ]
+                    args: [ 'id(mqtt_energy_night).state', 'id(pzem_power).state / 120000', 'id(pzem_power).state' ]
               else:
                 - logger.log: Something was wrong, check errors!
 
@@ -115,7 +115,7 @@ time:
               payload: !lambda "return to_string( id(mqtt_energy_day).state + id(mqtt_energy_night).state );"
           - logger.log:
               format: "The power sensor reports total value %.2f kWh plus %.6f kWh with power %.2f W"
-              args: [ 'id(mqtt_energy_day).state + id(mqtt_energy_night).state', 'id(pzem_power).state / 240000', 'id(pzem_power).state' ]
+              args: [ 'id(mqtt_energy_day).state + id(mqtt_energy_night).state', 'id(pzem_power).state / 120000', 'id(pzem_power).state' ]
 
       - cron: '0,15,30,45 * * * * *'
         then:
@@ -134,7 +134,7 @@ time:
                 not:
                   mqtt.connected:
               then:
-                - lambda: "id(var_energy_day) = id(var_energy_day) + id(pzem_power).state / 240000;"
+                - lambda: "id(var_energy_day) = id(var_energy_day) + id(pzem_power).state / 120000;"
                 - logger.log: mqtt is disconnected, write to memory var_energy_day !lambda "return id(var_energy_day);"
               else:
                 - logger.log: mqtt is connected, skipping write to memory var_energy_day
@@ -146,7 +146,7 @@ time:
                 not:
                   mqtt.connected:
               then:
-                - lambda: "id(var_energy_night) = id(var_energy_night) + id(pzem_power).state / 240000;"
+                - lambda: "id(var_energy_night) = id(var_energy_night) + id(pzem_power).state / 120000;"
                 - logger.log: mqtt is disconnected, write to memory var_energy_night !lambda "retun id(var_energy_night);"
               else:
                 - logger.log: mqtt is connected, skipping write to memory var_energy_night

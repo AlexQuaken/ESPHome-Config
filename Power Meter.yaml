@@ -49,4 +49,4 @@ sensor:
       name: "PZEM Frequency"
     power_factor:
       name: "PZEM Power Factor"
-    update_interval: 15s
+    update_interval: 30s

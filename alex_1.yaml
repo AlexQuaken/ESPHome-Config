@@ -22,7 +22,7 @@ packages:
   base_sensors: !include packages/2common_sensors.yaml
   led: !include packages/3status_led_esp32.yaml
   pzemac: !include packages/6pzem_energy.yaml
-  ble2: !include packages/44ble_tracker_113.yaml
+  #ble2: !include packages/44ble_tracker_113.yaml
 
 wifi:
   reboot_timeout: 3min
@@ -46,5 +46,4 @@ sensor:
       name: "MK PZEM Frequency"
     power_factor:
       name: "MK PZEM Power Factor"
-    update_interval: 15s
-    
+    update_interval: 30s
