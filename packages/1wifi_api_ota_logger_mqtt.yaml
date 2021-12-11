@@ -11,7 +11,7 @@ substitutions:
 wifi:
   ssid: !secret wifi
   password: !secret wifipwd
-  reboot_timeout: 15min
+  reboot_timeout: 5min
   output_power: !secret output_power
   fast_connect: true
   manual_ip:
@@ -32,9 +32,6 @@ ota:
   password: !secret wifipwd
 
 logger:
-  level: INFO
-#  logs:
-#    esp32_ble_tracker.component: WARN
 
 mqtt:
   broker: !secret mqtt_ip
