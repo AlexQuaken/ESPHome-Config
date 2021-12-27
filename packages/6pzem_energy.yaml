@@ -65,7 +65,7 @@ sensor:
 time:
   - platform: homeassistant
     on_time:
-      - cron: '0,15,30,45 * 7-22 * * *'
+      - cron: '0,30 * 7-22 * * *'
         then:
           - if:
               condition:
@@ -86,7 +86,7 @@ time:
               else:
                 - logger.log: Something was wrong, check errors!
 
-      - cron: '0,15,30,45 * 0-6,23 * * *'
+      - cron: '0,30 * 0-6,23 * * *'
         then:
           - if:
               condition:
@@ -107,7 +107,7 @@ time:
               else:
                 - logger.log: Something was wrong, check errors!
 
-      - cron: '0,15,30,45 * * * * *'
+      - cron: '0,30 * * * * *'
         then:
           - mqtt.publish:
               topic: ${topic}_total
@@ -117,7 +117,7 @@ time:
               format: "The power sensor reports total value %.2f kWh plus %.6f kWh with power %.2f W"
               args: [ 'id(mqtt_energy_day).state + id(mqtt_energy_night).state', 'id(pzem_power).state / 120000', 'id(pzem_power).state' ]
 
-      - cron: '0,15,30,45 * * * * *'
+      - cron: '0,30 * * * * *'
         then:
           - mqtt.publish:
               topic: ${topic}_cost
@@ -127,7 +127,7 @@ time:
               format: "The power sensor reports total cost %.2f UAH"
               args: [ 'id(mqtt_energy_cost).state' ]
 
-      - cron: '1,16,31,46 * 7-22 * * *'
+      - cron: '1,31 * 7-22 * * *'
         then:
           - if:
               condition:
@@ -139,7 +139,7 @@ time:
               else:
                 - logger.log: mqtt is connected, skipping write to memory var_energy_day
 
-      - cron: '1,16,31,46 * 0-6,23 * * *'
+      - cron: '1,31 * 0-6,23 * * *'
         then:
           - if:
               condition:
@@ -151,7 +151,7 @@ time:
               else:
                 - logger.log: mqtt is connected, skipping write to memory var_energy_night
 
-      - cron: '1,16,31,46 * * * * *'
+      - cron: '1,31 * * * * *'
         then:
           - if:
               condition:
