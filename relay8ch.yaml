@@ -15,7 +15,7 @@ packages:
   #led: !include packages/3status_led_esp8266.yaml
 
 wifi:
-  reboot_timeout: 0s
+  reboot_timeout: 5min
 
 switch:
   - platform: gpio
@@ -52,7 +52,7 @@ switch:
     - switch.turn_off: ${board_name}_CH3
     
   - platform: gpio
-    pin: GPIO16
+    pin: GPIO15
     restore_mode: ALWAYS_OFF
     id: ${board_name}_CH4
     name: ${board_name}_sos
