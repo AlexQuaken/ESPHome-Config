@@ -22,7 +22,7 @@ packages:
 
 display:
   platform: tm1637
-  clk_pin: GPIO2
+  clk_pin: GPIO15
   dio_pin: GPIO4
   update_interval: 1s
   lambda: |-
@@ -33,19 +33,3 @@ text_sensor:
     name: "Display1"
     id: display1
     entity_id: input_text.eco2
-    
-switch:
-  - platform: gpio
-    pin: 
-      number: GPIO5
-      inverted: yes
-    name: power_online
-    restore_mode: ALWAYS_ON
-    
-  - platform: gpio
-    pin: 
-      number: GPIO18
-      inverted: yes
-    name: power_online2
-    restore_mode: ALWAYS_ON
-
