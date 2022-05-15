@@ -11,6 +11,9 @@ globals:
     restore_value: no
     initial_value: '20000'
 
+web_server:
+  port: 80
+
 esphome:
   name: ${board_name}
   platform: ESP8266
