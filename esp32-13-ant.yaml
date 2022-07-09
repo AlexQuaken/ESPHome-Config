@@ -1,3 +1,4 @@
+# 113 в камере на кухне
 substitutions:
   board_name: 'esp32-13-ant'
   static_ip: '192.168.0.171'
