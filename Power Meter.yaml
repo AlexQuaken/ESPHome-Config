@@ -27,8 +27,8 @@ packages:
   pzemac: !include packages/6pzem_energy.yaml
 
 uart:
-  tx_pin: D5
-  rx_pin: D6
+  tx_pin: D6
+  rx_pin: D5
   stop_bits: 1
   baud_rate: 9600
 
