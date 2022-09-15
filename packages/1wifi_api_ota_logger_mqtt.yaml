@@ -18,15 +18,12 @@ wifi:
     static_ip: ${static_ip}
     gateway: 192.168.0.1
     subnet: 255.255.255.0
-    dns1: 192.168.0.1
-    dns2: 8.8.8.8
+    dns1: 192.168.0.6
+    dns2: 192.168.0.1
 
   ap:
     ssid: ${board_name}_Fallback
     password: !secret wifipwd
-
-web_server:
-  port: 80
 
 api:
   password: !secret wifipwd

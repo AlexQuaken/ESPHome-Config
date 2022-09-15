@@ -11,9 +11,6 @@ globals:
     restore_value: no
     initial_value: '20000'
 
-web_server:
-  port: 80
-
 esphome:
   name: ${board_name}
   platform: ESP8266
@@ -25,6 +22,9 @@ packages:
   base_sensors: !include packages/2common_sensors.yaml
   led: !include packages/3status_led_esp32.yaml
   pzemac: !include packages/6pzem_energy.yaml
+
+logger:
+  level: VERBOSE
 
 uart:
   tx_pin: D5
