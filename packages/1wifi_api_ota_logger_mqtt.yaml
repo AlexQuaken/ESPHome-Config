@@ -9,16 +9,19 @@ substitutions:
   lila_ble: !secret lila_ble
 
 wifi:
-  ssid: !secret wifi
-  password: !secret wifipwd
-  reboot_timeout: 4min
+  networks:
+  - ssid: !secret wifi
+    password: !secret wifipwd
+  - ssid: !secret wifi2
+    password: !secret wifi2pwd
+  reboot_timeout: 3min
   output_power: !secret output_power
-  fast_connect: true
+  fast_connect: false
   manual_ip:
     static_ip: ${static_ip}
     gateway: 192.168.0.1
     subnet: 255.255.255.0
-    dns1: 192.168.0.6
+    dns1: 192.168.0.7
     dns2: 192.168.0.1
 
   ap:
