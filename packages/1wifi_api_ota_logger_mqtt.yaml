@@ -10,10 +10,8 @@ substitutions:
 
 wifi:
   networks:
-  - ssid: !secret wifi
+    ssid: !secret wifi
     password: !secret wifipwd
-  - ssid: !secret wifi2
-    password: !secret wifi2pwd
   reboot_timeout: 3min
   output_power: !secret output_power
   fast_connect: false
