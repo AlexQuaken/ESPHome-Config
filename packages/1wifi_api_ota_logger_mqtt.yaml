@@ -13,7 +13,7 @@ wifi:
     ssid: !secret wifi
     password: !secret wifipwd
   reboot_timeout: 3min
-  output_power: !secret output_power
+  output_power: 14dB
   fast_connect: false
   manual_ip:
     static_ip: ${static_ip}
