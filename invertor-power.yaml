@@ -1,0 +1,38 @@
+substitutions:
+  board_name: 'invertor-meter'
+  static_ip: '192.168.0.175'
+  number: '23'
+esphome:
+  name: ${board_name}
+  platform: ESP8266
+  board: nodemcuv2
+  esp8266_restore_from_flash: false
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+  led: !include packages/3status_led_esp32.yaml
+
+logger:
+  level: VERBOSE
+
+uart:
+  tx_pin: D5
+  rx_pin: D6
+  stop_bits: 1
+  baud_rate: 9600
+
+sensor:
+  - platform: pzemac
+    current:
+      name: "Invertor Current"
+    voltage:
+      name: "Invertor Voltage"
+    power:
+      name: "Invertor Power"
+      id: "Invertor_power"
+    frequency:
+      name: "Invertor Frequency"
+    power_factor:
+      name: "Invertor Power Factor"
+    update_interval: 15s
