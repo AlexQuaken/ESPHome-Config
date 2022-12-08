@@ -29,6 +29,18 @@ sensor:
     accuracy_decimals: 2
     icon: mdi:car-battery
 
+  - platform: adc
+    filters:
+      - multiply: 15
+    pin: A0
+    name: "Battery Pack VCC NoFilter"
+    id: battery_pack_vcc_non_filtered
+    update_interval: 1s
+    device_class: "voltage"
+    state_class: "measurement"
+    accuracy_decimals: 2
+    icon: mdi:car-battery
+
   - platform: template
     name: "Battery Pack Level"
     id: battery_pack_level
@@ -40,3 +52,11 @@ sensor:
     icon: mdi:car-battery
     lambda: |-
       return (id(battery_pack_vcc).state - 10.5) * 50;
+
+display:
+  platform: tm1637
+  clk_pin: D8
+  dio_pin: D7
+  update_interval: 250ms
+  lambda: |-
+    it.printf("%g", id(battery_pack_vcc_non_filtered).state);
