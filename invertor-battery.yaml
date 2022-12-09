@@ -29,18 +29,6 @@ sensor:
     accuracy_decimals: 2
     icon: mdi:car-battery
 
-  - platform: adc
-    filters:
-      - multiply: 15
-    pin: A0
-    name: "Battery Pack VCC NoFilter"
-    id: battery_pack_vcc_non_filtered
-    update_interval: 1s
-    device_class: "voltage"
-    state_class: "measurement"
-    accuracy_decimals: 2
-    icon: mdi:car-battery
-
   - platform: template
     name: "Battery Pack Level"
     id: battery_pack_level
@@ -57,6 +45,12 @@ display:
   platform: tm1637
   clk_pin: D8
   dio_pin: D7
-  update_interval: 250ms
+  update_interval: 1s
   lambda: |-
-    it.printf("%g", id(battery_pack_vcc_non_filtered).state);
+    it.print( id(display1).state.c_str() );
+    
+text_sensor:
+  - platform: homeassistant
+    name: "Display1"
+    id: display1
+    entity_id: input_text.eco2
