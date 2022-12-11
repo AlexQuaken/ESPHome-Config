@@ -43,14 +43,14 @@ sensor:
 
 display:
   platform: tm1637
-  clk_pin: D8
-  dio_pin: D7
+  clk_pin: D6
+  dio_pin: D5
   update_interval: 1s
   lambda: |-
-    it.print( id(display1).state.c_str() );
+    it.print(id(battery).state.c_str());
     
 text_sensor:
   - platform: homeassistant
-    name: "Display1"
-    id: display1
-    entity_id: input_text.eco2
+    name: "Battery VCC"
+    id: battery
+    entity_id: sensor.battery_pack_vcc
