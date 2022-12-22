@@ -39,7 +39,7 @@ sensor:
     accuracy_decimals: 0
     icon: mdi:car-battery
     lambda: |-
-      return (id(battery_pack_vcc).state - 10.5) * 50;
+      return (id(battery_pack_vcc).state - 10.75) * 50;
 
 display:
   platform: tm1637
@@ -47,10 +47,4 @@ display:
   dio_pin: D5
   update_interval: 1s
   lambda: |-
-    it.print(id(battery).state.c_str());
-    
-text_sensor:
-  - platform: homeassistant
-    name: "Battery VCC"
-    id: battery
-    entity_id: sensor.battery_pack_vcc
+    it.printf("%.2f", id(battery_pack_vcc).state );
