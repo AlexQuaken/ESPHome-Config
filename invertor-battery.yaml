@@ -29,6 +29,19 @@ sensor:
     accuracy_decimals: 2
     icon: mdi:car-battery
 
+  - platform: adc
+    filters:
+      - multiply: 15
+    pin: A0
+    internal: True
+    name: "Battery Pack VCC Internal"
+    id: battery_pack_vcc_internal
+    update_interval: 1s
+    device_class: "voltage"
+    state_class: "measurement"
+    accuracy_decimals: 2
+    icon: mdi:car-battery
+
   - platform: template
     name: "Battery Pack Level"
     id: battery_pack_level
@@ -39,12 +52,20 @@ sensor:
     accuracy_decimals: 0
     icon: mdi:car-battery
     lambda: |-
-      return (id(battery_pack_vcc).state - 10.75) * 50;
+      if ((id(battery_pack_vcc).state >= 12.75)) { return 100; }
+      else if ((id(battery_pack_vcc).state >= 12.75)) { return 100; }
+      else { return (id(battery_pack_vcc).state - 10.75) * 50; }
 
 display:
   platform: tm1637
   clk_pin: D6
   dio_pin: D5
-  update_interval: 1s
+  update_interval: 250ms
   lambda: |-
     it.printf("%.2f", id(battery_pack_vcc).state );
+
+binary_sensor:
+  - platform: homeassistant
+    name: "main_power_fail"
+    id: main_power_fail
+    entity_id: binary_sensor.main_power_fail
