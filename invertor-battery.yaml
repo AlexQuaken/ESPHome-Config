@@ -53,8 +53,22 @@ sensor:
     icon: mdi:car-battery
     lambda: |-
       if ((id(battery_pack_vcc).state >= 12.75)) { return 100; }
-      else if ((id(battery_pack_vcc).state >= 12.75)) { return 100; }
-      else { return (id(battery_pack_vcc).state - 10.75) * 50; }
+      else if ((id(battery_pack_vcc).state >= 10.75) and (id(battery_pack_vcc).state < 12.75)) { return (id(battery_pack_vcc).state - 10.75) * 50; }
+      else if ((id(battery_pack_vcc).state < 10.75)) { return 0; }
+      else { return 0; }
+
+  - platform: pzemac
+    current:
+      name: "Invertor Current"
+    voltage:
+      name: "Invertor Voltage"
+    power:
+      name: "Invertor Power"
+    frequency:
+      name: "Invertor Frequency"
+    power_factor:
+      name: "Invertor Power Factor"
+    update_interval: 15s
 
 display:
   platform: tm1637
@@ -69,3 +83,9 @@ binary_sensor:
     name: "main_power_fail"
     id: main_power_fail
     entity_id: binary_sensor.main_power_fail
+
+uart:
+  tx_pin: D8
+  rx_pin: D7
+  stop_bits: 1
+  baud_rate: 9600
