@@ -1,3 +1,4 @@
+#В розетке окна в детской
 substitutions:
   board_name: 'esp32-11-ant'
   static_ip: '192.168.0.178'
