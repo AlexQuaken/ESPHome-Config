@@ -27,7 +27,9 @@ wifi:
     password: !secret wifipwd
 
 api:
-  password: !secret wifipwd
+  #password: !secret wifipwd
+  encryption:
+    key: !secret encryption_key
 
 ota:
   password: !secret wifipwd
