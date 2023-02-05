@@ -1,4 +1,4 @@
-# 113 в роутере Asus RT-N65
+# 113 в роутере Asus RT-N65 --> в роутере Viva
 substitutions:
   board_name: 'esp32-18'
   static_ip: '192.168.0.167'

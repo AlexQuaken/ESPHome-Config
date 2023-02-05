@@ -1,4 +1,4 @@
-#Над вытяжкой
+#Над вытяжкой --> Возле котла
 substitutions:
   board_name: 'esp32-6-mini'
   static_ip: '192.168.0.165'
