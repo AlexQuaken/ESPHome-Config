@@ -1,3 +1,4 @@
+#В Электрощитке
 substitutions:
   board_name: 'power-meter'
   static_ip: '192.168.0.169'
