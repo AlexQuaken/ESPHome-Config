@@ -1,4 +1,5 @@
 # 113 за телевизором LG --> В камере на кухне
+substitutions:
   board_name: 'esp32-19'
   static_ip: '192.168.0.168'
   number: '19'
