@@ -28,6 +28,10 @@ switch:
     on_turn_on:
     - delay: 750ms
     - switch.turn_off: ${board_name}_CH1
+    - delay: 750ms
+    - switch.turn_on: ${board_name}_CH1
+    - delay: 750ms
+    - switch.turn_off: ${board_name}_CH1
 
   - platform: gpio
     pin: GPIO12
@@ -37,6 +41,10 @@ switch:
     icon: "mdi:alarm-light-off"
     interlock: [alarm_panel_mk_CH1, alarm_panel_mk_CH3, alarm_panel_mk_CH4]
     on_turn_on:
+    - delay: 750ms
+    - switch.turn_off: ${board_name}_CH2
+    - delay: 750ms
+    - switch.turn_on: ${board_name}_CH2
     - delay: 750ms
     - switch.turn_off: ${board_name}_CH2
     
@@ -50,6 +58,10 @@ switch:
     on_turn_on:
     - delay: 750ms
     - switch.turn_off: ${board_name}_CH3
+    - delay: 750ms
+    - switch.turn_on: ${board_name}_CH3
+    - delay: 750ms
+    - switch.turn_off: ${board_name}_CH3
     
   - platform: gpio
     pin: GPIO15
@@ -59,5 +71,9 @@ switch:
     icon: "mdi:lifebuoy"
     interlock: [alarm_panel_mk_CH1, alarm_panel_mk_CH2, alarm_panel_mk_CH3]
     on_turn_on:
+    - delay: 750ms
+    - switch.turn_off: ${board_name}_CH4
+    - delay: 750ms
+    - switch.turn_on: ${board_name}_CH4
     - delay: 750ms
     - switch.turn_off: ${board_name}_CH4
