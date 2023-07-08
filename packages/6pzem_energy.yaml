@@ -122,7 +122,7 @@ time:
           - mqtt.publish:
               topic: ${topic}_cost
               retain: true
-              payload: !lambda "return to_string( (id(mqtt_energy_day).state * 1.68 + id(mqtt_energy_night).state * 0.84) - id(delta) );"
+              payload: !lambda "return to_string( (id(mqtt_energy_day).state * 2.64 + id(mqtt_energy_night).state * 1.32) - id(delta) );"
           - logger.log:
               format: "The power sensor reports total cost %.2f UAH"
               args: [ 'id(mqtt_energy_cost).state' ]
