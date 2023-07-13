@@ -1,3 +1,4 @@
+#Гостинная за колонками
 substitutions:
   board_name: 'alex-3'
   static_ip: '192.168.0.19'
