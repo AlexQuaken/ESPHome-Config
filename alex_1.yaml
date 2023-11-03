@@ -1,3 +1,4 @@
+#Элетрощит Мама
 substitutions:
   board_name: 'power-meter-mk'
   static_ip: '192.168.0.17'
