@@ -1,3 +1,4 @@
+#113 Спальня возле роутера
 substitutions:
   board_name: 'esp32-4'
   static_ip: '192.168.0.160'
