@@ -7,6 +7,7 @@ substitutions:
   alex_ble: !secret alex_ble
   ira_ble: !secret ira_ble
   lila_ble: !secret lila_ble
+  ibeacon_alex: !secret ibeacon_alex
 
 wifi:
   networks:
