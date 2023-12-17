@@ -32,6 +32,21 @@ sensor:
   - platform: adc
     filters:
       - multiply: 15
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 2
+    pin: A0
+    name: "Battery Pack VCC 2s"
+    id: battery_pack_vcc_2s
+    update_interval: 1s
+    device_class: "voltage"
+    state_class: "measurement"
+    accuracy_decimals: 2
+    icon: mdi:car-battery
+
+  - platform: adc
+    filters:
+      - multiply: 15
     pin: A0
     internal: True
     name: "Battery Pack VCC Internal"
