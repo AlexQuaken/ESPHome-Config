@@ -15,46 +15,46 @@ packages:
 
 sensor:
   - platform: adc
-    filters:
-      - multiply: 15
-      - sliding_window_moving_average:
-          window_size: 90
-          send_every: 30
     pin: A0
-    name: "Battery Pack VCC"
-    id: battery_pack_vcc
-    update_interval: 1s
-    device_class: "voltage"
-    state_class: "measurement"
-    accuracy_decimals: 2
-    icon: mdi:car-battery
-
-  - platform: adc
-    filters:
-      - multiply: 15
-      - sliding_window_moving_average:
-          window_size: 5
-          send_every: 2
-    pin: A0
-    name: "Battery Pack VCC 2s"
-    id: battery_pack_vcc_2s
-    update_interval: 1s
-    device_class: "voltage"
-    state_class: "measurement"
-    accuracy_decimals: 2
-    icon: mdi:car-battery
-
-  - platform: adc
-    filters:
-      - multiply: 15
-    pin: A0
-    internal: True
     name: "Battery Pack VCC Internal"
     id: battery_pack_vcc_internal
+    internal: True
     update_interval: 1s
+    filters:
+      - multiply: 15
+    accuracy_decimals: 2
     device_class: "voltage"
     state_class: "measurement"
+    icon: mdi:car-battery
+
+  - platform: template
+    name: "Battery Pack VCC"
+    id: battery_pack_vcc
+    update_interval: 30s
+    lambda: |-
+      return id(battery_pack_vcc_internal).state;
+    filters:
+      - sliding_window_moving_average:
+          window_size: 30
+          send_every: 30
     accuracy_decimals: 2
+    device_class: "voltage"
+    state_class: "measurement"
+    icon: mdi:car-battery
+
+  - platform: template
+    name: "Battery Pack VCC 2s"
+    id: battery_pack_vcc_2s
+    update_interval: 2s
+    lambda: |-
+      return id(battery_pack_vcc_internal).state;
+    filters:
+      - sliding_window_moving_average:
+          window_size: 6
+          send_every: 2
+    accuracy_decimals: 2
+    device_class: "voltage"
+    state_class: "measurement"
     icon: mdi:car-battery
 
   - platform: template
@@ -67,23 +67,53 @@ sensor:
     accuracy_decimals: 0
     icon: mdi:car-battery
     lambda: |-
-      if ((id(battery_pack_vcc).state >= 12.75)) { return 100; }
-      else if ((id(battery_pack_vcc).state >= 10.75) and (id(battery_pack_vcc).state < 12.75)) { return (id(battery_pack_vcc).state - 10.75) * 50; }
-      else if ((id(battery_pack_vcc).state < 10.75)) { return 0; }
-      else { return 0; }
+      const float R_internal = 0.00167;  // Суммарное внутреннее сопротивление сборки
+      float voltage_measured = id(invertor_voltage).state;  // Измеренное напряжение
+      float current_load = id(invertor_current).state;  // Текущий ток нагрузки
+      float voltage_corrected = voltage_measured + (current_load * R_internal);  // Корректировка напряжения
+      
+      // Теперь используем скорректированное напряжение для расчета уровня заряда
+      if (voltage_corrected >= 12.6) {
+        return 100;
+      } else if (voltage_corrected >= 12.4 && voltage_corrected < 12.6) {
+        return ((voltage_corrected - 12.4) / (12.6 - 12.4)) * 100 + 50;
+      } else if (voltage_corrected >= 12.2 && voltage_corrected < 12.4) {
+        return ((voltage_corrected - 12.2) / (12.4 - 12.2)) * 50;
+      } else if (voltage_corrected >= 12.0 && voltage_corrected < 12.2) {
+        return ((voltage_corrected - 12.0) / (12.2 - 12.0)) * 20;
+      } else if (voltage_corrected < 12.0) {
+        return 0;
+      } else {
+        return NAN;  // Возвращает "неизвестно", если напряжение вне ожидаемого диапазона
+      }
 
   - platform: pzemac
     current:
       name: "Invertor Current"
+      id: "invertor_current"
     voltage:
       name: "Invertor Voltage"
+      id: "invertor_voltage"
     power:
       name: "Invertor Power"
+      id: "invertor_power"
     frequency:
       name: "Invertor Frequency"
     power_factor:
       name: "Invertor Power Factor"
     update_interval: 15s
+
+  - platform: template
+    name: "Invertor Power Average"
+    internal: True
+    lambda: |-
+      return id(invertor_power).state;
+    filters:
+      - sliding_window_moving_average:
+          window_size: 4
+          send_every: 4
+    unit_of_measurement: 'W'
+    accuracy_decimals: 2
 
 display:
   platform: tm1637
@@ -91,7 +121,7 @@ display:
   dio_pin: D5
   update_interval: 250ms
   lambda: |-
-    it.printf("%.2f", id(battery_pack_vcc).state );
+    it.printf("%.2f", id(battery_pack_vcc_2s).state );
 
 binary_sensor:
   - platform: homeassistant

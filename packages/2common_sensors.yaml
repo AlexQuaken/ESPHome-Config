@@ -33,7 +33,7 @@ text_sensor:
         mnts = trunc(dur / 60);
         dur = dur - (mnts * 60);
       }
-      char buffer[17];
+      char buffer[64];
       sprintf(buffer, "%ud %02uh %02um %02us", dys, hrs, mnts, dur);
       return {buffer};
     icon: mdi:clock-start
