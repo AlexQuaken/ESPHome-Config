@@ -4,7 +4,8 @@ esp32_ble_tracker:
 
 binary_sensor:
   - platform: ble_presence
-    ibeacon_uuid: ${ibeacon_alex}
+#   ibeacon_uuid: ${ibeacon_alex}
+    mac_address: ${mifit_alex}
     name: ${alex_ble} ${number}
   - platform: ble_presence
     mac_address: ${mifit_ira}
@@ -15,7 +16,8 @@ binary_sensor:
 
 sensor:
   - platform: ble_rssi
-    ibeacon_uuid: ${ibeacon_alex}
+#   ibeacon_uuid: ${ibeacon_alex}
+    mac_address: ${mifit_alex}
     name: ${alex_ble} ${number} RSSI
   - platform: ble_rssi
     mac_address: ${mifit_ira}
