@@ -72,13 +72,16 @@ sensor:
         return 100.0;
       } else if (voltage_measured >= 10.4) {
         return ((voltage_measured - 10.4) / (12.4 - 10.4)) * 100.0;
+      } else if (voltage_measured >= 10.0 && voltage_measured < 10.4) {
+        return 0.0;
       } else {
-        return 0.0;  // Если напряжение ниже минимального, возвращаем 0%
+        return NAN;  // Если напряжение ниже минимального, возвращаем NAN
       }
     filters:
       - sliding_window_moving_average:
           window_size: 10
           send_every: 10
+      - throttle: 30s  # Задержка публикации данных на 5 секунд после перезагрузки
 
 #    lambda: |-
 #      const float R_internal = 0.00167;  // Суммарное внутреннее сопротивление сборки
