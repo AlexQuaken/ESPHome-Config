@@ -68,10 +68,10 @@ sensor:
     icon: mdi:car-battery
     lambda: |-
       float voltage_measured = id(battery_pack_vcc_internal).state;  // Измеренное напряжение
-      if (voltage_measured >= 12.6) {
+      if (voltage_measured >= 12.4) {
         return 100.0;
       } else if (voltage_measured >= 10.4) {
-        return ((voltage_measured - 10.4) / (12.6 - 10.4)) * 100.0;
+        return ((voltage_measured - 10.4) / (12.4 - 10.4)) * 100.0;
       } else if (voltage_measured >= 10.0 && voltage_measured < 10.4) {
         return 0.0;
       } else {
