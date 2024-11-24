@@ -60,19 +60,19 @@ sensor:
   - platform: template
     name: "Battery Pack Level"
     id: battery_pack_level
-    update_interval: 10s
+    update_interval: 5s
     device_class: "battery"
     state_class: "measurement"
     unit_of_measurement: '%'
     accuracy_decimals: 0
     icon: mdi:car-battery
     lambda: |-
-      float voltage_measured = id(battery_pack_vcc_internal).state;  // Измеренное напряжение
-      if (voltage_measured >= 12.4) {
+      float voltage_measured = id(battery_pack_vcc_internal).state; // Измеренное напряжение
+      if (voltage_measured >= 12.5) {
         return 100.0;
-      } else if (voltage_measured >= 10.4) {
-        return ((voltage_measured - 10.4) / (12.4 - 10.4)) * 100.0;
-      } else if (voltage_measured >= 10.0 && voltage_measured < 10.4) {
+      } else if (voltage_measured > 10.4) {
+        return ((voltage_measured - 10.4) / (12.5 - 10.4)) * 100.0;
+      } else if (voltage_measured >= 10.0 && voltage_measured <= 10.4) {
         return 0.0;
       } else {
         return NAN;  // Если напряжение ниже минимального, возвращаем NAN
