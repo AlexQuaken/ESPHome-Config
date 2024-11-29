@@ -22,6 +22,10 @@ sensor:
     update_interval: 1s
     filters:
       - multiply: 15
+      - skip_initial: 10  # Задержка публикации данных после перезагрузки
+      - sliding_window_moving_average:
+          window_size: 5  # Размер окна (количество значений)
+          send_every: 1   # Публиковать каждое усреднённое значение
     accuracy_decimals: 2
     device_class: "voltage"
     state_class: "measurement"
@@ -30,12 +34,12 @@ sensor:
   - platform: template
     name: "Battery Pack VCC"
     id: battery_pack_vcc
-    update_interval: 30s
+    update_interval: 1s
     lambda: |-
       return id(battery_pack_vcc_internal).state;
     filters:
       - sliding_window_moving_average:
-          window_size: 30
+          window_size: 10
           send_every: 5
     accuracy_decimals: 2
     device_class: "voltage"
@@ -50,7 +54,7 @@ sensor:
       return id(battery_pack_vcc_internal).state;
     filters:
       - sliding_window_moving_average:
-          window_size: 6
+          window_size: 3
           send_every: 2
     accuracy_decimals: 2
     device_class: "voltage"
@@ -60,7 +64,7 @@ sensor:
   - platform: template
     name: "Battery Pack Level"
     id: battery_pack_level
-    update_interval: 5s
+    update_interval: 1s
     device_class: "battery"
     state_class: "measurement"
     unit_of_measurement: '%'
@@ -68,6 +72,9 @@ sensor:
     icon: mdi:car-battery
     lambda: |-
       float voltage_measured = id(battery_pack_vcc_internal).state; // Измеренное напряжение
+      if (!id(power_online_contact).state) { // Проверка состояния binary_sensor.power_online_contact
+        voltage_measured -= 1.0; // Уменьшение напряжения на 1В
+      }
       if (voltage_measured >= 12.5) {
         return 100.0;
       } else if (voltage_measured > 10.4) {
@@ -81,7 +88,7 @@ sensor:
       - sliding_window_moving_average:
           window_size: 10
           send_every: 10
-      - throttle: 30s  # Задержка публикации данных на 5 секунд после перезагрузки
+      - skip_initial: 10  # Задержка публикации данных на 10 секунд после перезагрузки
 
 #    lambda: |-
 #      const float R_internal = 0.00167;  // Суммарное внутреннее сопротивление сборки
@@ -138,13 +145,15 @@ display:
   dio_pin: D5
   update_interval: 250ms
   lambda: |-
-    it.printf("%.2f", id(battery_pack_vcc_2s).state );
+    if (!isnan(id(battery_pack_vcc_2s).state)) {
+      it.printf("%.2f", id(battery_pack_vcc_2s).state);
+    }
 
 binary_sensor:
   - platform: homeassistant
-    name: "main_power_fail"
-    id: main_power_fail
-    entity_id: binary_sensor.main_power_fail
+    name: "Power Online Contact"
+    id: power_online_contact
+    entity_id: binary_sensor.power_online_contact
 
 uart:
   tx_pin: D8
