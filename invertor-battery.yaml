@@ -73,7 +73,7 @@ sensor:
     lambda: |-
       float voltage_measured = id(battery_pack_vcc_internal).state; // Измеренное напряжение
       if (!id(power_online_contact).state) { // Проверка состояния binary_sensor.power_online_contact
-        voltage_measured -= 1.0; // Уменьшение напряжения на 1В
+        voltage_measured -= 0.9; // Уменьшение напряжения на 1В
       }
       if (voltage_measured >= 12.5) {
         return 100.0;
