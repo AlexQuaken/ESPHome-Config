@@ -9,6 +9,12 @@ esphome:
   platform: ESP8266
   board: nodemcuv2
 
+globals:
+  - id: last_power_change_time
+    type: unsigned long
+    restore_value: no
+    initial_value: '0'
+
 packages:
   device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
   base_sensors: !include packages/2common_sensors.yaml
@@ -19,13 +25,15 @@ sensor:
     name: "Battery Pack VCC Internal"
     id: battery_pack_vcc_internal
     internal: True
-    update_interval: 1s
+    force_update: True 
+    update_interval: 100ms
     filters:
       - multiply: 15
       - skip_initial: 10  # Задержка публикации данных после перезагрузки
-      - sliding_window_moving_average:
-          window_size: 5  # Размер окна (количество значений)
-          send_every: 1   # Публиковать каждое усреднённое значение
+      - median:
+          window_size: 20    # Считаем медиану по последним 20 значениям
+          send_every: 10     # Отправляем медианное значение каждые 10 новых
+          send_first_at: 10  # Первое значение отправляется после 10 полученных данных
     accuracy_decimals: 2
     device_class: "voltage"
     state_class: "measurement"
@@ -34,28 +42,15 @@ sensor:
   - platform: template
     name: "Battery Pack VCC"
     id: battery_pack_vcc
-    update_interval: 1s
+    update_interval: 5s
+    force_update: True
     lambda: |-
       return id(battery_pack_vcc_internal).state;
     filters:
-      - sliding_window_moving_average:
-          window_size: 10
-          send_every: 5
-    accuracy_decimals: 2
-    device_class: "voltage"
-    state_class: "measurement"
-    icon: mdi:car-battery
-
-  - platform: template
-    name: "Battery Pack VCC 2s"
-    id: battery_pack_vcc_2s
-    update_interval: 2s
-    lambda: |-
-      return id(battery_pack_vcc_internal).state;
-    filters:
-      - sliding_window_moving_average:
-          window_size: 3
-          send_every: 2
+      - skip_initial: 1  # Задержка публикации данных после перезагрузки
+      - median:
+          window_size: 5    # Считаем медиану по последним 5 значениям
+          send_every: 1     # Отправляем медианное значение каждые 5 новых
     accuracy_decimals: 2
     device_class: "voltage"
     state_class: "measurement"
@@ -64,17 +59,26 @@ sensor:
   - platform: template
     name: "Battery Pack Level"
     id: battery_pack_level
-    update_interval: 1s
+    update_interval: 10s
+    force_update: True
     device_class: "battery"
     state_class: "measurement"
     unit_of_measurement: '%'
-    accuracy_decimals: 0
+    accuracy_decimals: 1
     icon: mdi:car-battery
     lambda: |-
       float voltage_measured = id(battery_pack_vcc_internal).state; // Измеренное напряжение
+      unsigned long current_time = millis();
+      // Проверяем, прошло ли 3 минуты с последнего изменения состояния питания
+      if (current_time - id(last_power_change_time) < 180000) {
+        // Если прошло меньше 3 минут, не обновляем данные
+        return id(battery_pack_level).state;
+      }
+      
       if (!id(power_online_contact).state) { // Проверка состояния binary_sensor.power_online_contact
         voltage_measured -= 0.9; // Уменьшение напряжения на 1В
       }
+      
       if (voltage_measured >= 12.5) {
         return 100.0;
       } else if (voltage_measured > 10.4) {
@@ -85,11 +89,11 @@ sensor:
         return NAN;  // Если напряжение ниже минимального, возвращаем NAN
       }
     filters:
-      - sliding_window_moving_average:
+      - skip_initial: 2
+      - median:
           window_size: 10
-          send_every: 10
-      - skip_initial: 10  # Задержка публикации данных на 10 секунд после перезагрузки
-
+          send_every: 1
+          
 #    lambda: |-
 #      const float R_internal = 0.00167;  // Суммарное внутреннее сопротивление сборки
 #      float voltage_measured = id(invertor_voltage).state;  // Измеренное напряжение
@@ -135,7 +139,7 @@ sensor:
     filters:
       - sliding_window_moving_average:
           window_size: 4
-          send_every: 4
+          send_every: 1
     unit_of_measurement: 'W'
     accuracy_decimals: 2
 
@@ -143,10 +147,10 @@ display:
   platform: tm1637
   clk_pin: D6
   dio_pin: D5
-  update_interval: 250ms
+  update_interval: 200ms
   lambda: |-
-    if (!isnan(id(battery_pack_vcc_2s).state)) {
-      it.printf("%.2f", id(battery_pack_vcc_2s).state);
+    if (!isnan(id(battery_pack_vcc_internal).state)) {
+      it.printf("%.2f", id(battery_pack_vcc_internal).state);
     }
 
 binary_sensor:
@@ -154,6 +158,10 @@ binary_sensor:
     name: "Power Online Contact"
     id: power_online_contact
     entity_id: binary_sensor.power_online_contact
+    on_state:
+      then:
+        - lambda: |-
+            id(last_power_change_time) = millis();  // Обновляем время последнего изменения питания
 
 uart:
   tx_pin: D8
