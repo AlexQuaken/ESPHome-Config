@@ -14,9 +14,3 @@ packages:
   base_sensors: !include packages/2common_sensors.yaml
   led: !include packages/3status_led_esp32.yaml
   ble2: !include packages/44ble_tracker_113.yaml
-
-interval:
-  - interval: 8h
-    then:
-      - lambda: |-
-          ESP.restart();
