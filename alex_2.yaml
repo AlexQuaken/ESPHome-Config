@@ -12,7 +12,8 @@ substitutions:
 
 esphome:
   name: ${board_name}
-  platform: ESP32
+
+esp32:
   board: esp32doit-devkit-v1
 
 packages:

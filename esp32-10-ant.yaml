@@ -6,7 +6,8 @@ substitutions:
 
 esphome:
   name: ${board_name}
-  platform: ESP32
+  
+esp32:
   board: esp32dev
 
 packages:

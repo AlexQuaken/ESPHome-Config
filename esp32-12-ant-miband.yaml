@@ -6,7 +6,8 @@ substitutions:
   
 esphome:
   name: esp32-12-ant-miband
-  platform: ESP32
+  
+esp32:
   board: esp32dev
 
 packages:
