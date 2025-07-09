@@ -76,8 +76,8 @@ sensor:
         return id(battery_pack_level).state;
       }
       
-      if (!id(power_online_contact).state) { // Проверка состояния binary_sensor.power_online_contact
-        voltage_measured -= 0.9; // Уменьшение напряжения на 1В
+      if (id(power_online_contact).state) { // Проверка состояния binary_sensor.power_online_contact
+        voltage_measured -= 0.9; // Уменьшение напряжения при зарядке батарей для компенсации
       }
       
       if (voltage_measured >= 12.5) {
@@ -120,16 +120,21 @@ sensor:
     current:
       name: "Invertor Current"
       id: "invertor_current"
+      accuracy_decimals: 1
     voltage:
       name: "Invertor Voltage"
       id: "invertor_voltage"
+      accuracy_decimals: 1
     power:
       name: "Invertor Power"
       id: "invertor_power"
+      accuracy_decimals: 1
     frequency:
       name: "Invertor Frequency"
+      accuracy_decimals: 1
     power_factor:
       name: "Invertor Power Factor"
+      accuracy_decimals: 2
     update_interval: 15s
 
   - platform: template

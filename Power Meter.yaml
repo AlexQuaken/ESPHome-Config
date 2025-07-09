@@ -38,13 +38,18 @@ sensor:
   - platform: pzemac
     current:
       name: "PZEM Current"
+      accuracy_decimals: 1
     voltage:
       name: "PZEM Voltage"
+      accuracy_decimals: 1
     power:
       name: "PZEM Power"
-      id: "pzem_power"
+      id: pzem_power
+      accuracy_decimals: 1
     frequency:
       name: "PZEM Frequency"
+      accuracy_decimals: 1
     power_factor:
       name: "PZEM Power Factor"
+      accuracy_decimals: 2
     update_interval: 30s
