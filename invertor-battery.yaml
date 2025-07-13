@@ -29,7 +29,7 @@ sensor:
     force_update: True 
     update_interval: 100ms
     filters:
-      - multiply: 15
+      - multiply: 16
       - skip_initial: 10  # Задержка публикации данных после перезагрузки
       - median:
           window_size: 20    # Считаем медиану по последним 20 значениям
@@ -76,7 +76,7 @@ sensor:
         return id(battery_pack_level).state;
       }
       
-      if (id(power_online_contact).state) { // Проверка состояния binary_sensor.power_online_contact
+      if (!id(power_online_contact).state) { // Проверка состояния binary_sensor.power_online_contact
         voltage_measured -= 0.9; // Уменьшение напряжения при зарядке батарей для компенсации
       }
       
