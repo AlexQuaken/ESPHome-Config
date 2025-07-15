@@ -29,7 +29,7 @@ sensor:
     force_update: True 
     update_interval: 100ms
     filters:
-      - multiply: 16
+      - multiply: 15.35
       - skip_initial: 10  # Задержка публикации данных после перезагрузки
       - median:
           window_size: 20    # Считаем медиану по последним 20 значениям
