@@ -36,7 +36,7 @@ sensor:
           send_every: 10     # Отправляем медианное значение каждые 10 новых
           send_first_at: 10  # Первое значение отправляется после 10 полученных данных
     accuracy_decimals: 2
-    device_class: "voltage"
+    device_class: "V"
     state_class: "measurement"
     icon: mdi:car-battery
 
@@ -53,7 +53,7 @@ sensor:
           window_size: 5    # Считаем медиану по последним 5 значениям
           send_every: 1     # Отправляем медианное значение каждые 5 новых
     accuracy_decimals: 2
-    device_class: "voltage"
+    device_class: "V"
     state_class: "measurement"
     icon: mdi:car-battery
 
