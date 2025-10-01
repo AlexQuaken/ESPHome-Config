@@ -1,6 +1,6 @@
 # 113 Кухня внизу
 substitutions:
-  board_name: 'esp32-19'
+  board_name: 'esp32-19_2'
   static_ip: '192.168.0.168'
   number: '19'
 
