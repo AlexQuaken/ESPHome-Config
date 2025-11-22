@@ -80,11 +80,11 @@ sensor:
         voltage_measured -= 0.9; // Уменьшение напряжения при зарядке батарей для компенсации
       }
       
-      if (voltage_measured >= 12.5) {
+      if (voltage_measured >= 12.6) {
         return 100.0;
-      } else if (voltage_measured > 10.4) {
-        return ((voltage_measured - 10.4) / (12.5 - 10.4)) * 100.0;
-      } else if (voltage_measured >= 10.0 && voltage_measured <= 10.4) {
+      } else if (voltage_measured > 10.8) {
+        return ((voltage_measured - 10.8) / (12.6 - 10.8)) * 100.0;
+      } else if (voltage_measured >= 10.0 && voltage_measured <= 10.8) {
         return 0.0;
       } else {
         return NAN;  // Если напряжение ниже минимального, возвращаем NAN
@@ -93,28 +93,7 @@ sensor:
       - skip_initial: 2
       - median:
           window_size: 10
-          send_every: 1
-          
-#    lambda: |-
-#      const float R_internal = 0.00167;  // Суммарное внутреннее сопротивление сборки
-#      float voltage_measured = id(invertor_voltage).state;  // Измеренное напряжение
-#      float current_load = id(invertor_current).state;  // Текущий ток нагрузки
-#      float voltage_corrected = voltage_measured + (current_load * R_internal);  // Корректировка напряжения
-#      
-#      // Теперь используем скорректированное напряжение для расчета уровня заряда
-#      if (voltage_corrected >= 12.) {
-#        return 100;
-#      } else if (voltage_corrected >= 12.4 && voltage_corrected < 12.6) {
-#        return ((voltage_corrected - 12.4) / (12.6 - 12.4)) * 100 + 50;
-#      } else if (voltage_corrected >= 12.2 && voltage_corrected < 12.4) {
-#        return ((voltage_corrected - 12.2) / (12.4 - 12.2)) * 50;
-#     } else if (voltage_corrected >= 12.0 && voltage_corrected < 12.2) {
-#       return ((voltage_corrected - 12.0) / (12.2 - 12.0)) * 20;
-#      } else if (voltage_corrected < 12.0) {
-#        return 0;
-#      } else {
-#        return NAN;  // Возвращает "неизвестно", если напряжение вне ожидаемого диапазона
-#      }
+          send_every: 1  
 
   - platform: pzemac
     current:
