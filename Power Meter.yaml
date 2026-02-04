@@ -42,6 +42,7 @@ sensor:
     voltage:
       name: "PZEM Voltage"
       accuracy_decimals: 1
+      unit_of_measurement: "V" 
     power:
       name: "PZEM Power"
       id: pzem_power
