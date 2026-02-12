@@ -9,6 +9,8 @@ esphome:
   
 esp32:
   board: esp-wrover-kit
+  framework:
+    type: esp-idf
 
 packages:
   device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml

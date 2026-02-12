@@ -7,6 +7,10 @@ esphome:
   
 esp32:
   board: esp32cam
+  framework:
+    type: esp-idf
+
+psram:
 
 packages:
   device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
