@@ -44,7 +44,6 @@ sensor:
     name: "Battery Pack VCC"
     id: battery_pack_vcc
     update_interval: 5s
-    force_update: True
     lambda: |-
       return id(battery_pack_vcc_internal).state;
     filters:
@@ -52,6 +51,7 @@ sensor:
       - median:
           window_size: 5    # Считаем медиану по последним 5 значениям
           send_every: 1     # Отправляем медианное значение каждые 5 новых
+      - round: 2
     accuracy_decimals: 2
     device_class: "voltage"
     state_class: "measurement"
@@ -93,13 +93,16 @@ sensor:
       - skip_initial: 2
       - median:
           window_size: 10
-          send_every: 1  
+          send_every: 1
+      - round: 1
 
   - platform: pzemac
     current:
       name: "Invertor Current"
       id: "invertor_current"
-      accuracy_decimals: 1
+      accuracy_decimals: 2
+      filters:
+        - round: 2
     voltage:
       name: "Invertor Voltage"
       id: "invertor_voltage"
@@ -108,16 +111,23 @@ sensor:
         - calibrate_linear:
             - 0 -> 0
             - 280.0 -> 230.0
+        - round: 1
     power:
       name: "Invertor Power"
       id: "invertor_power"
       accuracy_decimals: 1
+      filters:
+        - round: 1
     frequency:
       name: "Invertor Frequency"
       accuracy_decimals: 1
+      filters:
+        - round: 1
     power_factor:
       name: "Invertor Power Factor"
       accuracy_decimals: 2
+      filters:
+        - round: 2
     update_interval: 15s
 
   - platform: template
