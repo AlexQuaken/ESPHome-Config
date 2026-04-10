@@ -131,9 +131,9 @@ myhomeiot_ble_client:
             ESP_LOGE("myhomeiot_ble_client", "payload has wrong size (%d)", x.size());
             return;
           };
-          id(${flower2_id_prefix}_battery).publish_state(x[0]);
+          id(${flower3_id_prefix}_battery).publish_state(x[0]);
           std::string firmware(x.begin(), x.end());
-          id(${flower2_id_prefix}_firmware).publish_state(firmware.substr(2));
+          id(${flower3_id_prefix}_firmware).publish_state(firmware.substr(2));
 
 binary_sensor:
   - platform: template

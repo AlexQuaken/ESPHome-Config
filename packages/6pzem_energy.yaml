@@ -147,7 +147,7 @@ time:
                   mqtt.connected:
               then:
                 - lambda: "id(var_energy_night) = id(var_energy_night) + id(pzem_power).state / 120000;"
-                - logger.log: mqtt is disconnected, write to memory var_energy_night !lambda "retun id(var_energy_night);"
+                - logger.log: mqtt is disconnected, write to memory var_energy_night !lambda "return id(var_energy_night);"
               else:
                 - logger.log: mqtt is connected, skipping write to memory var_energy_night
 
@@ -159,7 +159,7 @@ time:
                   mqtt.connected:
               then:
                 - lambda: "id(var_energy_total) = id(var_energy_day) + id(var_energy_night);"
-                - logger.log: mqtt is disconnected, write to memory var_energy_night !lambda "retun id(var_energy_total);"
+                - logger.log: mqtt is disconnected, write to memory var_energy_night !lambda "return id(var_energy_total);"
               else:
                 - logger.log: mqtt is connected, skipping write to memory var_energy_total
 

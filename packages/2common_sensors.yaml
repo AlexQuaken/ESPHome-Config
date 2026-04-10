@@ -8,6 +8,8 @@ sensor:
     name: ${board_name}_WiFi_RSSI
     id: wifis_signal
     update_interval: ${update_interval}
+    filters:
+      - delta: 3
 
 switch:
   - platform: restart
