@@ -29,7 +29,7 @@ sensor:
     force_update: True 
     update_interval: 100ms
     filters:
-      - multiply: 15.35
+      - multiply: 15.65
       - skip_initial: 10  # Задержка публикации данных после перезагрузки
       - median:
           window_size: 20    # Считаем медиану по последним 20 значениям
@@ -104,6 +104,10 @@ sensor:
       name: "Invertor Voltage"
       id: "invertor_voltage"
       accuracy_decimals: 1
+      filters:
+        - calibrate_linear:
+            - 0 -> 0
+            - 280.0 -> 230.0
     power:
       name: "Invertor Power"
       id: "invertor_power"
@@ -149,7 +153,7 @@ binary_sensor:
             id(last_power_change_time) = millis();  // Обновляем время последнего изменения питания
 
 uart:
-  tx_pin: D8
-  rx_pin: D7
+  tx_pin: D2  # GPIO5
+  rx_pin: D1  # GPIO4
   stop_bits: 1
   baud_rate: 9600
