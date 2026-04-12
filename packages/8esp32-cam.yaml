@@ -28,6 +28,16 @@ esp32_camera:
   power_down_pin: GPIO32
 
   name: ${board_name}_Camera
-  resolution: 640x480
+  resolution: 800x600
+  jpeg_quality: 12
+  max_framerate: 15fps
+  idle_framerate: 0.2fps
+  frame_buffer_count: 2
+  aec2: true
+  agc_mode: AUTO
+  agc_gain_ceiling: 4x
+  aec_mode: AUTO
+  ae_level: 0
+  wb_mode: AUTO
   vertical_flip: false
   horizontal_mirror: false
