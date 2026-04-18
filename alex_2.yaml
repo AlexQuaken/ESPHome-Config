@@ -147,7 +147,7 @@ display:
     model: "SSD1306 128x64"
     address: 0x3C
     id: oled
-    update_interval: 25ms
+    update_interval: 16ms
     lambda: |-
       uint32_t t = millis();
       auto &v = id(log_lines);

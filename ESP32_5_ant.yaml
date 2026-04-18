@@ -6,7 +6,13 @@ substitutions:
 
 esphome:
   name: ${board_name}
-  
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          id(log_lines).push_back("esp32-5-ant booted");
+          id(log_lines).push_back("display OK");
+
 esp32:
   board: esp-wrover-kit
   framework:
@@ -20,4 +26,161 @@ packages:
   ble_alex: !include packages/ble_alex.yaml
   ble_ira: !include packages/ble_ira.yaml
   ble_lila: !include packages/ble_lila.yaml
-  #miband: !include packages/5mi_band_battery.yaml
+
+i2c:
+  sda: GPIO21
+  scl: GPIO22
+  scan: true
+  frequency: 1MHz
+  id: bus_a
+
+font:
+  - file: "gfonts://Roboto Mono"
+    id: f_console
+    size: 8
+    glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
+
+globals:
+  - id: log_lines
+    type: std::vector<std::string>
+    restore_value: no
+  - id: log_max
+    type: int
+    restore_value: no
+    initial_value: '8'
+  - id: scroll_off
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: scroll_start_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: anim_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '500'
+  - id: last_push_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: pending_line
+    type: std::string
+    restore_value: no
+  - id: pending_time
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: has_pending
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+logger:
+  level: DEBUG
+  on_message:
+    level: DEBUG
+    then:
+      - lambda: |-
+          std::string raw;
+          for (size_t i = 0; message[i] != 0; i++) {
+            char c = message[i];
+            if (c == '\033') { while (message[i] != 0 && message[i] != 'm') i++; continue; }
+            if (c == '\r' || c == '\n') continue;
+            raw += c;
+          }
+          auto p = raw.find("]: ");
+          if (p != std::string::npos) raw = raw.substr(p + 3);
+          std::string clean;
+          for (char c : raw) if (c != '\'') clean += c;
+          size_t bp;
+          while ((bp = clean.find("_ble")) != std::string::npos) clean.erase(bp, 4);
+          if (clean.empty()) return;
+          uint32_t now = millis();
+          auto &v = id(log_lines);
+          if (id(has_pending)) {
+            uint32_t dt = now - id(pending_time);
+            if (dt < 100) dt = 100;
+            if (dt > 1500) dt = 1500;
+            if (id(scroll_off) > 0 && id(scroll_off) < 8 && (int)v.size() > id(log_max)) {
+              v.erase(v.begin());
+              id(scroll_off) = 0;
+            }
+            v.push_back(id(pending_line));
+            while ((int)v.size() > 16) v.erase(v.begin());
+            if ((int)v.size() > id(log_max)) {
+              id(anim_ms) = dt;
+              id(scroll_start_ms) = now;
+              id(scroll_off) = 0.0f;
+            }
+          }
+          id(pending_line) = clean;
+          id(pending_time) = now;
+          id(has_pending) = true;
+
+api:
+  services:
+    - service: console_log
+      variables:
+        line: string
+      then:
+        - lambda: |-
+            auto &v = id(log_lines);
+            std::string s = line;
+            if (s.size() > 25) s = s.substr(0, 25);
+            v.push_back(s);
+            while ((int)v.size() > id(log_max)) v.erase(v.begin());
+        - component.update: oled
+    - service: console_clear
+      then:
+        - lambda: 'id(log_lines).clear();'
+        - component.update: oled
+
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 128x64"
+    address: 0x3C
+    id: oled
+    update_interval: 16ms
+    lambda: |-
+      uint32_t t = millis();
+      auto &v = id(log_lines);
+      if (id(has_pending) && (t - id(pending_time)) > 2000) {
+        if (id(scroll_off) > 0 && id(scroll_off) < 8 && (int)v.size() > id(log_max)) {
+          v.erase(v.begin());
+          id(scroll_off) = 0;
+        }
+        v.push_back(id(pending_line));
+        while ((int)v.size() > 16) v.erase(v.begin());
+        if ((int)v.size() > id(log_max)) {
+          id(anim_ms) = 800;
+          id(scroll_start_ms) = t;
+          id(scroll_off) = 0.0f;
+        }
+        id(has_pending) = false;
+      }
+      if ((int)v.size() > id(log_max)) {
+        uint32_t elapsed = t - id(scroll_start_ms);
+        float o = (float)elapsed * 8.0f / (float)id(anim_ms);
+        if (o > 8.0f) o = 8.0f;
+        id(scroll_off) = o;
+        if (o >= 8.0f) { v.erase(v.begin()); id(scroll_off) = 0.0f; }
+      }
+      const int gap = 30;
+      int n = (int)v.size();
+      int yoff = (int)(id(scroll_off) + 0.5f);
+      for (int i = 0; i < n; i++) {
+        int y = i * 8 - yoff;
+        if (y >= 64) continue;
+        auto &s = v[i];
+        int xb, yb, w, h;
+        it.get_text_bounds(0, 0, s.c_str(), id(f_console), TextAlign::TOP_LEFT, &xb, &yb, &w, &h);
+        if (w <= 128) {
+          it.printf(0, y, id(f_console), "%s", s.c_str());
+        } else {
+          int cycle = w + gap;
+          int off_x = ((int)(t * 0.075f)) % cycle;
+          it.printf(-off_x, y, id(f_console), "%s", s.c_str());
+          it.printf(-off_x + cycle, y, id(f_console), "%s", s.c_str());
+        }
+      }

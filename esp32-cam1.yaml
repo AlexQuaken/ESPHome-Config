@@ -4,7 +4,7 @@ substitutions:
 
 esphome:
   name: ${board_name}
-  
+
 esp32:
   board: esp32cam
   framework:
@@ -17,6 +17,213 @@ packages:
   base_sensors: !include packages/2common_sensors.yaml
   led: !include packages/3status_led_esp32.yaml
   esp32cam: !include packages/8esp32-cam.yaml
+
 esp32_camera:
   vertical_flip: true
   horizontal_mirror: true
+
+i2c:
+  - id: bus_oled
+    sda: GPIO14
+    scl: GPIO13
+    scan: true
+    frequency: 1MHz
+
+font:
+  - file: "gfonts://Roboto Mono"
+    id: f_console
+    size: 8
+    glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
+
+sensor:
+  - platform: homeassistant
+    id: bat1_v
+    entity_id: sensor.battair_monitor_bat1_voltage
+    internal: true
+  - platform: homeassistant
+    id: bat1_c1
+    entity_id: sensor.battair_monitor_bat1_cell_1
+    internal: true
+  - platform: homeassistant
+    id: bat1_c2
+    entity_id: sensor.battair_monitor_bat1_cell_2
+    internal: true
+  - platform: homeassistant
+    id: bat1_c3
+    entity_id: sensor.battair_monitor_bat1_cell_3
+    internal: true
+  - platform: homeassistant
+    id: bat1_c4
+    entity_id: sensor.battair_monitor_bat1_cell_4
+    internal: true
+  - platform: homeassistant
+    id: bat1_cyc
+    entity_id: sensor.battair_monitor_bat1_cycles
+    internal: true
+
+  - platform: homeassistant
+    id: bat2_v
+    entity_id: sensor.battair_monitor_bat2_voltage
+    internal: true
+  - platform: homeassistant
+    id: bat2_c1
+    entity_id: sensor.battair_monitor_bat2_cell_1
+    internal: true
+  - platform: homeassistant
+    id: bat2_c2
+    entity_id: sensor.battair_monitor_bat2_cell_2
+    internal: true
+  - platform: homeassistant
+    id: bat2_c3
+    entity_id: sensor.battair_monitor_bat2_cell_3
+    internal: true
+  - platform: homeassistant
+    id: bat2_c4
+    entity_id: sensor.battair_monitor_bat2_cell_4
+    internal: true
+  - platform: homeassistant
+    id: bat2_cyc
+    entity_id: sensor.battair_monitor_bat2_cycles
+    internal: true
+
+  - platform: homeassistant
+    id: bat3_v
+    entity_id: sensor.battair_monitor_bat3_voltage
+    internal: true
+  - platform: homeassistant
+    id: bat3_c1
+    entity_id: sensor.battair_monitor_bat3_cell_1
+    internal: true
+  - platform: homeassistant
+    id: bat3_c2
+    entity_id: sensor.battair_monitor_bat3_cell_2
+    internal: true
+  - platform: homeassistant
+    id: bat3_c3
+    entity_id: sensor.battair_monitor_bat3_cell_3
+    internal: true
+  - platform: homeassistant
+    id: bat3_c4
+    entity_id: sensor.battair_monitor_bat3_cell_4
+    internal: true
+  - platform: homeassistant
+    id: bat3_cyc
+    entity_id: sensor.battair_monitor_bat3_cycles
+    internal: true
+
+  - platform: homeassistant
+    id: bat4_v
+    entity_id: sensor.battair_monitor_bat4_voltage
+    internal: true
+  - platform: homeassistant
+    id: bat4_c1
+    entity_id: sensor.battair_monitor_bat4_cell_1
+    internal: true
+  - platform: homeassistant
+    id: bat4_c2
+    entity_id: sensor.battair_monitor_bat4_cell_2
+    internal: true
+  - platform: homeassistant
+    id: bat4_c3
+    entity_id: sensor.battair_monitor_bat4_cell_3
+    internal: true
+  - platform: homeassistant
+    id: bat4_c4
+    entity_id: sensor.battair_monitor_bat4_cell_4
+    internal: true
+  - platform: homeassistant
+    id: bat4_cyc
+    entity_id: sensor.battair_monitor_bat4_cycles
+    internal: true
+
+  - platform: homeassistant
+    id: bat5_v
+    entity_id: sensor.battair_monitor_bat5_voltage
+    internal: true
+  - platform: homeassistant
+    id: bat5_c1
+    entity_id: sensor.battair_monitor_bat5_cell_1
+    internal: true
+  - platform: homeassistant
+    id: bat5_c2
+    entity_id: sensor.battair_monitor_bat5_cell_2
+    internal: true
+  - platform: homeassistant
+    id: bat5_c3
+    entity_id: sensor.battair_monitor_bat5_cell_3
+    internal: true
+  - platform: homeassistant
+    id: bat5_c4
+    entity_id: sensor.battair_monitor_bat5_cell_4
+    internal: true
+  - platform: homeassistant
+    id: bat5_cyc
+    entity_id: sensor.battair_monitor_bat5_cycles
+    internal: true
+
+  - platform: homeassistant
+    id: bat6_v
+    entity_id: sensor.battair_monitor_bat6_voltage
+    internal: true
+  - platform: homeassistant
+    id: bat6_c1
+    entity_id: sensor.battair_monitor_bat6_cell_1
+    internal: true
+  - platform: homeassistant
+    id: bat6_c2
+    entity_id: sensor.battair_monitor_bat6_cell_2
+    internal: true
+  - platform: homeassistant
+    id: bat6_c3
+    entity_id: sensor.battair_monitor_bat6_cell_3
+    internal: true
+  - platform: homeassistant
+    id: bat6_c4
+    entity_id: sensor.battair_monitor_bat6_cell_4
+    internal: true
+  - platform: homeassistant
+    id: bat6_cyc
+    entity_id: sensor.battair_monitor_bat6_cycles
+    internal: true
+
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 128x64"
+    address: 0x3C
+    i2c_id: bus_oled
+    id: oled
+    update_interval: 2s
+    lambda: |-
+      int y = 0;
+      auto draw_bat = [&](int idx, float v, float c1, float c2, float c3, float c4, float cyc) {
+        if (!std::isfinite(v)) {
+          it.printf(0, y, id(f_console), "B%d --.--V   -    -", idx);
+        } else {
+          float cmin = std::min({c1, c2, c3, c4});
+          float cmax = std::max({c1, c2, c3, c4});
+          float d = std::isfinite(cmin) && std::isfinite(cmax) ? (cmax - cmin) : 0.0f;
+          char cyc_s[6];
+          if (std::isfinite(cyc)) snprintf(cyc_s, sizeof(cyc_s), "%dc", (int)cyc);
+          else strcpy(cyc_s, "-");
+          it.printf(0, y, id(f_console), "B%d %5.2fV d%.2f %s", idx, v, d, cyc_s);
+        }
+        y += 8;
+      };
+      draw_bat(1, id(bat1_v).state, id(bat1_c1).state, id(bat1_c2).state, id(bat1_c3).state, id(bat1_c4).state, id(bat1_cyc).state);
+      draw_bat(2, id(bat2_v).state, id(bat2_c1).state, id(bat2_c2).state, id(bat2_c3).state, id(bat2_c4).state, id(bat2_cyc).state);
+      draw_bat(3, id(bat3_v).state, id(bat3_c1).state, id(bat3_c2).state, id(bat3_c3).state, id(bat3_c4).state, id(bat3_cyc).state);
+      draw_bat(4, id(bat4_v).state, id(bat4_c1).state, id(bat4_c2).state, id(bat4_c3).state, id(bat4_c4).state, id(bat4_cyc).state);
+      draw_bat(5, id(bat5_v).state, id(bat5_c1).state, id(bat5_c2).state, id(bat5_c3).state, id(bat5_c4).state, id(bat5_cyc).state);
+      draw_bat(6, id(bat6_v).state, id(bat6_c1).state, id(bat6_c2).state, id(bat6_c3).state, id(bat6_c4).state, id(bat6_cyc).state);
+
+      int active = 0;
+      if (std::isfinite(id(bat1_v).state)) active++;
+      if (std::isfinite(id(bat2_v).state)) active++;
+      if (std::isfinite(id(bat3_v).state)) active++;
+      if (std::isfinite(id(bat4_v).state)) active++;
+      if (std::isfinite(id(bat5_v).state)) active++;
+      if (std::isfinite(id(bat6_v).state)) active++;
+
+      auto t = id(homeassistant_time).now();
+      if (t.is_valid()) it.strftime(0, 56, id(f_console), "%H:%M", t);
+      it.printf(60, 56, id(f_console), "active %d/6", active);
