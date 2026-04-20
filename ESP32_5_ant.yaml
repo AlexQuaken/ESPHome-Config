@@ -12,6 +12,7 @@ esphome:
       - lambda: |-
           id(log_lines).push_back("esp32-5-ant booted");
           id(log_lines).push_back("display OK");
+          id(oled).turn_off();
 
 esp32:
   board: esp-wrover-kit
@@ -33,6 +34,25 @@ i2c:
   scan: true
   frequency: 1MHz
   id: bus_a
+
+binary_sensor:
+  - platform: homeassistant
+    id: central_motion
+    entity_id: binary_sensor.central_motion_occupancy
+    on_press:
+      then:
+        - script.stop: display_off_delay
+        - lambda: 'id(oled).turn_on();'
+    on_release:
+      then:
+        - script.execute: display_off_delay
+
+script:
+  - id: display_off_delay
+    mode: restart
+    then:
+      - delay: 2min
+      - lambda: 'id(oled).turn_off();'
 
 font:
   - file: "gfonts://Roboto Mono"

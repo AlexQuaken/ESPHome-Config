@@ -4,6 +4,24 @@ substitutions:
 
 esphome:
   name: ${board_name}
+  on_boot:
+    priority: -100
+    then:
+      - delay: 2s
+      - lambda: |-
+          auto t = id(homeassistant_time).now();
+          if (!t.is_valid()) return;
+          if (t.hour >= 7 && t.hour < 23) id(oled).turn_on();
+          else id(oled).turn_off();
+
+interval:
+  - interval: 60s
+    then:
+      - lambda: |-
+          auto t = id(homeassistant_time).now();
+          if (!t.is_valid()) return;
+          if (t.hour >= 7 && t.hour < 23) id(oled).turn_on();
+          else id(oled).turn_off();
 
 esp32:
   board: esp32cam
@@ -33,6 +51,10 @@ font:
   - file: "gfonts://Roboto Mono"
     id: f_console
     size: 8
+    glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
+  - file: "gfonts://Roboto Mono"
+    id: f_tiny
+    size: 6
     glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
 
 sensor:
@@ -186,36 +208,48 @@ sensor:
     entity_id: sensor.battair_monitor_bat6_cycles
     internal: true
 
+  - platform: homeassistant
+    id: bat_scan_counter
+    entity_id: sensor.battair_monitor_scan_counter
+    internal: true
+    on_value:
+      then:
+        - lambda: 'id(last_scan_ms) = millis();'
+
+globals:
+  - id: last_scan_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
 display:
   - platform: ssd1306_i2c
     model: "SSD1306 128x64"
     address: 0x3C
     i2c_id: bus_oled
     id: oled
-    update_interval: 2s
+    update_interval: 1s
     lambda: |-
-      int y = 0;
-      auto draw_bat = [&](int idx, float v, float c1, float c2, float c3, float c4, float cyc) {
-        if (!std::isfinite(v)) {
-          it.printf(0, y, id(f_console), "B%d --.--V   -    -", idx);
-        } else {
-          float cmin = std::min({c1, c2, c3, c4});
-          float cmax = std::max({c1, c2, c3, c4});
-          float d = std::isfinite(cmin) && std::isfinite(cmax) ? (cmax - cmin) : 0.0f;
-          char cyc_s[6];
-          if (std::isfinite(cyc)) snprintf(cyc_s, sizeof(cyc_s), "%dc", (int)cyc);
-          else strcpy(cyc_s, "-");
-          it.printf(0, y, id(f_console), "B%d %5.2fV d%.2f %s", idx, v, d, cyc_s);
-        }
-        y += 8;
+      uint32_t t = millis();
+      auto fmt_bat = [](int idx, float v, float c1, float c2, float c3, float c4, float cyc) -> std::string {
+        char v_s[8], c1_s[6], c2_s[6], c3_s[6], c4_s[6], cyc_s[6];
+        if (std::isfinite(v)) snprintf(v_s, sizeof(v_s), "%5.2fV", v); else strcpy(v_s, "--.--V");
+        auto fc = [](char *b, float c){ if(std::isfinite(c)) snprintf(b,6,"%4.2f",c); else strcpy(b,"-.--"); };
+        fc(c1_s,c1); fc(c2_s,c2); fc(c3_s,c3); fc(c4_s,c4);
+        if (std::isfinite(cyc)) snprintf(cyc_s, sizeof(cyc_s), "%dc", (int)cyc); else strcpy(cyc_s, "-c");
+        char row[80];
+        snprintf(row, sizeof(row), "B%d %s %s %s %s %s %s", idx, v_s, c1_s, c2_s, c3_s, c4_s, cyc_s);
+        return std::string(row);
       };
-      draw_bat(1, id(bat1_v).state, id(bat1_c1).state, id(bat1_c2).state, id(bat1_c3).state, id(bat1_c4).state, id(bat1_cyc).state);
-      draw_bat(2, id(bat2_v).state, id(bat2_c1).state, id(bat2_c2).state, id(bat2_c3).state, id(bat2_c4).state, id(bat2_cyc).state);
-      draw_bat(3, id(bat3_v).state, id(bat3_c1).state, id(bat3_c2).state, id(bat3_c3).state, id(bat3_c4).state, id(bat3_cyc).state);
-      draw_bat(4, id(bat4_v).state, id(bat4_c1).state, id(bat4_c2).state, id(bat4_c3).state, id(bat4_c4).state, id(bat4_cyc).state);
-      draw_bat(5, id(bat5_v).state, id(bat5_c1).state, id(bat5_c2).state, id(bat5_c3).state, id(bat5_c4).state, id(bat5_cyc).state);
-      draw_bat(6, id(bat6_v).state, id(bat6_c1).state, id(bat6_c2).state, id(bat6_c3).state, id(bat6_c4).state, id(bat6_cyc).state);
-
+      auto draw = [&](int y, const std::string &s) {
+        it.printf(0, y, id(f_tiny), "%s", s.c_str());
+      };
+      draw(0,  fmt_bat(1, id(bat1_v).state, id(bat1_c1).state, id(bat1_c2).state, id(bat1_c3).state, id(bat1_c4).state, id(bat1_cyc).state));
+      draw(8,  fmt_bat(2, id(bat2_v).state, id(bat2_c1).state, id(bat2_c2).state, id(bat2_c3).state, id(bat2_c4).state, id(bat2_cyc).state));
+      draw(16, fmt_bat(3, id(bat3_v).state, id(bat3_c1).state, id(bat3_c2).state, id(bat3_c3).state, id(bat3_c4).state, id(bat3_cyc).state));
+      draw(24, fmt_bat(4, id(bat4_v).state, id(bat4_c1).state, id(bat4_c2).state, id(bat4_c3).state, id(bat4_c4).state, id(bat4_cyc).state));
+      draw(32, fmt_bat(5, id(bat5_v).state, id(bat5_c1).state, id(bat5_c2).state, id(bat5_c3).state, id(bat5_c4).state, id(bat5_cyc).state));
+      draw(40, fmt_bat(6, id(bat6_v).state, id(bat6_c1).state, id(bat6_c2).state, id(bat6_c3).state, id(bat6_c4).state, id(bat6_cyc).state));
       int active = 0;
       if (std::isfinite(id(bat1_v).state)) active++;
       if (std::isfinite(id(bat2_v).state)) active++;
@@ -223,7 +257,19 @@ display:
       if (std::isfinite(id(bat4_v).state)) active++;
       if (std::isfinite(id(bat5_v).state)) active++;
       if (std::isfinite(id(bat6_v).state)) active++;
-
-      auto t = id(homeassistant_time).now();
-      if (t.is_valid()) it.strftime(0, 56, id(f_console), "%H:%M", t);
-      it.printf(60, 56, id(f_console), "active %d/6", active);
+      char tm_s[12];
+      auto tt = id(homeassistant_time).now();
+      if (tt.is_valid()) snprintf(tm_s, sizeof(tm_s), "%02d:%02d:%02d", tt.hour, tt.minute, tt.second); else strcpy(tm_s, "--:--:--");
+      char upd_s[16];
+      if (id(last_scan_ms) > 0) {
+        uint32_t secs = (t - id(last_scan_ms)) / 1000;
+        if (secs < 60) snprintf(upd_s, sizeof(upd_s), "upd %us", (unsigned)secs);
+        else if (secs < 3600) snprintf(upd_s, sizeof(upd_s), "upd %um", (unsigned)(secs/60));
+        else snprintf(upd_s, sizeof(upd_s), "upd %uh%um", (unsigned)(secs/3600), (unsigned)((secs%3600)/60));
+      } else strcpy(upd_s, "upd ?");
+      char scan_s[16];
+      if (std::isfinite(id(bat_scan_counter).state)) snprintf(scan_s, sizeof(scan_s), "scan #%d", (int)id(bat_scan_counter).state);
+      else strcpy(scan_s, "scan ?");
+      char foot[80];
+      snprintf(foot, sizeof(foot), "%s %d/6 %s %s", tm_s, active, upd_s, scan_s);
+      it.printf(0, 56, id(f_tiny), "%s", foot);
