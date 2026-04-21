@@ -65,7 +65,7 @@ sensor:
     device_class: "battery"
     state_class: "measurement"
     unit_of_measurement: '%'
-    accuracy_decimals: 1
+    accuracy_decimals: 0
     icon: mdi:car-battery
     lambda: |-
       float voltage_measured = id(battery_pack_vcc_internal).state;
@@ -94,7 +94,7 @@ sensor:
       - median:
           window_size: 10
           send_every: 1
-      - round: 1
+      - round: 0
 
   - platform: pzemac
     current:
