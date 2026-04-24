@@ -1,0 +1,243 @@
+# Waveshare ESP32-C6-LCD-1.47 (без тача)
+# ST7789 172x320, лог-консоль DEBUG, зелёный текст
+substitutions:
+  board_name: 'esp32-c6-lcd'
+  static_ip: '192.168.0.215'
+  number: '215'
+  scan_duration: !secret scan_duration
+  update_interval: !secret update_interval
+  mifit_alex: !secret mifit_alex
+  mifit_ira: !secret mifit_ira
+  mifit_lila: !secret mifit_lila
+  alex_ble: !secret alex_ble
+  ira_ble: !secret ira_ble
+  lila_ble: !secret lila_ble
+
+esphome:
+  name: ${board_name}
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          id(log_lines).push_back("${board_name} booted");
+          id(log_lines).push_back("display OK");
+
+esp32:
+  board: esp32-c6-devkitc-1
+  framework:
+    type: esp-idf
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+  # BLE временно отключён — тестируем камеру, потом вернём
+  # ble_common: !include packages/ble_common.yaml
+  # ble_alex: !include packages/ble_alex.yaml
+  # ble_ira: !include packages/ble_ira.yaml
+  # ble_lila: !include packages/ble_lila.yaml
+
+spi:
+  clk_pin: GPIO7
+  mosi_pin: GPIO6
+  interface: hardware
+
+http_request:
+  timeout: 5s
+  verify_ssl: false
+  useragent: esphome/c6-lcd
+
+online_image:
+  - id: cam_img
+    url: "http://192.168.0.176:8081/"
+    format: jpeg
+    type: RGB565
+    resize: 229x172
+    update_interval: 2s
+    buffer_size: 20480
+
+output:
+  - platform: ledc
+    pin: GPIO22
+    id: backlight_pwm
+    frequency: 5000Hz
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: ${board_name} Backlight
+    id: backlight
+    restore_mode: RESTORE_DEFAULT_ON
+    default_transition_length: 300ms
+
+  - platform: esp32_rmt_led_strip
+    id: onboard_rgb
+    name: ${board_name} RGB
+    pin: GPIO8
+    num_leds: 1
+    rgb_order: GRB
+    chipset: ws2812
+    default_transition_length: 200ms
+
+font:
+  - file: "gfonts://Roboto Mono"
+    id: f_console
+    size: 10
+    glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
+
+color:
+  - id: c_green
+    red: 0%
+    green: 100%
+    blue: 0%
+  - id: c_black
+    red: 0%
+    green: 0%
+    blue: 0%
+
+globals:
+  - id: log_lines
+    type: std::vector<std::string>
+    restore_value: no
+  - id: log_max
+    type: int
+    restore_value: no
+    initial_value: '13'
+  - id: scroll_off
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: scroll_start_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: anim_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '500'
+  - id: pending_line
+    type: std::string
+    restore_value: no
+  - id: pending_time
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: has_pending
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+logger:
+  level: DEBUG
+  logs:
+    esp32_ble_tracker: INFO
+    esp32_ble: WARN
+    bluetooth_proxy: INFO
+    wifi: INFO
+    wifi_esp32: INFO
+    api: INFO
+    api.connection: INFO
+    api.service: INFO
+    mqtt: INFO
+    mqtt.component: INFO
+    mqtt.idf: INFO
+    sensor: INFO
+    text_sensor: INFO
+    component: INFO
+    scheduler: WARN
+    ble_presence: INFO
+    ble_rssi: INFO
+    xiaomi_ble: INFO
+    xiaomi_miscale: INFO
+    xiaomi_miscale2: INFO
+    atc_mithermometer: INFO
+    component_iterator: INFO
+    font: ERROR
+    display: ERROR
+    mipi_spi: ERROR
+  on_message:
+    level: DEBUG
+    then:
+      - lambda: |-
+          std::string t = tag ? tag : "";
+          if (t.find("font") != std::string::npos) return;
+          if (t.find("display") != std::string::npos) return;
+          std::string raw;
+          for (size_t i = 0; message[i] != 0; i++) {
+            unsigned char c = (unsigned char)message[i];
+            if (c == 0x1B) { while (message[i] != 0 && message[i] != 'm') i++; continue; }
+            if (c == '\r' || c == '\n') continue;
+            if (c < 0x20 || c > 0x7E) continue;
+            raw += (char)c;
+          }
+          auto p = raw.find("]: ");
+          if (p != std::string::npos) raw = raw.substr(p + 3);
+          std::string clean;
+          for (char c : raw) if (c != '\'') clean += c;
+          size_t bp;
+          while ((bp = clean.find("_ble")) != std::string::npos) clean.erase(bp, 4);
+          if (clean.empty()) return;
+          uint32_t now = millis();
+          auto &v = id(log_lines);
+          const int LINE_H = 12;
+          const int FRAME_MS = 33;
+          if (id(has_pending)) {
+            if (id(scroll_off) > 0 && id(scroll_off) < LINE_H && (int)v.size() > id(log_max)) {
+              v.erase(v.begin());
+              id(scroll_off) = 0;
+            }
+            v.push_back(id(pending_line));
+            while ((int)v.size() > 40) v.erase(v.begin());
+            if ((int)v.size() > id(log_max)) {
+              id(anim_ms) = LINE_H * FRAME_MS;
+              id(scroll_start_ms) = now;
+              id(scroll_off) = 0.0f;
+            }
+          }
+          id(pending_line) = clean;
+          id(pending_time) = now;
+          id(has_pending) = true;
+
+api:
+  services:
+    - service: console_log
+      variables:
+        line: string
+      then:
+        - lambda: |-
+            auto &v = id(log_lines);
+            std::string s = line;
+            if (s.size() > 30) s = s.substr(0, 30);
+            v.push_back(s);
+            while ((int)v.size() > id(log_max)) v.erase(v.begin());
+        - component.update: lcd
+    - service: console_clear
+      then:
+        - lambda: 'id(log_lines).clear();'
+        - component.update: lcd
+
+display:
+  - platform: mipi_spi
+    model: ST7789V
+    dimensions:
+      width: 320
+      height: 172
+      offset_width: 0
+      offset_height: 34
+    cs_pin: GPIO14
+    dc_pin: GPIO15
+    reset_pin: GPIO21
+    id: lcd
+    spi_mode: MODE3
+    data_rate: 40MHz
+    color_order: bgr
+    color_depth: 16
+    invert_colors: true
+    transform:
+      swap_xy: true
+      mirror_x: true
+      mirror_y: false
+    buffer_size: 50%
+    update_interval: 500ms
+    lambda: |-
+      it.fill(Color::BLACK);
+      it.image(45, 0, id(cam_img));
