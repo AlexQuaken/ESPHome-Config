@@ -30,30 +30,15 @@ esp32:
 packages:
   device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
   base_sensors: !include packages/2common_sensors.yaml
-  # BLE временно отключён — тестируем камеру, потом вернём
-  # ble_common: !include packages/ble_common.yaml
-  # ble_alex: !include packages/ble_alex.yaml
-  # ble_ira: !include packages/ble_ira.yaml
-  # ble_lila: !include packages/ble_lila.yaml
+  ble_common: !include packages/ble_common.yaml
+  ble_alex: !include packages/ble_alex.yaml
+  ble_ira: !include packages/ble_ira.yaml
+  ble_lila: !include packages/ble_lila.yaml
 
 spi:
   clk_pin: GPIO7
   mosi_pin: GPIO6
   interface: hardware
-
-http_request:
-  timeout: 5s
-  verify_ssl: false
-  useragent: esphome/c6-lcd
-
-online_image:
-  - id: cam_img
-    url: "http://192.168.0.176:8081/"
-    format: jpeg
-    type: RGB565
-    resize: 229x172
-    update_interval: 2s
-    buffer_size: 20480
 
 output:
   - platform: ledc
@@ -81,7 +66,7 @@ light:
 font:
   - file: "gfonts://Roboto Mono"
     id: f_console
-    size: 10
+    size: 12
     glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
 
 color:
@@ -101,7 +86,7 @@ globals:
   - id: log_max
     type: int
     restore_value: no
-    initial_value: '13'
+    initial_value: '12'
   - id: scroll_off
     type: float
     restore_value: no
@@ -129,28 +114,6 @@ globals:
 logger:
   level: DEBUG
   logs:
-    esp32_ble_tracker: INFO
-    esp32_ble: WARN
-    bluetooth_proxy: INFO
-    wifi: INFO
-    wifi_esp32: INFO
-    api: INFO
-    api.connection: INFO
-    api.service: INFO
-    mqtt: INFO
-    mqtt.component: INFO
-    mqtt.idf: INFO
-    sensor: INFO
-    text_sensor: INFO
-    component: INFO
-    scheduler: WARN
-    ble_presence: INFO
-    ble_rssi: INFO
-    xiaomi_ble: INFO
-    xiaomi_miscale: INFO
-    xiaomi_miscale2: INFO
-    atc_mithermometer: INFO
-    component_iterator: INFO
     font: ERROR
     display: ERROR
     mipi_spi: ERROR
@@ -173,12 +136,10 @@ logger:
           if (p != std::string::npos) raw = raw.substr(p + 3);
           std::string clean;
           for (char c : raw) if (c != '\'') clean += c;
-          size_t bp;
-          while ((bp = clean.find("_ble")) != std::string::npos) clean.erase(bp, 4);
           if (clean.empty()) return;
           uint32_t now = millis();
           auto &v = id(log_lines);
-          const int LINE_H = 12;
+          const int LINE_H = 14;
           const int FRAME_MS = 33;
           if (id(has_pending)) {
             if (id(scroll_off) > 0 && id(scroll_off) < LINE_H && (int)v.size() > id(log_max)) {
@@ -237,7 +198,50 @@ display:
       mirror_x: true
       mirror_y: false
     buffer_size: 50%
-    update_interval: 500ms
+    update_interval: 33ms
     lambda: |-
-      it.fill(Color::BLACK);
-      it.image(45, 0, id(cam_img));
+      const int LINE_H = 14;
+      const int FRAME_MS = 33;
+      const int GAP = 40;
+      uint32_t t = millis();
+      auto &v = id(log_lines);
+      if (id(has_pending) && (t - id(pending_time)) > 2000) {
+        if (id(scroll_off) > 0 && id(scroll_off) < LINE_H && (int)v.size() > id(log_max)) {
+          v.erase(v.begin());
+          id(scroll_off) = 0;
+        }
+        v.push_back(id(pending_line));
+        while ((int)v.size() > 40) v.erase(v.begin());
+        if ((int)v.size() > id(log_max)) {
+          id(anim_ms) = LINE_H * FRAME_MS;
+          id(scroll_start_ms) = t;
+          id(scroll_off) = 0.0f;
+        }
+        id(has_pending) = false;
+      }
+      if ((int)v.size() > id(log_max)) {
+        uint32_t elapsed = t - id(scroll_start_ms);
+        float o = (float)elapsed * (float)LINE_H / (float)id(anim_ms);
+        if (o > (float)LINE_H) o = (float)LINE_H;
+        id(scroll_off) = o;
+        if (o >= (float)LINE_H) { v.erase(v.begin()); id(scroll_off) = 0.0f; }
+      }
+      int W = it.get_width();
+      int n = (int)v.size();
+      int yoff = (int)(id(scroll_off) + 0.5f);
+      for (int i = 0; i < n; i++) {
+        int y = i * LINE_H - yoff;
+        if (y >= it.get_height()) continue;
+        if (y + LINE_H <= 0) continue;
+        auto &s = v[i];
+        int xb, yb, w, h;
+        it.get_text_bounds(0, 0, s.c_str(), id(f_console), TextAlign::TOP_LEFT, &xb, &yb, &w, &h);
+        if (w <= W) {
+          it.printf(0, y, id(f_console), id(c_green), "%s", s.c_str());
+        } else {
+          int cycle = w + GAP;
+          int off_x = ((int)(t * 0.075f)) % cycle;
+          it.printf(-off_x, y, id(f_console), id(c_green), "%s", s.c_str());
+          it.printf(-off_x + cycle, y, id(f_console), id(c_green), "%s", s.c_str());
+        }
+      }
