@@ -64,9 +64,10 @@ light:
     default_transition_length: 200ms
 
 font:
-  - file: "gfonts://Roboto Mono"
+  - file: "fonts/Ac437_Acer710_Mono.ttf"
     id: f_console
-    size: 12
+    size: 16
+    bpp: 1
     glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
 
 color:
@@ -203,6 +204,7 @@ display:
       const int LINE_H = 14;
       const int FRAME_MS = 33;
       const int GAP = 40;
+      const int CLOCK_GAP = 10;
       uint32_t t = millis();
       auto &v = id(log_lines);
       if (id(has_pending) && (t - id(pending_time)) > 2000) {
@@ -227,16 +229,32 @@ display:
         if (o >= (float)LINE_H) { v.erase(v.begin()); id(scroll_off) = 0.0f; }
       }
       int W = it.get_width();
+      int H = it.get_height();
       int n = (int)v.size();
       int yoff = (int)(id(scroll_off) + 0.5f);
+
+      char clk[32];
+      auto tn = id(homeassistant_time).now();
+      unsigned msec = (unsigned)(t % 1000);
+      if (tn.is_valid()) {
+        snprintf(clk, sizeof(clk), "%02d:%02d:%02d %03u", tn.hour, tn.minute, tn.second, msec);
+      } else {
+        snprintf(clk, sizeof(clk), "--:--:-- %03u", msec);
+      }
+      int cxb, cyb, cw, chh;
+      it.get_text_bounds(0, 0, clk, id(f_console), TextAlign::TOP_LEFT, &cxb, &cyb, &cw, &chh);
+      int line_w_top = W - cw - CLOCK_GAP;
+      if (line_w_top < 1) line_w_top = 1;
+
       for (int i = 0; i < n; i++) {
         int y = i * LINE_H - yoff;
-        if (y >= it.get_height()) continue;
+        if (y >= H) continue;
         if (y + LINE_H <= 0) continue;
         auto &s = v[i];
         int xb, yb, w, h;
         it.get_text_bounds(0, 0, s.c_str(), id(f_console), TextAlign::TOP_LEFT, &xb, &yb, &w, &h);
-        if (w <= W) {
+        int avail = (y < LINE_H) ? line_w_top : W;
+        if (w <= avail) {
           it.printf(0, y, id(f_console), id(c_green), "%s", s.c_str());
         } else {
           int cycle = w + GAP;
@@ -245,3 +263,6 @@ display:
           it.printf(-off_x + cycle, y, id(f_console), id(c_green), "%s", s.c_str());
         }
       }
+
+      it.filled_rectangle(line_w_top, 0, W - line_w_top, LINE_H, id(c_black));
+      it.printf(W, 0, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", clk);
