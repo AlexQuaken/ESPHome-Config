@@ -1,4 +1,5 @@
-#В центральной возле роутера
+# В центральной возле роутера
+# ST7789 1.9" 170x320, лог-консоль DEBUG + часы (по аналогии с esp32-c6-lcd)
 substitutions:
   board_name: 'esp32-17'
   static_ip: '192.168.0.179'
@@ -6,11 +7,26 @@ substitutions:
 
 esphome:
   name: ${board_name}
-  
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          id(log_lines).push_back("${board_name} booted");
+          id(log_lines).push_back("display OK");
+
 esp32:
   board: esp-wrover-kit
   framework:
     type: esp-idf
+    sdkconfig_options:
+      CONFIG_BT_CONTROLLER_MODE_BLE_ONLY: y
+
+interval:
+  - interval: 10s
+    then:
+      - lambda: |-
+          ESP_LOGI("hb", "up=%lus heap=%uKB fps=%u", (unsigned long)(millis()/1000), (unsigned)(esp_get_free_heap_size()/1024), (unsigned)(id(frame_counter)/10));
+          id(frame_counter) = 0;
 
 packages:
   device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
@@ -20,3 +36,235 @@ packages:
   ble_alex: !include packages/ble_alex.yaml
   ble_ira: !include packages/ble_ira.yaml
   ble_lila: !include packages/ble_lila.yaml
+
+spi:
+  clk_pin: GPIO18
+  mosi_pin: GPIO23
+  interface: hardware
+
+output:
+  - platform: ledc
+    pin: GPIO25
+    id: backlight_pwm
+    frequency: 5000Hz
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: ${board_name} Backlight
+    id: backlight
+    restore_mode: RESTORE_DEFAULT_ON
+    default_transition_length: 300ms
+
+font:
+  - file: "fonts/Tamzen5x9r.ttf"
+    id: f_console
+    size: 9
+    bpp: 1
+    glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
+
+color:
+  - id: c_green
+    red: 0%
+    green: 100%
+    blue: 0%
+  - id: c_black
+    red: 0%
+    green: 0%
+    blue: 0%
+
+globals:
+  - id: log_lines
+    type: std::vector<std::string>
+    restore_value: no
+  - id: log_max
+    type: int
+    restore_value: no
+    initial_value: '18'
+  - id: scroll_off
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: scroll_start_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: anim_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '500'
+  - id: pending_line
+    type: std::string
+    restore_value: no
+  - id: pending_time
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: has_pending
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: frame_counter
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+logger:
+  level: DEBUG
+  logs:
+    font: ERROR
+    display: ERROR
+    mipi_spi: ERROR
+    component: ERROR
+    scheduler: ERROR
+  on_message:
+    level: DEBUG
+    then:
+      - lambda: |-
+          std::string t = tag ? tag : "";
+          if (t.find("font") != std::string::npos) return;
+          if (t.find("display") != std::string::npos) return;
+          std::string raw;
+          for (size_t i = 0; message[i] != 0; i++) {
+            unsigned char c = (unsigned char)message[i];
+            if (c == 0x1B) { while (message[i] != 0 && message[i] != 'm') i++; continue; }
+            if (c == '\r' || c == '\n') continue;
+            if (c < 0x20 || c > 0x7E) continue;
+            raw += (char)c;
+          }
+          auto p = raw.find("]: ");
+          if (p != std::string::npos) raw = raw.substr(p + 3);
+          std::string clean;
+          for (char c : raw) if (c != '\'') clean += c;
+          if (clean.empty()) return;
+          uint32_t now = millis();
+          auto &v = id(log_lines);
+          const int LINE_H = 9;
+          const int FRAME_MS = 16;
+          if (id(has_pending)) {
+            if (id(scroll_off) > 0 && id(scroll_off) < LINE_H && (int)v.size() > id(log_max)) {
+              v.erase(v.begin());
+              id(scroll_off) = 0;
+            }
+            v.push_back(id(pending_line));
+            while ((int)v.size() > 40) v.erase(v.begin());
+            if ((int)v.size() > id(log_max)) {
+              id(anim_ms) = LINE_H * FRAME_MS;
+              id(scroll_start_ms) = now;
+              id(scroll_off) = 0.0f;
+            }
+          }
+          id(pending_line) = clean;
+          id(pending_time) = now;
+          id(has_pending) = true;
+
+api:
+  services:
+    - service: console_log
+      variables:
+        line: string
+      then:
+        - lambda: |-
+            auto &v = id(log_lines);
+            std::string s = line;
+            if (s.size() > 30) s = s.substr(0, 30);
+            v.push_back(s);
+            while ((int)v.size() > id(log_max)) v.erase(v.begin());
+        - component.update: lcd
+    - service: console_clear
+      then:
+        - lambda: 'id(log_lines).clear();'
+        - component.update: lcd
+
+display:
+  - platform: mipi_spi
+    model: ST7789V
+    dimensions:
+      width: 320
+      height: 176
+      offset_width: 0
+      offset_height: 35
+    cs_pin: GPIO33
+    dc_pin: GPIO27
+    reset_pin: GPIO26
+    id: lcd
+    spi_mode: MODE3
+    data_rate: 80MHz
+    color_order: bgr
+    color_depth: 16
+    invert_colors: true
+    transform:
+      swap_xy: true
+      mirror_x: true
+      mirror_y: false
+    buffer_size: 25%
+    update_interval: 33ms
+    lambda: |-
+      const int LINE_H = 9;
+      const int FRAME_MS = 16;
+      const int GAP = 40;
+      const int CLOCK_GAP = 10;
+      id(frame_counter)++;
+      uint32_t t = millis();
+      auto &v = id(log_lines);
+      if ((int)v.size() > id(log_max)) {
+        uint32_t elapsed = t - id(scroll_start_ms);
+        float o = (float)elapsed * (float)LINE_H / (float)id(anim_ms);
+        if (o > (float)LINE_H) o = (float)LINE_H;
+        id(scroll_off) = o;
+        if (o >= (float)LINE_H) { v.erase(v.begin()); id(scroll_off) = 0.0f; }
+      }
+      int W = it.get_width();
+      int H = it.get_height();
+      int n = (int)v.size();
+      int yoff = (int)(id(scroll_off) + 0.5f);
+
+      char clk[32];
+      auto tn = id(homeassistant_time).now();
+      unsigned msec = (unsigned)(t % 1000);
+      if (tn.is_valid()) {
+        snprintf(clk, sizeof(clk), "%02d:%02d:%02d %03u", tn.hour, tn.minute, tn.second, msec);
+      } else {
+        snprintf(clk, sizeof(clk), "--:--:-- %03u", msec);
+      }
+      int cw = (int)strlen(clk) * 5;
+      int line_w_top = W - cw - CLOCK_GAP;
+      if (line_w_top < 1) line_w_top = 1;
+
+      const int TOP_PAD = 0;
+      for (int i = 0; i < n; i++) {
+        int y = i * LINE_H - yoff + TOP_PAD;
+        if (y >= H) continue;
+        if (y + LINE_H <= 0) continue;
+        auto &s = v[i];
+        int w = (int)s.size() * 5;
+        int avail = (y < LINE_H + TOP_PAD) ? line_w_top : W;
+        if (w <= avail) {
+          it.printf(0, y, id(f_console), id(c_green), "%s", s.c_str());
+        } else {
+          int cycle = w + GAP;
+          int off_x = ((int)(t * 0.075f)) % cycle;
+          it.printf(-off_x, y, id(f_console), id(c_green), "%s", s.c_str());
+          it.printf(-off_x + cycle, y, id(f_console), id(c_green), "%s", s.c_str());
+        }
+      }
+
+      if (id(has_pending)) {
+        int y = n * LINE_H - yoff + TOP_PAD;
+        if (y < H && y + LINE_H > 0) {
+          auto &s = id(pending_line);
+          int w = (int)s.size() * 5;
+          int avail = (y < LINE_H + TOP_PAD) ? line_w_top : W;
+          if (w <= avail) {
+            it.printf(0, y, id(f_console), id(c_green), "%s", s.c_str());
+          } else {
+            int cycle = w + GAP;
+            int off_x = ((int)(t * 0.075f)) % cycle;
+            it.printf(-off_x, y, id(f_console), id(c_green), "%s", s.c_str());
+            it.printf(-off_x + cycle, y, id(f_console), id(c_green), "%s", s.c_str());
+          }
+        }
+      }
+
+      it.filled_rectangle(line_w_top, 0, W - line_w_top, LINE_H, id(c_black));
+      it.printf(W, 0, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", clk);
