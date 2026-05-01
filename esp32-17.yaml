@@ -1,5 +1,6 @@
 # В центральной возле роутера
-# ST7789 1.9" 170x320, лог-консоль DEBUG + часы (по аналогии с esp32-c6-lcd)
+# ST7789 1.9" 170x320, 2 режима: лог-консоль / BLE radar
+# Переключение через switch.esp32_17_radar_mode в HA (OFF=log, ON=radar)
 substitutions:
   board_name: 'esp32-17'
   static_ip: '192.168.0.179'
@@ -25,7 +26,7 @@ interval:
   - interval: 10s
     then:
       - lambda: |-
-          ESP_LOGI("hb", "up=%lus heap=%uKB fps=%u", (unsigned long)(millis()/1000), (unsigned)(esp_get_free_heap_size()/1024), (unsigned)(id(frame_counter)/10));
+          ESP_LOGI("hb", "up=%lus heap=%uKB fps=%u dev=%u mode=%d", (unsigned long)(millis()/1000), (unsigned)(esp_get_free_heap_size()/1024), (unsigned)(id(frame_counter)/10), (unsigned)id(dev_addr).size(), id(display_mode));
           id(frame_counter) = 0;
 
 packages:
@@ -36,6 +37,47 @@ packages:
   ble_alex: !include packages/ble_alex.yaml
   ble_ira: !include packages/ble_ira.yaml
   ble_lila: !include packages/ble_lila.yaml
+
+esp32_ble_tracker:
+  on_ble_advertise:
+    - then:
+        - lambda: |-
+            std::string addr = x.address_str();
+            std::string name = x.get_name();
+            int rssi = x.get_rssi();
+            uint32_t now = millis();
+            auto &addrs = id(dev_addr);
+            auto &names = id(dev_name);
+            auto &rssis = id(dev_rssi);
+            auto &seens = id(dev_seen);
+            int idx = -1;
+            for (size_t i = 0; i < addrs.size(); i++) {
+              if (addrs[i] == addr) { idx = (int)i; break; }
+            }
+            if (idx >= 0) {
+              rssis[idx] = rssi;
+              seens[idx] = now;
+              if (!name.empty() && names[idx].empty()) names[idx] = name;
+            } else {
+              auto &painted = id(dev_painted);
+              if ((int)addrs.size() >= 20) {
+                size_t oldest = 0;
+                uint32_t oldest_t = seens[0];
+                for (size_t i = 1; i < seens.size(); i++) {
+                  if (seens[i] < oldest_t) { oldest_t = seens[i]; oldest = i; }
+                }
+                addrs.erase(addrs.begin() + oldest);
+                names.erase(names.begin() + oldest);
+                rssis.erase(rssis.begin() + oldest);
+                seens.erase(seens.begin() + oldest);
+                painted.erase(painted.begin() + oldest);
+              }
+              addrs.push_back(addr);
+              names.push_back(name);
+              rssis.push_back(rssi);
+              seens.push_back(now);
+              painted.push_back(0);
+            }
 
 spi:
   clk_pin: GPIO18
@@ -56,6 +98,18 @@ light:
     restore_mode: RESTORE_DEFAULT_ON
     default_transition_length: 300ms
 
+# Переключатель режима дисплея в HA: OFF=лог-консоль, ON=BLE radar
+switch:
+  - platform: template
+    name: ${board_name} Radar Mode
+    id: radar_mode_sw
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    turn_on_action:
+      - lambda: 'id(display_mode) = 1;'
+    turn_off_action:
+      - lambda: 'id(display_mode) = 0;'
+
 font:
   - file: "fonts/Tamzen5x9r.ttf"
     id: f_console
@@ -68,12 +122,21 @@ color:
     red: 0%
     green: 100%
     blue: 0%
+  - id: c_dim
+    red: 0%
+    green: 30%
+    blue: 0%
+  - id: c_amber
+    red: 100%
+    green: 70%
+    blue: 0%
   - id: c_black
     red: 0%
     green: 0%
     blue: 0%
 
 globals:
+  # Log console state
   - id: log_lines
     type: std::vector<std::string>
     restore_value: no
@@ -104,6 +167,32 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  # BLE radar state
+  - id: dev_addr
+    type: std::vector<std::string>
+    restore_value: no
+  - id: dev_name
+    type: std::vector<std::string>
+    restore_value: no
+  - id: dev_rssi
+    type: std::vector<int>
+    restore_value: no
+  - id: dev_seen
+    type: std::vector<uint32_t>
+    restore_value: no
+  - id: dev_painted
+    type: std::vector<uint32_t>
+    restore_value: no
+  - id: prev_sweep
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  # Mode (0=log, 1=radar). По умолчанию log; auto-switch на radar при HA коннекте
+  - id: display_mode
+    type: int
+    restore_value: no
+    initial_value: '0'
+  # FPS counter
   - id: frame_counter
     type: uint32_t
     restore_value: no
@@ -159,6 +248,10 @@ logger:
           id(has_pending) = true;
 
 api:
+  on_client_connected:
+    - lambda: |-
+        id(display_mode) = 1;
+        id(radar_mode_sw).publish_state(true);
   services:
     - service: console_log
       variables:
@@ -175,6 +268,11 @@ api:
       then:
         - lambda: 'id(log_lines).clear();'
         - component.update: lcd
+    - service: set_display_mode
+      variables:
+        mode: int
+      then:
+        - lambda: 'id(display_mode) = mode;'
 
 display:
   - platform: mipi_spi
@@ -200,59 +298,46 @@ display:
     buffer_size: 25%
     update_interval: 33ms
     lambda: |-
-      const int LINE_H = 9;
-      const int FRAME_MS = 16;
-      const int GAP = 40;
-      const int CLOCK_GAP = 10;
       id(frame_counter)++;
       uint32_t t = millis();
-      auto &v = id(log_lines);
-      if ((int)v.size() > id(log_max)) {
-        uint32_t elapsed = t - id(scroll_start_ms);
-        float o = (float)elapsed * (float)LINE_H / (float)id(anim_ms);
-        if (o > (float)LINE_H) o = (float)LINE_H;
-        id(scroll_off) = o;
-        if (o >= (float)LINE_H) { v.erase(v.begin()); id(scroll_off) = 0.0f; }
-      }
       int W = it.get_width();
       int H = it.get_height();
-      int n = (int)v.size();
-      int yoff = (int)(id(scroll_off) + 0.5f);
 
-      char clk[32];
-      auto tn = id(homeassistant_time).now();
-      unsigned msec = (unsigned)(t % 1000);
-      if (tn.is_valid()) {
-        snprintf(clk, sizeof(clk), "%02d:%02d:%02d %03u", tn.hour, tn.minute, tn.second, msec);
-      } else {
-        snprintf(clk, sizeof(clk), "--:--:-- %03u", msec);
-      }
-      int cw = (int)strlen(clk) * 5;
-      int line_w_top = W - cw - CLOCK_GAP;
-      if (line_w_top < 1) line_w_top = 1;
-
-      const int TOP_PAD = 0;
-      for (int i = 0; i < n; i++) {
-        int y = i * LINE_H - yoff + TOP_PAD;
-        if (y >= H) continue;
-        if (y + LINE_H <= 0) continue;
-        auto &s = v[i];
-        int w = (int)s.size() * 5;
-        int avail = (y < LINE_H + TOP_PAD) ? line_w_top : W;
-        if (w <= avail) {
-          it.printf(0, y, id(f_console), id(c_green), "%s", s.c_str());
-        } else {
-          int cycle = w + GAP;
-          int off_x = ((int)(t * 0.075f)) % cycle;
-          it.printf(-off_x, y, id(f_console), id(c_green), "%s", s.c_str());
-          it.printf(-off_x + cycle, y, id(f_console), id(c_green), "%s", s.c_str());
+      if (id(display_mode) == 0) {
+        // ============ LOG CONSOLE MODE ============
+        const int LINE_H = 9;
+        const int FRAME_MS = 16;
+        const int GAP = 40;
+        const int CLOCK_GAP = 10;
+        auto &v = id(log_lines);
+        if ((int)v.size() > id(log_max)) {
+          uint32_t elapsed = t - id(scroll_start_ms);
+          float o = (float)elapsed * (float)LINE_H / (float)id(anim_ms);
+          if (o > (float)LINE_H) o = (float)LINE_H;
+          id(scroll_off) = o;
+          if (o >= (float)LINE_H) { v.erase(v.begin()); id(scroll_off) = 0.0f; }
         }
-      }
+        int n = (int)v.size();
+        int yoff = (int)(id(scroll_off) + 0.5f);
 
-      if (id(has_pending)) {
-        int y = n * LINE_H - yoff + TOP_PAD;
-        if (y < H && y + LINE_H > 0) {
-          auto &s = id(pending_line);
+        char clk[32];
+        auto tn = id(homeassistant_time).now();
+        unsigned msec = (unsigned)(t % 1000);
+        if (tn.is_valid()) {
+          snprintf(clk, sizeof(clk), "%02d:%02d:%02d %03u", tn.hour, tn.minute, tn.second, msec);
+        } else {
+          snprintf(clk, sizeof(clk), "--:--:-- %03u", msec);
+        }
+        int cw = (int)strlen(clk) * 5;
+        int line_w_top = W - cw - CLOCK_GAP;
+        if (line_w_top < 1) line_w_top = 1;
+
+        const int TOP_PAD = 0;
+        for (int i = 0; i < n; i++) {
+          int y = i * LINE_H - yoff + TOP_PAD;
+          if (y >= H) continue;
+          if (y + LINE_H <= 0) continue;
+          auto &s = v[i];
           int w = (int)s.size() * 5;
           int avail = (y < LINE_H + TOP_PAD) ? line_w_top : W;
           if (w <= avail) {
@@ -264,7 +349,146 @@ display:
             it.printf(-off_x + cycle, y, id(f_console), id(c_green), "%s", s.c_str());
           }
         }
-      }
 
-      it.filled_rectangle(line_w_top, 0, W - line_w_top, LINE_H, id(c_black));
-      it.printf(W, 0, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", clk);
+        if (id(has_pending)) {
+          int y = n * LINE_H - yoff + TOP_PAD;
+          if (y < H && y + LINE_H > 0) {
+            auto &s = id(pending_line);
+            int w = (int)s.size() * 5;
+            int avail = (y < LINE_H + TOP_PAD) ? line_w_top : W;
+            if (w <= avail) {
+              it.printf(0, y, id(f_console), id(c_green), "%s", s.c_str());
+            } else {
+              int cycle = w + GAP;
+              int off_x = ((int)(t * 0.075f)) % cycle;
+              it.printf(-off_x, y, id(f_console), id(c_green), "%s", s.c_str());
+              it.printf(-off_x + cycle, y, id(f_console), id(c_green), "%s", s.c_str());
+            }
+          }
+        }
+
+        it.filled_rectangle(line_w_top, 0, W - line_w_top, LINE_H, id(c_black));
+        it.printf(W, 0, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", clk);
+      } else {
+        // ============ BLE RADAR MODE ============
+        const int cx = 88;
+        const int cy = 88;
+        const int max_r = 80;
+
+        it.circle(cx, cy, 27, id(c_dim));
+        it.circle(cx, cy, 53, id(c_dim));
+        it.circle(cx, cy, max_r, id(c_green));
+        it.line(cx - max_r, cy, cx + max_r, cy, id(c_dim));
+        it.line(cx, cy - max_r, cx, cy + max_r, id(c_dim));
+
+        // Sweep with fading trail (1 rev / 6s)
+        float sw = (float)(t % 6000) / 6000.0f * 6.28318f;
+        for (int i = 36; i >= 1; i--) {
+          float a = sw - (float)i * 0.02f;
+          if (a < 0) a += 6.28318f;
+          int sx = cx + (int)(cosf(a) * (float)max_r);
+          int sy = cy + (int)(sinf(a) * (float)max_r);
+          int intensity = 200 - i * 5;
+          if (intensity < 15) intensity = 15;
+          it.line(cx, cy, sx, sy, Color(0, intensity, 0));
+        }
+        // Main sweep line — brightest
+        int sx0 = cx + (int)(cosf(sw) * (float)max_r);
+        int sy0 = cy + (int)(sinf(sw) * (float)max_r);
+        it.line(cx, cy, sx0, sy0, Color(120, 255, 120));
+
+        auto &addrs = id(dev_addr);
+        auto &names = id(dev_name);
+        auto &rssis = id(dev_rssi);
+        auto &seens = id(dev_seen);
+        auto &painted = id(dev_painted);
+
+        // Cleanup older than 30s
+        for (int i = (int)addrs.size() - 1; i >= 0; i--) {
+          if (t - seens[i] > 30000) {
+            addrs.erase(addrs.begin() + i);
+            names.erase(names.begin() + i);
+            rssis.erase(rssis.begin() + i);
+            seens.erase(seens.begin() + i);
+            painted.erase(painted.begin() + i);
+          }
+        }
+
+        // Update painted: if sweep crossed device angle since last frame -> repaint
+        float prev = id(prev_sweep);
+        for (size_t i = 0; i < addrs.size(); i++) {
+          uint32_t h = 0;
+          for (char c : addrs[i]) h = h * 31u + (uint8_t)c;
+          float ang = (float)(h % 360) * 0.0174533f;
+          bool crossed = false;
+          if (prev <= sw) {
+            if (ang > prev && ang <= sw) crossed = true;
+          } else {
+            // wraparound 2pi -> 0
+            if (ang > prev || ang <= sw) crossed = true;
+          }
+          if (crossed) painted[i] = t;
+        }
+        id(prev_sweep) = sw;
+
+        // Plot dots — only visible 2.5s after sweep crossing, blip-and-fade
+        for (size_t i = 0; i < addrs.size(); i++) {
+          if (painted[i] == 0) continue;
+          uint32_t age = t - painted[i];
+          if (age > 5000) continue;
+          int rssi = rssis[i];
+          int dist = ((-40 - rssi) * 78) / 60;
+          if (dist < 5) dist = 5;
+          if (dist > 78) dist = 78;
+          uint32_t h = 0;
+          for (char c : addrs[i]) h = h * 31u + (uint8_t)c;
+          float ang = (float)(h % 360) * 0.0174533f;
+          int dx = cx + (int)(cosf(ang) * (float)dist);
+          int dy = cy + (int)(sinf(ang) * (float)dist);
+          int intensity = 240 - (int)((float)age * 240.0f / 5000.0f);
+          if (intensity < 0) intensity = 0;
+          int dot_r = (age < 200) ? 3 : 2;
+          it.filled_circle(dx, dy, dot_r, Color(0, intensity, 0));
+        }
+
+        // Sidebar
+        int sb_x = 178;
+        char hdr[24];
+        snprintf(hdr, sizeof(hdr), "DEVICES %u", (unsigned)addrs.size());
+        it.printf(sb_x, 0, id(f_console), id(c_green), "%s", hdr);
+        it.line(sb_x, 11, W - 1, 11, id(c_dim));
+
+        std::vector<size_t> idxs(addrs.size());
+        for (size_t i = 0; i < idxs.size(); i++) idxs[i] = i;
+        std::sort(idxs.begin(), idxs.end(), [&](size_t a, size_t b){ return rssis[a] > rssis[b]; });
+
+        int row_y = 14;
+        const int row_h = 11;
+        const int max_rows = 13;
+        for (size_t i = 0; i < idxs.size() && (int)i < max_rows; i++) {
+          size_t k = idxs[i];
+          std::string nm = names[k];
+          if (nm.empty()) {
+            std::string a = addrs[k];
+            std::string clean;
+            for (char c : a) if (c != ':') clean += c;
+            if (clean.size() > 6) nm = clean.substr(clean.size() - 6);
+            else nm = clean;
+          }
+          if (nm.size() > 14) nm = nm.substr(0, 14);
+          char buf[40];
+          snprintf(buf, sizeof(buf), "%-14s%4d", nm.c_str(), rssis[k]);
+          bool fresh = (t - seens[k]) < 5000;
+          auto col = fresh ? id(c_green) : id(c_dim);
+          it.printf(sb_x, row_y, id(f_console), col, "%s", buf);
+          row_y += row_h;
+        }
+
+        // Clock + status
+        char clk[16];
+        auto tn = id(homeassistant_time).now();
+        if (tn.is_valid()) snprintf(clk, sizeof(clk), "%02d:%02d:%02d", tn.hour, tn.minute, tn.second);
+        else snprintf(clk, sizeof(clk), "--:--:--");
+        it.printf(W - 1, 160, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", clk);
+        it.printf(0, 160, id(f_console), id(c_green), "RADAR ACTIVE");
+      }
