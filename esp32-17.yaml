@@ -28,6 +28,66 @@ interval:
       - lambda: |-
           ESP_LOGI("hb", "up=%lus heap=%uKB fps=%u dev=%u mode=%d", (unsigned long)(millis()/1000), (unsigned)(esp_get_free_heap_size()/1024), (unsigned)(id(frame_counter)/10), (unsigned)id(dev_addr).size(), id(display_mode));
           id(frame_counter) = 0;
+  # Авто-переключение на radar через 60s после boot (без блокирующего delay)
+  - interval: 5s
+    then:
+      - lambda: |-
+          if (id(display_mode) == 0 && millis() > 60000) {
+            id(display_mode) = 1;
+            id(radar_mode_sw).publish_state(true);
+            ESP_LOGI("auto", "Auto-switched to radar mode after 60s");
+          }
+  # Раз в секунду: cleanup старых + пересчёт кэша (одно место чтобы индексы не сдвигались между кадрами)
+  - interval: 1s
+    then:
+      - lambda: |-
+          uint32_t t = millis();
+          auto &addrs = id(dev_addr);
+          auto &names = id(dev_name);
+          auto &rssis = id(dev_rssi);
+          auto &rssis0 = id(dev_rssi0);
+          auto &seens = id(dev_seen);
+          auto &painted = id(dev_painted);
+          auto &dists = id(dev_dist);
+          if (dists.size() < addrs.size()) dists.resize(addrs.size(), 0);
+          auto &scan_ids = id(dev_scan_id);
+          // Resize parallel vectors if shorter (safety)
+          if (dists.size() < addrs.size()) dists.resize(addrs.size(), 0);
+          if (scan_ids.size() < addrs.size()) scan_ids.resize(addrs.size(), 0);
+          // Cleanup записей старше 30s
+          for (int i = (int)addrs.size() - 1; i >= 0; i--) {
+            if (t - seens[i] > 30000) {
+              addrs.erase(addrs.begin() + i);
+              names.erase(names.begin() + i);
+              rssis.erase(rssis.begin() + i);
+              rssis0.erase(rssis0.begin() + i);
+              seens.erase(seens.begin() + i);
+              painted.erase(painted.begin() + i);
+              if (i < (int)dists.size()) dists.erase(dists.begin() + i);
+              if (i < (int)scan_ids.size()) scan_ids.erase(scan_ids.begin() + i);
+            }
+          }
+          auto &cache = id(cache_radar_idx);
+          cache.clear();
+          // unique active within last 60s with name OR known mac
+          int uniq = 0;
+          std::vector<std::string> seen_macs;
+          seen_macs.reserve(addrs.size());
+          for (int ii = (int)addrs.size() - 1; ii >= 0; ii--) {
+            size_t i = (size_t)ii;
+            if (t - seens[i] > 60000) continue;
+            bool dup = false;
+            for (auto &s : seen_macs) if (s == addrs[i]) { dup = true; break; }
+            if (dup) continue;
+            seen_macs.push_back(addrs[i]);
+            uniq++;
+            // For radar — only named or known
+            bool known = (strcasecmp(addrs[i].c_str(), "DE:AD:51:6E:27:C5") == 0
+                       || strcasecmp(addrs[i].c_str(), "CE:CD:12:23:1F:64") == 0
+                       || strcasecmp(addrs[i].c_str(), "FD:D9:6C:D4:F9:F7") == 0);
+            if (known || !names[i].empty()) cache.push_back((int)i);
+          }
+          id(cache_uniq60) = uniq;
 
 packages:
   device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
@@ -49,34 +109,34 @@ esp32_ble_tracker:
             auto &addrs = id(dev_addr);
             auto &names = id(dev_name);
             auto &rssis = id(dev_rssi);
+            auto &rssis0 = id(dev_rssi0);
             auto &seens = id(dev_seen);
-            int idx = -1;
-            for (size_t i = 0; i < addrs.size(); i++) {
-              if (addrs[i] == addr) { idx = (int)i; break; }
-            }
-            if (idx >= 0) {
-              rssis[idx] = rssi;
-              seens[idx] = now;
-              if (!name.empty() && names[idx].empty()) names[idx] = name;
-            } else {
-              auto &painted = id(dev_painted);
-              if ((int)addrs.size() >= 20) {
-                size_t oldest = 0;
-                uint32_t oldest_t = seens[0];
-                for (size_t i = 1; i < seens.size(); i++) {
-                  if (seens[i] < oldest_t) { oldest_t = seens[i]; oldest = i; }
-                }
-                addrs.erase(addrs.begin() + oldest);
-                names.erase(names.begin() + oldest);
-                rssis.erase(rssis.begin() + oldest);
-                seens.erase(seens.begin() + oldest);
-                painted.erase(painted.begin() + oldest);
+            auto &painted = id(dev_painted);
+            // Throttle: same MAC не чаще раза в 2 секунды
+            for (int i = (int)addrs.size() - 1; i >= 0; i--) {
+              if (addrs[i] == addr && now - seens[i] < 2000) {
+                rssis[i] = rssi;
+                seens[i] = now;
+                return;
               }
-              addrs.push_back(addr);
-              names.push_back(name);
-              rssis.push_back(rssi);
-              seens.push_back(now);
-              painted.push_back(0);
+            }
+            // Known persons всегда добавляются; обычные — skip если limit 50
+            bool known = (strcasecmp(addr.c_str(), "DE:AD:51:6E:27:C5") == 0
+                       || strcasecmp(addr.c_str(), "CE:CD:12:23:1F:64") == 0
+                       || strcasecmp(addr.c_str(), "FD:D9:6C:D4:F9:F7") == 0);
+            if (!known && (int)addrs.size() >= 50) return;
+            addrs.push_back(addr);
+            names.push_back(name);
+            rssis.push_back(rssi);
+            rssis0.push_back(rssi);
+            seens.push_back(now);
+            painted.push_back(0);
+            id(scan_counter)++;
+            id(dev_scan_id).push_back(id(scan_counter));
+            // Накапливаем pending scroll если уже за visible (14 строк)
+            if ((int)addrs.size() > 14) {
+              id(scroll_pending_px) += 10;
+              if (id(scroll_pending_px) > 40) id(scroll_pending_px) = 40;
             }
 
 spi:
@@ -177,16 +237,44 @@ globals:
   - id: dev_rssi
     type: std::vector<int>
     restore_value: no
+  - id: dev_rssi0
+    type: std::vector<int>
+    restore_value: no
   - id: dev_seen
     type: std::vector<uint32_t>
     restore_value: no
   - id: dev_painted
     type: std::vector<uint32_t>
     restore_value: no
+  - id: dev_dist
+    type: std::vector<int>
+    restore_value: no
+  - id: dev_scan_id
+    type: std::vector<uint16_t>
+    restore_value: no
+  - id: scan_counter
+    type: uint16_t
+    restore_value: no
+    initial_value: '0'
   - id: prev_sweep
     type: float
     restore_value: no
     initial_value: '0.0'
+  - id: scroll_anim_start
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: scroll_pending_px
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: cache_uniq60
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: cache_radar_idx
+    type: std::vector<int>
+    restore_value: no
   # Mode (0=log, 1=radar). По умолчанию log; auto-switch на radar при HA коннекте
   - id: display_mode
     type: int
@@ -206,6 +294,11 @@ logger:
     mipi_spi: ERROR
     component: ERROR
     scheduler: ERROR
+    mqtt: ERROR
+    mqtt.idf: ERROR
+    mqtt.client: ERROR
+    esp32_ble_tracker: DEBUG
+    esp32_ble: INFO
   on_message:
     level: DEBUG
     then:
@@ -213,6 +306,7 @@ logger:
           std::string t = tag ? tag : "";
           if (t.find("font") != std::string::npos) return;
           if (t.find("display") != std::string::npos) return;
+          if (t.find("mqtt") != std::string::npos) return;
           std::string raw;
           for (size_t i = 0; message[i] != 0; i++) {
             unsigned char c = (unsigned char)message[i];
@@ -248,10 +342,6 @@ logger:
           id(has_pending) = true;
 
 api:
-  on_client_connected:
-    - lambda: |-
-        id(display_mode) = 1;
-        id(radar_mode_sw).publish_state(true);
   services:
     - service: console_log
       variables:
@@ -279,7 +369,7 @@ display:
     model: ST7789V
     dimensions:
       width: 320
-      height: 176
+      height: 170
       offset_width: 0
       offset_height: 35
     cs_pin: GPIO33
@@ -371,51 +461,51 @@ display:
         it.printf(W, 0, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", clk);
       } else {
         // ============ BLE RADAR MODE ============
-        const int cx = 88;
-        const int cy = 88;
+        const int cx = 80;
+        const int cy = 85;
         const int max_r = 80;
 
-        it.circle(cx, cy, 27, id(c_dim));
-        it.circle(cx, cy, 53, id(c_dim));
-        it.circle(cx, cy, max_r, id(c_green));
+        // Crosshair рисуем ДО trail (чтобы trail затирал)
         it.line(cx - max_r, cy, cx + max_r, cy, id(c_dim));
         it.line(cx, cy - max_r, cx, cy + max_r, id(c_dim));
 
-        // Sweep with fading trail (1 rev / 6s)
+        // Sweep with smooth fading trail via filled triangles (1 rev / 6s)
         float sw = (float)(t % 6000) / 6000.0f * 6.28318f;
-        for (int i = 36; i >= 1; i--) {
-          float a = sw - (float)i * 0.02f;
-          if (a < 0) a += 6.28318f;
-          int sx = cx + (int)(cosf(a) * (float)max_r);
-          int sy = cy + (int)(sinf(a) * (float)max_r);
-          int intensity = 200 - i * 5;
-          if (intensity < 15) intensity = 15;
-          it.line(cx, cy, sx, sy, Color(0, intensity, 0));
+        const int TRAIL_SEG = 22;
+        const float SEG_ANGLE = 0.06f;  // ~3.4° per segment, total trail ~75°
+        for (int i = TRAIL_SEG; i >= 1; i--) {
+          float a1 = sw - (float)i * SEG_ANGLE;
+          float a2 = sw - (float)(i - 1) * SEG_ANGLE;
+          int p1x = cx + (int)(cosf(a1) * (float)max_r);
+          int p1y = cy + (int)(sinf(a1) * (float)max_r);
+          int p2x = cx + (int)(cosf(a2) * (float)max_r);
+          int p2y = cy + (int)(sinf(a2) * (float)max_r);
+          int intensity = 180 - i * 9;
+          if (intensity < 12) intensity = 12;
+          it.filled_triangle(cx, cy, p1x, p1y, p2x, p2y, Color(0, intensity, 0));
         }
-        // Main sweep line — brightest
+        // Main sweep line — brightest leading edge
         int sx0 = cx + (int)(cosf(sw) * (float)max_r);
         int sy0 = cy + (int)(sinf(sw) * (float)max_r);
-        it.line(cx, cy, sx0, sy0, Color(120, 255, 120));
+        it.line(cx, cy, sx0, sy0, Color(140, 255, 140));
+
+        // Rings рисуем ПОСЛЕ trail чтобы он не затирал контур
+        it.circle(cx, cy, 27, id(c_dim));
+        it.circle(cx, cy, 53, id(c_dim));
+        it.circle(cx, cy, max_r, id(c_green));
 
         auto &addrs = id(dev_addr);
         auto &names = id(dev_name);
         auto &rssis = id(dev_rssi);
+        auto &rssis0 = id(dev_rssi0);
         auto &seens = id(dev_seen);
         auto &painted = id(dev_painted);
+        // Cleanup перенесён в interval 1s чтобы индексы не сдвигались посередине кадра.
 
-        // Cleanup older than 30s
-        for (int i = (int)addrs.size() - 1; i >= 0; i--) {
-          if (t - seens[i] > 30000) {
-            addrs.erase(addrs.begin() + i);
-            names.erase(names.begin() + i);
-            rssis.erase(rssis.begin() + i);
-            seens.erase(seens.begin() + i);
-            painted.erase(painted.begin() + i);
-          }
-        }
-
-        // Update painted: if sweep crossed device angle since last frame -> repaint
+        // Update painted + freeze position when sweep crosses device angle
         float prev = id(prev_sweep);
+        auto &dists = id(dev_dist);
+        if (dists.size() < addrs.size()) dists.resize(addrs.size(), 0);
         for (size_t i = 0; i < addrs.size(); i++) {
           uint32_t h = 0;
           for (char c : addrs[i]) h = h * 31u + (uint8_t)c;
@@ -424,71 +514,170 @@ display:
           if (prev <= sw) {
             if (ang > prev && ang <= sw) crossed = true;
           } else {
-            // wraparound 2pi -> 0
             if (ang > prev || ang <= sw) crossed = true;
           }
-          if (crossed) painted[i] = t;
+          if (crossed) {
+            painted[i] = t;
+            int r = rssis[i];
+            int d = ((-40 - r) * 78) / 60;
+            if (d < 5) d = 5;
+            if (d > 78) d = 78;
+            dists[i] = d;
+          }
         }
         id(prev_sweep) = sw;
 
-        // Plot dots — only visible 2.5s after sweep crossing, blip-and-fade
-        for (size_t i = 0; i < addrs.size(); i++) {
-          if (painted[i] == 0) continue;
-          uint32_t age = t - painted[i];
-          if (age > 5000) continue;
-          int rssi = rssis[i];
-          int dist = ((-40 - rssi) * 78) / 60;
-          if (dist < 5) dist = 5;
-          if (dist > 78) dist = 78;
+        // Используем кэш cache_radar_idx — обновляется раз в секунду в interval
+        auto &radar_idx = id(cache_radar_idx);
+        for (int idx_pos = 0; idx_pos < (int)radar_idx.size(); idx_pos++) {
+          size_t i = (size_t)radar_idx[idx_pos];
+          if (i >= addrs.size()) continue;
+          const char* label = nullptr;
+          if (strcasecmp(addrs[i].c_str(), "DE:AD:51:6E:27:C5") == 0) label = "ALEX";
+          else if (strcasecmp(addrs[i].c_str(), "CE:CD:12:23:1F:64") == 0) label = "IRA";
+          else if (strcasecmp(addrs[i].c_str(), "FD:D9:6C:D4:F9:F7") == 0) label = "LILA";
+          bool known = (label != nullptr);
+          if (painted[i] == 0 && !known) continue;
+          uint32_t age = (painted[i] == 0) ? 99999 : (t - painted[i]);
+          if (!known && age > 5000) continue;
+
+          // Use frozen distance from last sweep crossing
+          int dist = (i < id(dev_dist).size()) ? id(dev_dist)[i] : 40;
           uint32_t h = 0;
           for (char c : addrs[i]) h = h * 31u + (uint8_t)c;
           float ang = (float)(h % 360) * 0.0174533f;
           int dx = cx + (int)(cosf(ang) * (float)dist);
           int dy = cy + (int)(sinf(ang) * (float)dist);
-          int intensity = 240 - (int)((float)age * 240.0f / 5000.0f);
-          if (intensity < 0) intensity = 0;
-          int dot_r = (age < 200) ? 3 : 2;
-          it.filled_circle(dx, dy, dot_r, Color(0, intensity, 0));
-        }
-
-        // Sidebar
-        int sb_x = 178;
-        char hdr[24];
-        snprintf(hdr, sizeof(hdr), "DEVICES %u", (unsigned)addrs.size());
-        it.printf(sb_x, 0, id(f_console), id(c_green), "%s", hdr);
-        it.line(sb_x, 11, W - 1, 11, id(c_dim));
-
-        std::vector<size_t> idxs(addrs.size());
-        for (size_t i = 0; i < idxs.size(); i++) idxs[i] = i;
-        std::sort(idxs.begin(), idxs.end(), [&](size_t a, size_t b){ return rssis[a] > rssis[b]; });
-
-        int row_y = 14;
-        const int row_h = 11;
-        const int max_rows = 13;
-        for (size_t i = 0; i < idxs.size() && (int)i < max_rows; i++) {
-          size_t k = idxs[i];
-          std::string nm = names[k];
-          if (nm.empty()) {
-            std::string a = addrs[k];
-            std::string clean;
-            for (char c : a) if (c != ':') clean += c;
-            if (clean.size() > 6) nm = clean.substr(clean.size() - 6);
-            else nm = clean;
+          int intensity;
+          int dot_r;
+          if (known) {
+            intensity = 240;
+            dot_r = (age < 200) ? 3 : 2;
+          } else {
+            intensity = 240 - (int)((float)age * 240.0f / 5000.0f);
+            if (intensity < 0) intensity = 0;
+            dot_r = (age < 200) ? 3 : 2;
           }
-          if (nm.size() > 14) nm = nm.substr(0, 14);
-          char buf[40];
-          snprintf(buf, sizeof(buf), "%-14s%4d", nm.c_str(), rssis[k]);
-          bool fresh = (t - seens[k]) < 5000;
-          auto col = fresh ? id(c_green) : id(c_dim);
-          it.printf(sb_x, row_y, id(f_console), col, "%s", buf);
-          row_y += row_h;
+          it.filled_circle(dx, dy, dot_r, Color(0, intensity, 0));
+          if (label) {
+            int lx = (dx > cx) ? dx + 5 : dx - 5 - (int)strlen(label) * 5;
+            int ly = dy - 4;
+            it.printf(lx, ly, id(f_console), Color(0, intensity, 0), "%s", label);
+          }
         }
+
+        // Sidebar — таблица справа
+        int sb_x = 168;
+        // Header колонок SCAN | NAME | RSSI
+        it.printf(sb_x + 2, 1, id(f_console), id(c_green), "SCAN");
+        it.printf(sb_x + 56, 1, id(f_console), id(c_green), "NAME");
+        it.printf(sb_x + 119, 1, id(f_console), id(c_green), "RSSI");
+
+        const int sb_y_start = 14;
+        const int row_h = 10;
+        const int visible_rows = 14;          // зафиксировано
+        const int sb_y_end = sb_y_start + visible_rows * row_h;  // = 154
+        int N = (int)addrs.size();
+        int skip = (N > visible_rows) ? (N - visible_rows) : 0;
+
+        // Smooth pixel-by-pixel scroll: pending тратится по 1px за кадр
+        if (id(scroll_pending_px) > 0) id(scroll_pending_px) -= 1;
+        if (id(scroll_pending_px) < 0) id(scroll_pending_px) = 0;
+        int anim_y = id(scroll_pending_px);
+        // Сколько extra строк сверху рисовать: 1 + pending/row_h
+        int extra = (anim_y + row_h - 1) / row_h;
+        int render_from = skip - extra;
+        if (render_from < 0) render_from = 0;
+
+        // Clip всё содержимое таблицы — строки лога не выходят выше header line (y=12) и за границы
+        it.start_clipping(Rect(sb_x - 3, 12, W - sb_x + 3, sb_y_end - 12));
+        for (int i = render_from; i < N; i++) {
+          size_t k = (size_t)i;
+          int row_y = sb_y_start + (i - skip) * row_h + anim_y;
+          if (row_y + row_h <= 0) continue;
+          if (row_y > sb_y_end) continue;
+          std::string nm = names[k];
+          // Если имени нет — в колонке NAME показываем полный MAC
+          if (nm.empty()) nm = addrs[k];
+          // SCAN ID — счётчик в hex (4 символа с ведущими нулями), при FFFF wraps
+          uint16_t scan_id = (k < id(dev_scan_id).size()) ? id(dev_scan_id)[k] : 0;
+          char sc[8];
+          snprintf(sc, sizeof(sc), "%04X", scan_id);
+          int r0 = (k < rssis0.size()) ? rssis0[k] : rssis[k];
+
+          // 1) SCAN column
+          it.printf(sb_x + 1, row_y, id(f_console), id(c_green), "%s", sc);
+
+          // 2) NAME column — popixel marquee (если длиннее 17)
+          int name_x = sb_x + 25;
+          int name_w = 85;
+          if ((int)nm.size() <= 17) {
+            it.printf(name_x, row_y, id(f_console), id(c_green), "%s", nm.c_str());
+          } else {
+            std::string padded = nm + "   ";
+            int cycle_px = (int)padded.size() * 5;
+            int off_px = (int)((t / 50) % (uint32_t)cycle_px);
+            it.start_clipping(Rect(name_x, row_y, name_w, row_h));
+            it.printf(name_x - off_px, row_y, id(f_console), id(c_green), "%s", padded.c_str());
+            it.printf(name_x - off_px + cycle_px, row_y, id(f_console), id(c_green), "%s", padded.c_str());
+            it.end_clipping();
+          }
+
+          // 3) RSSI value " -43 dB"
+          char rb[12];
+          snprintf(rb, sizeof(rb), "%4d dB", r0);
+          it.printf(sb_x + 113, row_y, id(f_console), id(c_green), "%s", rb);
+        }
+        it.end_clipping();
+
+        // Vertical column dividers (по физической нижней границе экрана y=169)
+        const int col1_x = sb_x + 22;
+        const int col2_x = sb_x + 110;
+        const int bottom_y = 169;  // физический низ экрана (height=170)
+        it.line(col1_x, 0, col1_x, sb_y_end, id(c_dim));
+        it.line(col2_x, 0, col2_x, sb_y_end, id(c_dim));
+        // Левая граница sidebar (отделяет radar|sidebar)
+        it.line(sb_x - 4, 0, sb_x - 4, bottom_y, id(c_dim));
+        // Правая граница (замыкает таблицу)
+        it.line(W - 1, 0, W - 1, bottom_y, id(c_dim));
+        // Top border
+        it.line(sb_x - 4, 0, W - 1, 0, id(c_dim));
+        // Header divider
+        it.line(sb_x - 4, 11, W - 1, 11, id(c_dim));
+        // Data/footer divider
+        it.line(sb_x - 4, sb_y_end, W - 1, sb_y_end, id(c_dim));
+        // Bottom border
+        it.line(sb_x - 4, bottom_y, W - 1, bottom_y, id(c_dim));
 
         // Clock + status
         char clk[16];
         auto tn = id(homeassistant_time).now();
         if (tn.is_valid()) snprintf(clk, sizeof(clk), "%02d:%02d:%02d", tn.hour, tn.minute, tn.second);
         else snprintf(clk, sizeof(clk), "--:--:--");
-        it.printf(W - 1, 160, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", clk);
-        it.printf(0, 160, id(f_console), id(c_green), "RADAR ACTIVE");
+        // HEADER верх-левый (на радаре): текущее время
+        it.printf(0, 1, id(f_console), id(c_green), "%s", clk);
+        // HEADER верх-правый (на радаре): дата YYYY.MM.DD
+        char dt[24];
+        if (tn.is_valid()) snprintf(dt, sizeof(dt), "%04d.%02d.%02d", tn.year, tn.month, tn.day_of_month);
+        else snprintf(dt, sizeof(dt), "----.--.--");
+        it.printf(sb_x - 6, 1, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", dt);
+        // FOOTER под радаром (слева): BLE RADAR
+        it.printf(0, 160, id(f_console), id(c_green), "BLE RADAR");
+        // FOOTER под радаром (справа): свободная память
+        char mem[16];
+        snprintf(mem, sizeof(mem), "MEM %uK", (unsigned)(esp_get_free_heap_size() / 1024));
+        it.printf(sb_x - 6, 160, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", mem);
+        // FOOTER таблицы — слева: Found: N/min, справа: UpTime, между ними vertical separator
+        char devc[24];
+        snprintf(devc, sizeof(devc), "Found: %u/min", (unsigned)id(cache_uniq60));
+        it.printf(sb_x + 1, 160, id(f_console), id(c_green), "%s", devc);
+        uint32_t up_s = t / 1000;
+        unsigned d = up_s / 86400, h = (up_s % 86400) / 3600, m = (up_s % 3600) / 60, ss = up_s % 60;
+        char upbuf[32];
+        if (d > 0) snprintf(upbuf, sizeof(upbuf), "Up: %ud %02u:%02u", d, h, m);
+        else snprintf(upbuf, sizeof(upbuf), "Up: %02u:%02u:%02u", h, m, ss);
+        it.printf(W - 2, 160, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", upbuf);
+        // Vertical separator по центру футера таблицы
+        const int footer_sep_x = (sb_x - 4 + W - 1) / 2;
+        it.line(footer_sep_x, sb_y_end + 1, footer_sep_x, 168, id(c_dim));
       }
