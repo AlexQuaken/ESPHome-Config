@@ -4,58 +4,100 @@ substitutions:
 
 esphome:
   name: ${board_name}
-  on_boot:
-    priority: -100
-    then:
-      - delay: 2s
-      - lambda: |-
-          auto t = id(homeassistant_time).now();
-          if (!t.is_valid()) return;
-          if (t.hour >= 7 && t.hour < 23) id(oled).turn_on();
-          else id(oled).turn_off();
-
-interval:
-  - interval: 60s
-    then:
-      - lambda: |-
-          auto t = id(homeassistant_time).now();
-          if (!t.is_valid()) return;
-          if (t.hour >= 7 && t.hour < 23) id(oled).turn_on();
-          else id(oled).turn_off();
 
 esp32:
   board: esp32cam
   framework:
     type: esp-idf
+    sdkconfig_options:
+      # Brownout — снижаем порог до минимума ~2.43V
+      CONFIG_ESP_BROWNOUT_DET_LVL_SEL_4: "n"
+      CONFIG_ESP_BROWNOUT_DET_LVL_SEL_7: "y"
+      # WiFi и lwIP на ядро 1, display loop остаётся на 0
+      CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_1: "y"
+      CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU1: "y"
 
 psram:
+
+# Safe mode entry для надёжного OTA
+safe_mode:
+  num_attempts: 10
+  reboot_timeout: 5min
+  boot_is_good_after: 60s
+
+button:
+  - platform: safe_mode
+    name: "${board_name} Safe Mode (OTA)"
+    id: btn_safe_mode
 
 packages:
   device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
   base_sensors: !include packages/2common_sensors.yaml
-  led: !include packages/3status_led_esp32.yaml
-  esp32cam: !include packages/8esp32-cam.yaml
+  # status_led (IO2) убран — IO2 теперь идёт на RES дисплея
+  # esp32cam убран временно — освобождаем память для дисплея
 
-esp32_camera:
-  vertical_flip: true
-  horizontal_mirror: true
+# камера временно отключена — освобождаем PSRAM/SRAM для дисплея
 
-i2c:
-  - id: bus_oled
-    sda: GPIO14
-    scl: GPIO13
-    scan: true
-    frequency: 1MHz
+# UART логи включены через USB. BLK дисплея пока на VCC, PWM не нужен.
+logger:
+  level: DEBUG
+
+# SPI шина для ST7789 1.9" 320x170 (заменили I2C OLED)
+spi:
+  - id: spi_lcd
+    clk_pin: GPIO14
+    mosi_pin: GPIO13
+
+# PWM подсветка временно отключена — BLK на VCC напрямую.
+# Если нужна регулировка яркости, переподключи BLK на IO3 и раскомментируй.
 
 font:
-  - file: "gfonts://Roboto Mono"
-    id: f_console
-    size: 8
-    glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
-  - file: "gfonts://Roboto Mono"
-    id: f_tiny
-    size: 6
-    glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
+  - file: "gfonts://VT323"
+    id: f_big
+    size: 22
+    glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz '
+  - file: "gfonts://VT323"
+    id: f_mid
+    size: 16
+    glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz '
+  - file: "gfonts://VT323"
+    id: f_small
+    size: 13
+    glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz '
+
+color:
+  - id: c_white
+    red: 100%
+    green: 100%
+    blue: 100%
+  - id: c_cyan
+    red: 0%
+    green: 90%
+    blue: 100%
+  - id: c_green
+    red: 20%
+    green: 100%
+    blue: 30%
+  - id: c_amber
+    red: 100%
+    green: 70%
+    blue: 0%
+  - id: c_red
+    red: 100%
+    green: 25%
+    blue: 25%
+  - id: c_dim
+    red: 35%
+    green: 35%
+    blue: 40%
+  - id: c_bg_hdr
+    red: 5%
+    green: 15%
+    blue: 25%
+  - id: c_black
+    red: 0%
+    green: 0%
+    blue: 0%
 
 sensor:
   - platform: homeassistant
@@ -212,9 +254,6 @@ sensor:
     id: bat_scan_counter
     entity_id: sensor.battair_monitor_scan_counter
     internal: true
-    on_value:
-      then:
-        - lambda: 'id(last_scan_ms) = millis();'
 
 globals:
   - id: last_scan_ms
@@ -223,53 +262,136 @@ globals:
     initial_value: '0'
 
 display:
-  - platform: ssd1306_i2c
-    model: "SSD1306 128x64"
-    address: 0x3C
-    i2c_id: bus_oled
-    id: oled
+  - platform: mipi_spi
+    model: ST7789V
+    spi_id: spi_lcd
+    cs_pin: GPIO15
+    dc_pin: GPIO12
+    reset_pin: GPIO2
+    dimensions:
+      width: 320
+      height: 170
+      offset_width: 0
+      offset_height: 35
+    spi_mode: MODE3
+    data_rate: 80MHz
+    color_order: bgr
+    color_depth: 16
+    invert_colors: true
+    transform:
+      swap_xy: true
+      mirror_x: true
+      mirror_y: false
+    buffer_size: 25%
     update_interval: 1s
+    id: lcd
     lambda: |-
-      uint32_t t = millis();
-      auto fmt_bat = [](int idx, float v, float c1, float c2, float c3, float c4, float cyc) -> std::string {
-        char v_s[8], c1_s[6], c2_s[6], c3_s[6], c4_s[6], cyc_s[6];
-        if (std::isfinite(v)) snprintf(v_s, sizeof(v_s), "%5.2fV", v); else strcpy(v_s, "--.--V");
-        auto fc = [](char *b, float c){ if(std::isfinite(c)) snprintf(b,6,"%4.2f",c); else strcpy(b,"-.--"); };
-        fc(c1_s,c1); fc(c2_s,c2); fc(c3_s,c3); fc(c4_s,c4);
-        if (std::isfinite(cyc)) snprintf(cyc_s, sizeof(cyc_s), "%dc", (int)cyc); else strcpy(cyc_s, "-c");
-        char row[80];
-        snprintf(row, sizeof(row), "B%d %s %s %s %s %s %s", idx, v_s, c1_s, c2_s, c3_s, c4_s, cyc_s);
-        return std::string(row);
-      };
-      auto draw = [&](int y, const std::string &s) {
-        it.printf(0, y, id(f_tiny), "%s", s.c_str());
-      };
-      draw(0,  fmt_bat(1, id(bat1_v).state, id(bat1_c1).state, id(bat1_c2).state, id(bat1_c3).state, id(bat1_c4).state, id(bat1_cyc).state));
-      draw(8,  fmt_bat(2, id(bat2_v).state, id(bat2_c1).state, id(bat2_c2).state, id(bat2_c3).state, id(bat2_c4).state, id(bat2_cyc).state));
-      draw(16, fmt_bat(3, id(bat3_v).state, id(bat3_c1).state, id(bat3_c2).state, id(bat3_c3).state, id(bat3_c4).state, id(bat3_cyc).state));
-      draw(24, fmt_bat(4, id(bat4_v).state, id(bat4_c1).state, id(bat4_c2).state, id(bat4_c3).state, id(bat4_c4).state, id(bat4_cyc).state));
-      draw(32, fmt_bat(5, id(bat5_v).state, id(bat5_c1).state, id(bat5_c2).state, id(bat5_c3).state, id(bat5_c4).state, id(bat5_cyc).state));
-      draw(40, fmt_bat(6, id(bat6_v).state, id(bat6_c1).state, id(bat6_c2).state, id(bat6_c3).state, id(bat6_c4).state, id(bat6_cyc).state));
-      int active = 0;
-      if (std::isfinite(id(bat1_v).state)) active++;
-      if (std::isfinite(id(bat2_v).state)) active++;
-      if (std::isfinite(id(bat3_v).state)) active++;
-      if (std::isfinite(id(bat4_v).state)) active++;
-      if (std::isfinite(id(bat5_v).state)) active++;
-      if (std::isfinite(id(bat6_v).state)) active++;
-      char tm_s[12];
+      const int W = 320;
+      const int H = 170;
+      const int ROWS = 6;
+      const int HDR_H = 18;
+      const int FOOT_H = 22;
+      const int BODY_H = H - HDR_H - FOOT_H;       // 130
+      const int ROW_H = BODY_H / ROWS;              // 21
+
+      uint32_t now = millis();
+
+      // header
+      it.filled_rectangle(0, 0, W, HDR_H, id(c_bg_hdr));
+      char tm_s[12], dt_s[8];
       auto tt = id(homeassistant_time).now();
-      if (tt.is_valid()) snprintf(tm_s, sizeof(tm_s), "%02d:%02d:%02d", tt.hour, tt.minute, tt.second); else strcpy(tm_s, "--:--:--");
-      char upd_s[16];
-      if (id(last_scan_ms) > 0) {
-        uint32_t secs = (t - id(last_scan_ms)) / 1000;
-        if (secs < 60) snprintf(upd_s, sizeof(upd_s), "upd %us", (unsigned)secs);
-        else if (secs < 3600) snprintf(upd_s, sizeof(upd_s), "upd %um", (unsigned)(secs/60));
-        else snprintf(upd_s, sizeof(upd_s), "upd %uh%um", (unsigned)(secs/3600), (unsigned)((secs%3600)/60));
-      } else strcpy(upd_s, "upd ?");
-      char scan_s[16];
-      if (std::isfinite(id(bat_scan_counter).state)) snprintf(scan_s, sizeof(scan_s), "scan #%d", (int)id(bat_scan_counter).state);
-      else strcpy(scan_s, "scan ?");
-      char foot[80];
-      snprintf(foot, sizeof(foot), "%s %d/6 %s %s", tm_s, active, upd_s, scan_s);
-      it.printf(0, 56, id(f_tiny), "%s", foot);
+      if (tt.is_valid()) {
+        snprintf(tm_s, sizeof(tm_s), "%02d:%02d:%02d", tt.hour, tt.minute, tt.second);
+        snprintf(dt_s, sizeof(dt_s), "%02d.%02d", tt.day_of_month, tt.month);
+      } else { strcpy(tm_s, "--:--:--"); strcpy(dt_s, "--.--"); }
+      it.printf(4, 1, id(f_mid), id(c_cyan), "%s", dt_s);
+      it.printf(W - 4, 1, id(f_mid), id(c_white), display::TextAlign::TOP_RIGHT, "%s", tm_s);
+
+      // detect scan counter change
+      static float prev_scan = -1.0f;
+      float cur_scan = id(bat_scan_counter).state;
+      if (std::isfinite(cur_scan) && cur_scan != prev_scan) {
+        id(last_scan_ms) = now;
+        prev_scan = cur_scan;
+      }
+
+      auto fmt_v = [](float v) -> std::string {
+        char b[8];
+        if (std::isfinite(v)) snprintf(b, sizeof(b), "%5.2fV", v);
+        else strcpy(b, "--.--V");
+        return std::string(b);
+      };
+      auto fmt_c = [](float c) -> std::string {
+        char b[6];
+        if (std::isfinite(c)) snprintf(b, sizeof(b), "%4.2f", c);
+        else strcpy(b, "-.--");
+        return std::string(b);
+      };
+
+      struct Bat { float v, c1, c2, c3, c4, cyc; };
+      Bat bats[6] = {
+        { id(bat1_v).state, id(bat1_c1).state, id(bat1_c2).state, id(bat1_c3).state, id(bat1_c4).state, id(bat1_cyc).state },
+        { id(bat2_v).state, id(bat2_c1).state, id(bat2_c2).state, id(bat2_c3).state, id(bat2_c4).state, id(bat2_cyc).state },
+        { id(bat3_v).state, id(bat3_c1).state, id(bat3_c2).state, id(bat3_c3).state, id(bat3_c4).state, id(bat3_cyc).state },
+        { id(bat4_v).state, id(bat4_c1).state, id(bat4_c2).state, id(bat4_c3).state, id(bat4_c4).state, id(bat4_cyc).state },
+        { id(bat5_v).state, id(bat5_c1).state, id(bat5_c2).state, id(bat5_c3).state, id(bat5_c4).state, id(bat5_cyc).state },
+        { id(bat6_v).state, id(bat6_c1).state, id(bat6_c2).state, id(bat6_c3).state, id(bat6_c4).state, id(bat6_cyc).state },
+      };
+
+      int active = 0;
+      for (int r = 0; r < ROWS; r++) {
+        const Bat &b = bats[r];
+        int y = HDR_H + r * ROW_H + 1;
+        bool ok = std::isfinite(b.v);
+        if (ok) active++;
+
+        float dmax = 0;
+        if (std::isfinite(b.c1) && std::isfinite(b.c2) && std::isfinite(b.c3) && std::isfinite(b.c4)) {
+          float lo = std::min(std::min(b.c1, b.c2), std::min(b.c3, b.c4));
+          float hi = std::max(std::max(b.c1, b.c2), std::max(b.c3, b.c4));
+          dmax = hi - lo;
+        }
+
+        auto tag_col = !ok ? id(c_dim)
+                       : (dmax > 0.10f ? id(c_red)
+                       : (dmax > 0.05f ? id(c_amber) : id(c_green)));
+
+        it.filled_rectangle(0, y, 28, ROW_H - 2, tag_col);
+        char tag[4];
+        snprintf(tag, sizeof(tag), "B%d", r + 1);
+        it.printf(14, y + 2, id(f_mid), id(c_black), display::TextAlign::TOP_CENTER, "%s", tag);
+
+        it.printf(34, y + 1, id(f_big), ok ? id(c_white) : id(c_dim), "%s", fmt_v(b.v).c_str());
+
+        char cells[40];
+        snprintf(cells, sizeof(cells), "%s %s %s %s", fmt_c(b.c1).c_str(), fmt_c(b.c2).c_str(), fmt_c(b.c3).c_str(), fmt_c(b.c4).c_str());
+        it.printf(124, y + 4, id(f_small), ok ? id(c_white) : id(c_dim), "%s", cells);
+
+        char cyc[8];
+        if (std::isfinite(b.cyc)) snprintf(cyc, sizeof(cyc), "%dc", (int)b.cyc);
+        else strcpy(cyc, "--c");
+        it.printf(W - 4, y + 4, id(f_small), id(c_amber), display::TextAlign::TOP_RIGHT, "%s", cyc);
+      }
+
+      // footer (vertically centered)
+      int fy = H - FOOT_H;
+      int ty = fy + (FOOT_H - 13) / 2;   // f_small=13
+      it.filled_rectangle(0, fy, W, FOOT_H, id(c_bg_hdr));
+      it.printf(4, ty, id(f_small), id(c_green), "active %d/6", active);
+
+      // uptime HH:MM:SS (full)
+      char up_s[16];
+      uint32_t up = (uint32_t)id(uptime_sensor).state;
+      snprintf(up_s, sizeof(up_s), "up %02u:%02u:%02u", (unsigned)(up/3600), (unsigned)((up%3600)/60), (unsigned)(up%60));
+      it.printf(W / 2, ty, id(f_small), id(c_white), display::TextAlign::TOP_CENTER, "%s", up_s);
+
+      char scan_s[20];
+      if (std::isfinite(id(bat_scan_counter).state)) {
+        if (id(last_scan_ms) > 0) {
+          uint32_t secs = (now - id(last_scan_ms)) / 1000;
+          if (secs < 60) snprintf(scan_s, sizeof(scan_s), "#%d %us", (int)id(bat_scan_counter).state, (unsigned)secs);
+          else if (secs < 3600) snprintf(scan_s, sizeof(scan_s), "#%d %um", (int)id(bat_scan_counter).state, (unsigned)(secs/60));
+          else snprintf(scan_s, sizeof(scan_s), "#%d %uh", (int)id(bat_scan_counter).state, (unsigned)(secs/3600));
+        } else snprintf(scan_s, sizeof(scan_s), "#%d", (int)id(bat_scan_counter).state);
+      } else strcpy(scan_s, "scan ?");
+      it.printf(W - 4, ty, id(f_small), id(c_cyan), display::TextAlign::TOP_RIGHT, "%s", scan_s);
