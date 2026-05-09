@@ -25,42 +25,70 @@ sensor:
     id: mqtt_energy_cost
     topic: ${topic}_cost
     retain: true
+    unit_of_measurement: UAH
+    accuracy_decimals: 2
+    filters:
+      - round: 2
 
   - platform: mqtt_subscribe
     name: mqtt_energy_day${mk}
     id: mqtt_energy_day
     topic: ${topic}_day
     retain: true
+    unit_of_measurement: kWh
+    accuracy_decimals: 2
+    filters:
+      - round: 2
 
   - platform: mqtt_subscribe
     name: mqtt_energy_night${mk}
     id: mqtt_energy_night
     topic: ${topic}_night
     retain: true
+    unit_of_measurement: kWh
+    accuracy_decimals: 2
+    filters:
+      - round: 2
     
   - platform: mqtt_subscribe
     name: mqtt_energy_total${mk}
     id: mqtt_energy_total
     topic: ${topic}_total
     retain: true
+    unit_of_measurement: kWh
+    accuracy_decimals: 2
+    filters:
+      - round: 2
     
   - platform: mqtt_subscribe
     name: mqtt_unaccounted_day${mk}
     id: mqtt_unaccounted_day
     topic: ${topic_var}_day
     retain: true
+    unit_of_measurement: kWh
+    accuracy_decimals: 2
+    filters:
+      - round: 2
 
   - platform: mqtt_subscribe
     name: mqtt_unaccounted_night${mk}
     id: mqtt_unaccounted_night
     topic: ${topic_var}_night
     retain: true
+    unit_of_measurement: kWh
+    accuracy_decimals: 2
+    filters:
+      - round: 2
     
   - platform: mqtt_subscribe
     name: mqtt_unaccounted_total${mk}
     id: mqtt_unaccounted_total
     topic: ${topic_var}_total
     retain: true
+    unit_of_measurement: kWh
+    accuracy_decimals: 2
+    filters:
+      - round: 2
 
 time:
   - platform: homeassistant
