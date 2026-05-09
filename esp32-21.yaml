@@ -1,0 +1,488 @@
+# В электрощитке — ST7789 1.9" 320×170 PZEM dashboard, Grafana-style
+# Top: 3 cards (NOW / TODAY / PF) + 24h chart (bars + line) внизу
+substitutions:
+  board_name: 'esp32-21'
+  static_ip: '192.168.0.217'
+  number: '21'
+  ha_url: 'http://192.168.0.6:8123'
+  ha_token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhNDIwMjc1YTVjMmM0NmQ4ODMxZTcxOGY0MzhiMWZjZCIsImlhdCI6MTc3MzI1MjE5NSwiZXhwIjoyMDg4NjEyMTk1fQ.LaFbO5cm459x18m_LoUr5wZULeWx7z2pEK-_aY_ZWzo'
+
+esphome:
+  name: ${board_name}
+  on_boot:
+    priority: -200
+    then:
+      - wait_until:
+          condition:
+            wifi.connected:
+      - wait_until:
+          condition:
+            api.connected:
+      - wait_until:
+          condition:
+            lambda: 'return id(homeassistant_time).now().is_valid();'
+      - delay: 2s
+      - script.execute: load_history
+
+esp32:
+  board: esp-wrover-kit
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_BT_CONTROLLER_MODE_BLE_ONLY: y
+      CONFIG_LWIP_MAX_SOCKETS: "20"
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          id(fps_value) = (int)id(frame_counter);
+          id(frame_counter) = 0;
+  # 15-секундный sample: 60 мин / 15 = 240 точек
+  - interval: 15s
+    then:
+      - lambda: |-
+          auto push_sample = [](std::vector<float> &buf, float v) {
+            if (!std::isfinite(v)) v = 0.0f;
+            buf.push_back(v);
+            while (buf.size() > 240) buf.erase(buf.begin());
+          };
+          push_sample(id(buf_p),  id(pzem_p).state);
+          push_sample(id(buf_pf), id(pzem_pf).state);
+          push_sample(id(buf_e),  id(energy_day).state);
+  - interval: 60s
+    then:
+      - lambda: |-
+          ESP_LOGI("hb", "up=%lus heap=%uKB fps=%d P=%.0fW E=%.2fkWh PF=%.2f buf=%d/%d",
+            (unsigned long)(millis()/1000),
+            (unsigned)(esp_get_free_heap_size()/1024),
+            id(fps_value),
+            id(pzem_p).state, id(energy_day).state, id(pzem_pf).state,
+            (int)id(buf_p).size(), (int)id(buf_pf).size());
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+  led: !include packages/3status_led_esp32.yaml
+  ble_common: !include packages/ble_common.yaml
+  ble_alex: !include packages/ble_alex.yaml
+  ble_ira: !include packages/ble_ira.yaml
+  ble_lila: !include packages/ble_lila.yaml
+
+http_request:
+  useragent: esp32-21
+  timeout: 15s
+  verify_ssl: false
+
+sensor:
+  - platform: homeassistant
+    id: pzem_p
+    entity_id: sensor.pzem_power
+    internal: true
+  - platform: homeassistant
+    id: pzem_pf
+    entity_id: sensor.pzem_power_factor
+    internal: true
+  - platform: homeassistant
+    id: energy_day
+    entity_id: sensor.energy_day
+    internal: true
+
+globals:
+  - id: buf_p
+    type: std::vector<float>
+    restore_value: no
+  - id: buf_pf
+    type: std::vector<float>
+    restore_value: no
+  - id: buf_e
+    type: std::vector<float>
+    restore_value: no
+  - id: frame_counter
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: fps_value
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: load_target_idx
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+script:
+  - id: load_history
+    mode: single
+    then:
+      - lambda: 'id(load_target_idx) = 0;'
+      - script.execute: load_history_entity
+      - script.wait: load_history_entity
+      - lambda: 'id(load_target_idx) = 1;'
+      - script.execute: load_history_entity
+      - script.wait: load_history_entity
+      - lambda: 'id(load_target_idx) = 2;'
+      - script.execute: load_history_entity
+  - id: load_history_entity
+    mode: single
+    then:
+      - http_request.get:
+          max_response_buffer_size: 12288
+          url: !lambda |-
+            auto t = id(homeassistant_time).now();
+            time_t now_t = t.timestamp;
+            time_t from_t = now_t - 60*60;
+            struct tm tmf;
+            gmtime_r(&from_t, &tmf);
+            char from_iso[40];
+            strftime(from_iso, sizeof(from_iso), "%Y-%m-%dT%H:%M:%S+00:00", &tmf);
+            const char* eid = "sensor.pzem_power";
+            if (id(load_target_idx) == 1) eid = "sensor.pzem_power_factor";
+            else if (id(load_target_idx) == 2) eid = "sensor.energy_day";
+            std::string url = std::string("${ha_url}/api/history/period/") + from_iso +
+              "?filter_entity_id=" + eid +
+              "&minimal_response&no_attributes&significant_changes_only=false";
+            return url;
+          request_headers:
+            Authorization: 'Bearer ${ha_token}'
+          capture_response: true
+          on_response:
+            then:
+              - lambda: |-
+                  if (body.empty() || body.size() < 4) return;
+                  // Inline-парсинг без substr/find_string копий
+                  const char* p = body.c_str();
+                  size_t blen = body.size();
+                  std::vector<float>* target = &id(buf_p);
+                  if (id(load_target_idx) == 1) target = &id(buf_pf);
+                  else if (id(load_target_idx) == 2) target = &id(buf_e);
+                  target->clear();
+                  target->reserve(250);
+                  size_t pos = 0;
+                  // find "state":"
+                  while (pos + 9 < blen) {
+                    if (p[pos] == '"' && memcmp(p + pos, "\"state\":\"", 9) == 0) {
+                      pos += 9;
+                      float v = atof(p + pos);
+                      if (std::isfinite(v)) target->push_back(v);
+                      // skip to closing quote
+                      while (pos < blen && p[pos] != '"') pos++;
+                      pos++;
+                    } else {
+                      pos++;
+                    }
+                  }
+                  // downsample if > 240
+                  if (target->size() > 240) {
+                    std::vector<float> tmp;
+                    tmp.reserve(240);
+                    size_t sz = target->size();
+                    for (size_t j = 0; j < 240; j++) tmp.push_back((*target)[(j * sz) / 240]);
+                    *target = std::move(tmp);
+                  }
+                  ESP_LOGI("hist", "entity=%d loaded=%d body=%d",
+                    (int)id(load_target_idx), (int)target->size(), (int)blen);
+
+logger:
+  level: DEBUG
+  logs:
+    font: ERROR
+    display: ERROR
+    mipi_spi: ERROR
+    component: ERROR
+    scheduler: ERROR
+    mqtt: ERROR
+    mqtt.idf: ERROR
+    mqtt.client: ERROR
+    http_request: INFO
+
+spi:
+  clk_pin: GPIO14
+  mosi_pin: GPIO27
+  interface: hardware
+
+output:
+  - platform: ledc
+    pin: GPIO32
+    id: backlight_pwm
+    frequency: 5000Hz
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: ${board_name} Backlight
+    id: backlight
+    restore_mode: RESTORE_DEFAULT_ON
+    default_transition_length: 300ms
+
+font:
+  # Лейблы карточек (поддерживает кириллицу)
+  - file: "gfonts://Roboto Mono"
+    id: f_label
+    size: 10
+    glyphs: 'Power Fact.0123456789Сейчасгодня'
+  # Большие числа — PxPlus IBM VGA 8x16 (нативный bitmap, 1:1 pixel)
+  - file: "fonts/PxPlus_IBM_VGA_8x16.ttf"
+    id: f_value
+    size: 16
+    bpp: 1
+    glyphs: '0123456789. WkVAh-'
+  # Оси и мелкое
+  - file: "fonts/Tamzen5x9r.ttf"
+    id: f_axis
+    size: 9
+    bpp: 1
+    glyphs: '0123456789.: '
+  # MDI иконки
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: f_icon
+    size: 16
+    glyphs: ["\U000F0241", "\U000F0E73", "\U000F0583"]
+
+color:
+  # Cyberpunk neon палитра
+  - id: c_bg
+    red: 3%
+    green: 2%
+    blue: 8%
+  - id: c_card_bg
+    red: 8%
+    green: 5%
+    blue: 16%
+  - id: c_border
+    red: 100%
+    green: 0%
+    blue: 80%       # неон-магента
+  - id: c_text
+    red: 0%
+    green: 95%
+    blue: 100%      # неон-циан
+  - id: c_text_dim
+    red: 80%
+    green: 70%
+    blue: 100%      # светлый пурпур-циань — читаемые мелкие подписи
+  - id: c_grid
+    red: 25%
+    green: 5%
+    blue: 40%       # дымчатый магента
+  - id: c_orange
+    red: 100%
+    green: 55%
+    blue: 0%        # неон-оранж (иконка календаря)
+  - id: c_green
+    red: 0%
+    green: 100%
+    blue: 50%       # acid-green
+  - id: c_purple
+    red: 100%
+    green: 0%
+    blue: 95%       # hot pink (PF line)
+  - id: c_yellow
+    red: 100%
+    green: 90%
+    blue: 0%        # неон-жёлтый (молния)
+  - id: c_black
+    red: 0%
+    green: 0%
+    blue: 0%
+
+display:
+  - platform: mipi_spi
+    model: ST7789V
+    dimensions:
+      width: 320
+      height: 170
+      offset_width: 0
+      offset_height: 35
+    cs_pin: GPIO33
+    dc_pin: GPIO25
+    reset_pin: GPIO26
+    id: lcd
+    spi_mode: MODE3
+    data_rate: 40MHz
+    color_order: bgr
+    color_depth: 16
+    invert_colors: true
+    transform:
+      swap_xy: true
+      mirror_x: true
+      mirror_y: false
+    buffer_size: 12%
+    update_interval: 200ms
+    lambda: |-
+      id(frame_counter)++;
+      const int W = it.get_width();
+      const int H = it.get_height();
+
+      // ============ Color helpers ============
+      auto power_color = [](float v) -> Color {
+        if (v < 400.0f) return Color(0, 255, 130);
+        if (v >= 900.0f) return Color(255, 30, 90);
+        float t = (v - 400.0f) / 500.0f;
+        uint8_t r, g, b;
+        if (t < 0.5f) {
+          float u = t * 2.0f;
+          r = (uint8_t)(0 + u * (255 - 0));
+          g = (uint8_t)(255 - u * (255 - 230));
+          b = (uint8_t)(130 - u * 130);
+        } else {
+          float u = (t - 0.5f) * 2.0f;
+          r = 255;
+          g = (uint8_t)(230 - u * (230 - 30));
+          b = (uint8_t)(0 + u * (90 - 0));
+        }
+        return Color(r, g, b);
+      };
+
+      // ============ TOP: 3 CARDS (320x32) ============
+      const int card_h = 32;
+      const int card_w = 105;
+      const int gap = 2;
+
+      auto draw_card = [&](int idx, const char* val, const char* unit, const char* label, Color val_col) {
+        int x0 = idx * (card_w + gap);
+        int y0 = 2;
+        int xc = x0 + card_w / 2;
+        it.rectangle(x0, y0, card_w, card_h, id(c_border));
+        char vu[24];
+        if (unit && *unit) snprintf(vu, sizeof(vu), "%s %s", val, unit);
+        else snprintf(vu, sizeof(vu), "%s", val);
+        it.printf(xc, y0 + 4, id(f_value), val_col, TextAlign::TOP_CENTER, "%s", vu);
+        it.printf(xc, y0 + 18, id(f_label), id(c_text_dim), TextAlign::TOP_CENTER, "%s", label);
+      };
+
+      char p_str[16], e_str[16], pf_str[16];
+      if (std::isfinite(id(pzem_p).state))   snprintf(p_str, sizeof(p_str), "%.0f", id(pzem_p).state); else strcpy(p_str, "---");
+      if (std::isfinite(id(energy_day).state)) snprintf(e_str, sizeof(e_str), "%.1f", id(energy_day).state); else strcpy(e_str, "---");
+      if (std::isfinite(id(pzem_pf).state))  snprintf(pf_str, sizeof(pf_str), "%.2f", id(pzem_pf).state); else strcpy(pf_str, "---");
+
+      Color p_col = std::isfinite(id(pzem_p).state) ? power_color(id(pzem_p).state) : id(c_text_dim);
+      // Цвет для энергии — лаймовый зелёно-циан
+      Color e_col = Color(110, 255, 150);
+
+      draw_card(0, p_str,  "W",   "Сейчас",       p_col);
+      draw_card(1, e_str,  "kWh", "Сегодня",      e_col);
+      draw_card(2, pf_str, "",    "Power Factor", id(c_purple));
+
+      // ============ CHART AREA (full width, max height) ============
+      const int CL = 22;          // chart_left (Y-axis 0..2500)
+      const int CR = 298;         // chart_right (Y-axis PF справа)
+      const int CT = 40;          // chart_top — сразу под карточками
+      const int CB = 158;         // chart_bottom (под него — X-метки)
+      const int CW = CR - CL;     // 276 px
+      const int CH = CB - CT;     // 118 px
+
+      // Y-axis levels: 0, 500, 1000, 1500, 2000, 2500 W (left); 0.0..1.0 (right)
+      const float P_MAX = 2500.0f;
+      const float PF_MAX = 1.0f;
+      const int Y_STEPS = 5;  // 5 интервалов (6 линий)
+
+      // Грид
+      for (int i = 0; i <= Y_STEPS; i++) {
+        int y = CB - i * CH / Y_STEPS;
+        // тонкая горизонтальная линия
+        for (int x = CL; x < CR; x += 4) it.draw_pixel_at(x, y, id(c_grid));
+        // подписи слева (W)
+        char lbl[8];
+        snprintf(lbl, sizeof(lbl), "%d", (int)(i * P_MAX / Y_STEPS));
+        it.printf(CL - 2, y - 4, id(f_axis), id(c_text_dim), TextAlign::TOP_RIGHT, "%s", lbl);
+        // подписи справа (PF)
+        char pflbl[8];
+        snprintf(pflbl, sizeof(pflbl), "%.1f", i * PF_MAX / Y_STEPS);
+        it.printf(CR + 2, y - 4, id(f_axis), id(c_text_dim), "%s", pflbl);
+      }
+
+      // X-axis baseline
+      it.line(CL, CB, CR, CB, id(c_border));
+
+      // Power: area fill, СТРЕТЧ на всю ширину (новые справа)
+      auto &bp = id(buf_p);
+      int n = (int)bp.size();
+      if (n >= 1) {
+        for (int x = 0; x < CW; x++) {
+          // линейная интерполяция между соседними точками
+          float pos = (float)x * (float)(n - 1) / (float)(CW - 1);
+          int idx0 = (int)pos;
+          int idx1 = idx0 + 1;
+          if (idx1 >= n) idx1 = n - 1;
+          float frac = pos - (float)idx0;
+          float v = bp[idx0] * (1.0f - frac) + bp[idx1] * frac;
+          if (v < 0) v = 0;
+          if (v > P_MAX) v = P_MAX;
+          int bh = (int)(v / P_MAX * (float)(CH - 1));
+          if (bh < 1) bh = 1;
+          int bx = CL + x;
+          it.line(bx, CB - bh, bx, CB - 1, power_color(v));
+        }
+      }
+
+      // PF line (hot pink) поверх — тоже стретч
+      auto &bpf = id(buf_pf);
+      int npf = (int)bpf.size();
+      if (npf >= 2) {
+        int prev_x = CL;
+        int prev_y = CB - (int)(bpf[0] * (float)(CH - 1));
+        for (int x = 1; x < CW; x++) {
+          float pos = (float)x * (float)(npf - 1) / (float)(CW - 1);
+          int idx0 = (int)pos;
+          int idx1 = idx0 + 1;
+          if (idx1 >= npf) idx1 = npf - 1;
+          float frac = pos - (float)idx0;
+          float v = bpf[idx0] * (1.0f - frac) + bpf[idx1] * frac;
+          if (v < 0) v = 0;
+          if (v > 1) v = 1;
+          int cur_x = CL + x;
+          int cur_y = CB - (int)(v * (float)(CH - 1));
+          it.line(prev_x, prev_y, cur_x, cur_y, id(c_purple));
+          prev_x = cur_x;
+          prev_y = cur_y;
+        }
+      }
+
+      // Energy curve — накопительная, нормирована к собственному min..max
+      auto &be = id(buf_e);
+      int ne = (int)be.size();
+      if (ne >= 2) {
+        float emin = be[0], emax = be[0];
+        for (float v : be) { if (v < emin) emin = v; if (v > emax) emax = v; }
+        float erange = emax - emin;
+        if (erange < 0.01f) erange = 0.01f;
+        Color e_line = Color(110, 255, 150);
+        int prev_x = CL;
+        int prev_y = CB - (int)((be[0] - emin) / erange * (float)(CH - 1));
+        for (int x = 1; x < CW; x++) {
+          float pos = (float)x * (float)(ne - 1) / (float)(CW - 1);
+          int idx0 = (int)pos;
+          int idx1 = idx0 + 1;
+          if (idx1 >= ne) idx1 = ne - 1;
+          float frac = pos - (float)idx0;
+          float v = be[idx0] * (1.0f - frac) + be[idx1] * frac;
+          int cur_x = CL + x;
+          int cur_y = CB - (int)((v - emin) / erange * (float)(CH - 1));
+          it.line(prev_x, prev_y, cur_x, cur_y, e_line);
+          prev_x = cur_x;
+          prev_y = cur_y;
+        }
+      }
+
+      // X-axis labels: окно 60 мин, метки каждые 10 мин (HH:MM)
+      auto tn = id(homeassistant_time).now();
+      if (tn.is_valid()) {
+        time_t now_t = tn.timestamp;
+        // Найти ближайший минутный шаг 10 ≤ now (выровнять)
+        int min_mod = tn.minute % 10;
+        time_t anchor = now_t - min_mod * 60 - tn.second;
+        for (int k = -6; k <= 0; k++) {
+          time_t t_mark = anchor + k * 600;  // шаг 10 мин
+          if (t_mark < now_t - 60*60) continue;
+          if (t_mark > now_t) continue;
+          float frac = (float)(t_mark - (now_t - 60*60)) / (60.0f * 60.0f);
+          int x = CL + (int)(frac * (float)CW);
+          struct tm tmm;
+          localtime_r(&t_mark, &tmm);
+          char xlbl[8];
+          snprintf(xlbl, sizeof(xlbl), "%02d:%02d", tmm.tm_hour, tmm.tm_min);
+          it.printf(x, CB + 2, id(f_axis), id(c_text_dim), TextAlign::TOP_CENTER, "%s", xlbl);
+          it.line(x, CB, x, CB + 2, id(c_border));
+        }
+      }

@@ -6,7 +6,7 @@ substitutions:
 
 esphome:
   name: ${board_name}
-  
+
 esp32:
   board: esp-wrover-kit
   framework:

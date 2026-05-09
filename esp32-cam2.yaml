@@ -4,13 +4,32 @@ substitutions:
 
 esphome:
   name: ${board_name}
-  
+
 esp32:
   board: esp32cam
   framework:
     type: esp-idf
+    sdkconfig_options:
+      # Brownout — снижаем порог до минимума ~2.43V (вспышка/стрим)
+      CONFIG_ESP_BROWNOUT_DET_LVL_SEL_4: "n"
+      CONFIG_ESP_BROWNOUT_DET_LVL_SEL_7: "y"
+      # WiFi и lwIP на ядро 1, камера остаётся на ядре 0
+      CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_1: "y"
+      CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU1: "y"
 
 psram:
+  mode: quad
+  speed: 80MHz
+
+safe_mode:
+  num_attempts: 10
+  reboot_timeout: 5min
+  boot_is_good_after: 60s
+
+button:
+  - platform: safe_mode
+    name: "${board_name} Safe Mode (OTA)"
+    id: btn_safe_mode
 
 packages:
   device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
