@@ -1,32 +1,44 @@
+# В электрощитке — ST7789 1.9" 320×170 PZEM dashboard
+# Весь код дашборда в packages/pzem_dashboard.yaml
+substitutions:
+  board_name: 'esp32-21'
+  static_ip: '192.168.0.217'
+  number: '21'
+  pin_clk: GPIO14
+  pin_mosi: GPIO27
+  pin_cs: GPIO33
+  pin_dc: GPIO25
+  pin_reset: GPIO26
+  pin_bl: GPIO32
+
 esphome:
-  name: esp32-21
-  friendly_name: esp32-21
+  name: ${board_name}
+  on_boot:
+    priority: -200
+    then:
+      - wait_until:
+          condition:
+            wifi.connected:
+      - wait_until:
+          condition:
+            api.connected:
+      - wait_until:
+          condition:
+            lambda: 'return id(homeassistant_time).now().is_valid();'
+      - delay: 2s
+      - script.execute: load_history
 
 esp32:
-  board: esp32dev
+  board: esp-wrover-kit
   framework:
     type: esp-idf
 
-# Enable logging
-logger:
-
-# Enable Home Assistant API
-api:
-  encryption:
-    key: "eHxtSHlSzv8hc4Vgu0CTYVkmUuLE2j1aQpxaKCBUBnI="
-
-ota:
-  - platform: esphome
-    password: "1230fe9e96f99088acf701fa69dfb03b"
-
-wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
-
-  # Enable fallback hotspot (captive portal) in case wifi connection fails
-  ap:
-    ssid: "Esp32-21 Fallback Hotspot"
-    password: "nDtQM71L5lxK"
-
-captive_portal:
-    
+packages:
+  device_base: !include packages/1wifi_api_ota_logger.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+  led: !include packages/3status_led_esp32.yaml
+  ble_common: !include packages/ble_common.yaml
+  ble_alex: !include packages/ble_alex.yaml
+  ble_ira: !include packages/ble_ira.yaml
+  ble_lila: !include packages/ble_lila.yaml
+  pzem_dashboard: !include packages/pzem_dashboard.yaml

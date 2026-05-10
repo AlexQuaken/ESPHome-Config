@@ -17,7 +17,7 @@ globals:
     initial_value: '0'
 
 packages:
-  device_base: !include packages/1wifi_api_ota_logger.yaml
+  device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
   base_sensors: !include packages/2common_sensors.yaml
 
 sensor:

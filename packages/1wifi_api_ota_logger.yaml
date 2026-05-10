@@ -22,33 +22,17 @@ wifi:
     subnet: 255.255.255.0
     dns1: 192.168.0.7
     dns2: 192.168.0.1
-
   ap:
     ssid: ${board_name}_Fallback
     password: !secret wifipwd
 
 api:
-  #password: !secret wifipwd
 
 ota:
   platform: esphome
   password: !secret wifipwd
 
 logger:
-
-mqtt:
-  broker: !secret mqtt_ip
-  username: !secret mqtt_user
-  password: !secret mqtt_pwd
-  discovery: false
-  discovery_retain: false
-  topic_prefix: esp/${board_name}
-  birth_message:
-    topic: esp/status/status
-    payload: ${board_name} online
-  will_message:
-    topic: esp/status/status
-    payload: ${board_name} offline
 
 # Кнопка для входа в safe_mode (OTA при тесном heap)
 button:

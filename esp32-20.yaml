@@ -1,11 +1,35 @@
-#В электрощитке
+# В электрощитке — ST7789 1.9" 320×170 PZEM dashboard
+# Дашборд через packages/pzem_dashboard.yaml — те же пины что esp32-21
 substitutions:
   board_name: 'esp32-20'
   static_ip: '192.168.0.162'
   number: '20'
+  pin_clk: GPIO14
+  pin_mosi: GPIO27
+  pin_cs: GPIO33
+  pin_dc: GPIO25
+  pin_reset: GPIO26
+  pin_bl: GPIO32
+  # экран развернут на 180° относительно esp32-21
+  mirror_x: "false"
+  mirror_y: "true"
 
 esphome:
   name: ${board_name}
+  on_boot:
+    priority: -200
+    then:
+      - wait_until:
+          condition:
+            wifi.connected:
+      - wait_until:
+          condition:
+            api.connected:
+      - wait_until:
+          condition:
+            lambda: 'return id(homeassistant_time).now().is_valid();'
+      - delay: 2s
+      - script.execute: load_history
 
 esp32:
   board: esp-wrover-kit
@@ -13,10 +37,11 @@ esp32:
     type: esp-idf
 
 packages:
-  device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
+  device_base: !include packages/1wifi_api_ota_logger.yaml
   base_sensors: !include packages/2common_sensors.yaml
   led: !include packages/3status_led_esp32.yaml
   ble_common: !include packages/ble_common.yaml
   ble_alex: !include packages/ble_alex.yaml
   ble_ira: !include packages/ble_ira.yaml
   ble_lila: !include packages/ble_lila.yaml
+  pzem_dashboard: !include packages/pzem_dashboard.yaml

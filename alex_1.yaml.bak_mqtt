@@ -1,0 +1,69 @@
+#Элетрощит Мама
+substitutions:
+  board_name: 'power-meter-mk'
+  static_ip: '192.168.0.17'
+  number: '1'
+  topic: "communal_payments/113/energy/esp_energy"
+  topic_var: "communal_payments/113/energy/unaccounted/esp_energy"
+  mk: '_mk'
+
+globals:
+  - id: delta
+    type: float
+    restore_value: no
+    initial_value: '42000'
+
+logger:
+  level: DEBUG
+
+esphome:
+  name: ${board_name}
+  
+esp32:
+  board: esp32doit-devkit-v1
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+  led: !include packages/3status_led_esp32.yaml
+  pzemac: !include packages/6pzem_energy.yaml
+  ble2: !include packages/44ble_tracker_113.yaml
+
+wifi:
+  reboot_timeout: 3min
+
+uart:
+  tx_pin: GPIO19
+  rx_pin: GPIO18
+  stop_bits: 2
+  baud_rate: 9600
+  
+sensor:
+  - platform: pzemac
+    current:
+      name: "MK PZEM Current"
+      accuracy_decimals: 2
+      filters:
+        - round: 2
+    voltage:
+      name: "MK PZEM Voltage"
+      accuracy_decimals: 1
+      filters:
+        - round: 1
+    power:
+      name: "MK PZEM Power"
+      id: "pzem_power"
+      accuracy_decimals: 1
+      filters:
+        - round: 1
+    frequency:
+      name: "MK PZEM Frequency"
+      accuracy_decimals: 1
+      filters:
+        - round: 1
+    power_factor:
+      name: "MK PZEM Power Factor"
+      accuracy_decimals: 2
+      filters:
+        - round: 2
+    update_interval: 30s

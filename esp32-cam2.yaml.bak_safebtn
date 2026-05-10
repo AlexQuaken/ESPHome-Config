@@ -26,6 +26,10 @@ safe_mode:
   reboot_timeout: 5min
   boot_is_good_after: 60s
 
+button:
+  - platform: safe_mode
+    name: "${board_name} Safe Mode (OTA)"
+    id: btn_safe_mode
 
 packages:
   device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
