@@ -1,0 +1,725 @@
+# Guition JC4880P443C-I-W (ESP32-P4 + ESP32-C6, 4.3" 480x800 MIPI-DSI)
+# Landscape 800x480: log console + BLE radar
+# Touch GT911: тап по экрану — переключение log <-> radar
+substitutions:
+  board_name: 'esp32-p4-disp'
+  static_ip: '192.168.0.220'
+
+esphome:
+  name: ${board_name}
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: |-
+            id(log_lines).push_back("${board_name} booted");
+            id(log_lines).push_back("Guition JC4880P443C 800x480");
+        - update.perform:
+            id: c6_firmware
+
+esp32:
+  board: esp32-p4-evboard
+  cpu_frequency: 400MHz
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    advanced:
+      enable_idf_experimental_features: true
+
+esp32_hosted:
+  active_high: true
+  variant: ESP32C6
+  reset_pin: GPIO54
+  cmd_pin: GPIO19
+  clk_pin: GPIO18
+  d0_pin: GPIO14
+  d1_pin: GPIO15
+  d2_pin: GPIO16
+  d3_pin: GPIO17
+
+update:
+  - platform: esp32_hosted
+    id: c6_firmware
+    name: ${board_name} C6 Firmware
+    type: embedded
+    path: network_adapter_esp32c6.bin
+    sha256: ee7c546eb726ba92aa583448969c05f378a0deae5b3556699122761b7a595f51
+
+psram:
+  mode: hex
+  speed: 200MHz
+
+esp_ldo:
+  - channel: 3
+    voltage: 2.5V
+
+wifi:
+  ssid: !secret wifi
+  password: !secret wifipwd
+  fast_connect: true
+  reboot_timeout: 3min
+  manual_ip:
+    static_ip: ${static_ip}
+    gateway: 192.168.0.1
+    subnet: 255.255.255.0
+    dns1: 192.168.0.7
+    dns2: 192.168.0.1
+  ap:
+    ssid: ${board_name}_Fallback
+    password: !secret wifipwd
+
+api:
+  services:
+    - service: console_log
+      variables:
+        line: string
+      then:
+        - lambda: |-
+            auto &v = id(log_lines);
+            std::string s = line;
+            if (s.size() > 86) s = s.substr(0, 86);
+            v.push_back(s);
+            while ((int)v.size() > id(log_max)) v.erase(v.begin());
+        - component.update: lcd
+    - service: console_clear
+      then:
+        - lambda: 'id(log_lines).clear();'
+        - component.update: lcd
+    - service: set_display_mode
+      variables:
+        mode: int
+      then:
+        - lambda: 'id(display_mode) = mode;'
+
+ota:
+  platform: esphome
+  password: !secret wifipwd
+
+logger:
+  level: INFO
+  hardware_uart: USB_SERIAL_JTAG
+  logs:
+    font: ERROR
+    display: ERROR
+    mipi_dsi: ERROR
+    component: ERROR
+    scheduler: ERROR
+    esp32_ble_tracker: INFO
+    esp32_ble: INFO
+  on_message:
+    level: DEBUG
+    then:
+      - lambda: |-
+          std::string t = tag ? tag : "";
+          if (t.find("font") != std::string::npos) return;
+          if (t.find("display") != std::string::npos) return;
+          if (t.find("mipi") != std::string::npos) return;
+          std::string raw;
+          for (size_t i = 0; message[i] != 0; i++) {
+            unsigned char c = (unsigned char)message[i];
+            if (c == 0x1B) { while (message[i] != 0 && message[i] != 'm') i++; continue; }
+            if (c == '\r' || c == '\n') continue;
+            if (c < 0x20 || c > 0x7E) continue;
+            raw += (char)c;
+          }
+          auto p = raw.find("]: ");
+          if (p != std::string::npos) raw = raw.substr(p + 3);
+          std::string clean;
+          for (char c : raw) if (c != '\'') clean += c;
+          if (clean.empty()) return;
+          uint32_t now = millis();
+          auto &v = id(log_lines);
+          const int LINE_H = 16;
+          const int FRAME_MS = 16;
+          if (id(has_pending)) {
+            if (id(scroll_off) > 0 && id(scroll_off) < LINE_H && (int)v.size() > id(log_max)) {
+              v.erase(v.begin());
+              id(scroll_off) = 0;
+            }
+            v.push_back(id(pending_line));
+            while ((int)v.size() > 60) v.erase(v.begin());
+            if ((int)v.size() > id(log_max)) {
+              id(anim_ms) = LINE_H * FRAME_MS;
+              id(scroll_start_ms) = now;
+              id(scroll_off) = 0.0f;
+            }
+          }
+          id(pending_line) = clean;
+          id(pending_time) = now;
+          id(has_pending) = true;
+
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+
+output:
+  - platform: ledc
+    pin: GPIO23
+    id: backlight_pwm
+    frequency: 5000Hz
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: ${board_name} Backlight
+    id: backlight
+    restore_mode: RESTORE_DEFAULT_ON
+    default_transition_length: 300ms
+
+i2c:
+  id: i2c_bus
+  sda: GPIO7
+  scl: GPIO8
+  frequency: 400kHz
+
+touchscreen:
+  - platform: gt911
+    id: ts
+    i2c_id: i2c_bus
+    reset_pin: GPIO3
+    transform:
+      swap_xy: true
+      mirror_x: false
+      mirror_y: true
+    on_release:
+      then:
+        - lambda: |-
+            id(display_mode) = 1 - id(display_mode);
+            id(radar_mode_sw).publish_state(id(display_mode) == 1);
+            ESP_LOGI("touch", "Toggled mode -> %d", id(display_mode));
+
+esp32_ble:
+  enable_on_boot: true
+
+esp32_ble_tracker:
+  scan_parameters:
+    interval: 1100ms
+    window: 1100ms
+    active: false
+  on_ble_advertise:
+    - then:
+        - lambda: |-
+            std::string addr = x.address_str();
+            std::string name = x.get_name();
+            int rssi = x.get_rssi();
+            uint32_t now = millis();
+            auto &addrs = id(dev_addr);
+            auto &names = id(dev_name);
+            auto &rssis = id(dev_rssi);
+            auto &rssis0 = id(dev_rssi0);
+            auto &seens = id(dev_seen);
+            auto &painted = id(dev_painted);
+            for (int i = (int)addrs.size() - 1; i >= 0; i--) {
+              if (addrs[i] == addr && now - seens[i] < 2000) {
+                rssis[i] = rssi;
+                seens[i] = now;
+                return;
+              }
+            }
+            bool known = (strcasecmp(addr.c_str(), "DE:AD:51:6E:27:C5") == 0
+                       || strcasecmp(addr.c_str(), "CE:CD:12:23:1F:64") == 0
+                       || strcasecmp(addr.c_str(), "FD:D9:6C:D4:F9:F7") == 0);
+            if (!known && (int)addrs.size() >= 80) return;
+            addrs.push_back(addr);
+            names.push_back(name);
+            rssis.push_back(rssi);
+            rssis0.push_back(rssi);
+            seens.push_back(now);
+            painted.push_back(0);
+            id(scan_counter)++;
+            id(dev_scan_id).push_back(id(scan_counter));
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          id(fps_value) = (int)id(frame_counter);
+          id(frame_counter) = 0;
+  - interval: 10s
+    then:
+      - lambda: |-
+          ESP_LOGI("hb", "up=%lus heap=%uKB fps=%d dev=%u mode=%d",
+                   (unsigned long)(millis()/1000),
+                   (unsigned)(esp_get_free_heap_size()/1024),
+                   id(fps_value),
+                   (unsigned)id(dev_addr).size(),
+                   id(display_mode));
+  - interval: 5s
+    then:
+      - lambda: |-
+          if (!id(auto_switched) && id(display_mode) == 0 && millis() > 60000) {
+            id(display_mode) = 1;
+            id(radar_mode_sw).publish_state(true);
+            id(auto_switched) = true;
+            ESP_LOGI("auto", "Auto-switched to radar after 60s (one-shot)");
+          }
+  - interval: 1s
+    then:
+      - lambda: |-
+          uint32_t t = millis();
+          auto &addrs = id(dev_addr);
+          auto &names = id(dev_name);
+          auto &rssis = id(dev_rssi);
+          auto &rssis0 = id(dev_rssi0);
+          auto &seens = id(dev_seen);
+          auto &painted = id(dev_painted);
+          auto &dists = id(dev_dist);
+          if (dists.size() < addrs.size()) dists.resize(addrs.size(), 0);
+          auto &scan_ids = id(dev_scan_id);
+          if (scan_ids.size() < addrs.size()) scan_ids.resize(addrs.size(), 0);
+          for (int i = (int)addrs.size() - 1; i >= 0; i--) {
+            if (t - seens[i] > 30000) {
+              addrs.erase(addrs.begin() + i);
+              names.erase(names.begin() + i);
+              rssis.erase(rssis.begin() + i);
+              rssis0.erase(rssis0.begin() + i);
+              seens.erase(seens.begin() + i);
+              painted.erase(painted.begin() + i);
+              if (i < (int)dists.size()) dists.erase(dists.begin() + i);
+              if (i < (int)scan_ids.size()) scan_ids.erase(scan_ids.begin() + i);
+            }
+          }
+          auto &cache = id(cache_radar_idx);
+          cache.clear();
+          int uniq = 0;
+          std::vector<std::string> seen_macs;
+          seen_macs.reserve(addrs.size());
+          for (int ii = (int)addrs.size() - 1; ii >= 0; ii--) {
+            size_t i = (size_t)ii;
+            if (t - seens[i] > 60000) continue;
+            bool dup = false;
+            for (auto &s : seen_macs) if (s == addrs[i]) { dup = true; break; }
+            if (dup) continue;
+            seen_macs.push_back(addrs[i]);
+            uniq++;
+            bool known = (strcasecmp(addrs[i].c_str(), "DE:AD:51:6E:27:C5") == 0
+                       || strcasecmp(addrs[i].c_str(), "CE:CD:12:23:1F:64") == 0
+                       || strcasecmp(addrs[i].c_str(), "FD:D9:6C:D4:F9:F7") == 0);
+            if (known || !names[i].empty()) cache.push_back((int)i);
+          }
+          id(cache_uniq60) = uniq;
+
+switch:
+  - platform: template
+    name: ${board_name} Radar Mode
+    id: radar_mode_sw
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    turn_on_action:
+      - lambda: 'id(display_mode) = 1;'
+    turn_off_action:
+      - lambda: 'id(display_mode) = 0;'
+
+button:
+  - platform: safe_mode
+    name: ${board_name} Safe Mode (OTA)
+
+font:
+  - file: "fonts/Px437_IBM_VGA_9x16.ttf"
+    id: f_console
+    size: 16
+    bpp: 1
+    glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
+
+color:
+  - id: c_green
+    red: 0%
+    green: 100%
+    blue: 0%
+  - id: c_dim
+    red: 0%
+    green: 30%
+    blue: 0%
+  - id: c_amber
+    red: 100%
+    green: 70%
+    blue: 0%
+  - id: c_black
+    red: 0%
+    green: 0%
+    blue: 0%
+
+globals:
+  - id: log_lines
+    type: std::vector<std::string>
+    restore_value: no
+  - id: log_max
+    type: int
+    restore_value: no
+    initial_value: '28'
+  - id: scroll_off
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: scroll_start_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: anim_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '500'
+  - id: pending_line
+    type: std::string
+    restore_value: no
+  - id: pending_time
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: has_pending
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: dev_addr
+    type: std::vector<std::string>
+    restore_value: no
+  - id: dev_name
+    type: std::vector<std::string>
+    restore_value: no
+  - id: dev_rssi
+    type: std::vector<int>
+    restore_value: no
+  - id: dev_rssi0
+    type: std::vector<int>
+    restore_value: no
+  - id: dev_seen
+    type: std::vector<uint32_t>
+    restore_value: no
+  - id: dev_painted
+    type: std::vector<uint32_t>
+    restore_value: no
+  - id: dev_dist
+    type: std::vector<int>
+    restore_value: no
+  - id: dev_scan_id
+    type: std::vector<uint16_t>
+    restore_value: no
+  - id: scan_counter
+    type: uint16_t
+    restore_value: no
+    initial_value: '0'
+  - id: prev_sweep
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: cache_uniq60
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: cache_radar_idx
+    type: std::vector<int>
+    restore_value: no
+  - id: display_mode
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: frame_counter
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: fps_value
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: auto_switched
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+display:
+  - platform: mipi_dsi
+    id: lcd
+    model: JC4880P443
+    byte_order: little_endian
+    rotation: 90
+    draw_rounding: 1
+    update_interval: 33ms
+    lambda: |-
+      id(frame_counter)++;
+      uint32_t t = millis();
+      int W = it.get_width();
+      int H = it.get_height();
+      // Полная очистка каждый кадр через filled_rectangle (надёжнее it.fill — покрывает все edge пиксели)
+      it.filled_rectangle(0, 0, W, H, id(c_black));
+
+      if (id(display_mode) == 0) {
+        // ===== LOG CONSOLE =====
+        const int LINE_H = 16;
+        const int CHAR_W = 9;
+        const int FRAME_MS = 16;
+        const int GAP = 80;
+        const int CLOCK_GAP = 16;
+        auto &v = id(log_lines);
+        if ((int)v.size() > id(log_max)) {
+          uint32_t elapsed = t - id(scroll_start_ms);
+          float o = (float)elapsed * (float)LINE_H / (float)id(anim_ms);
+          if (o > (float)LINE_H) o = (float)LINE_H;
+          id(scroll_off) = o;
+          if (o >= (float)LINE_H) { v.erase(v.begin()); id(scroll_off) = 0.0f; }
+        }
+        int n = (int)v.size();
+        int yoff = (int)(id(scroll_off) + 0.5f);
+
+        char clk[32];
+        auto tn = id(homeassistant_time).now();
+        unsigned msec = (unsigned)(t % 1000);
+        if (tn.is_valid()) {
+          snprintf(clk, sizeof(clk), "%02d:%02d:%02d.%03u", tn.hour, tn.minute, tn.second, msec);
+        } else {
+          snprintf(clk, sizeof(clk), "--:--:--.%03u", msec);
+        }
+        int cw = (int)strlen(clk) * CHAR_W;
+        int line_w_top = W - cw - CLOCK_GAP;
+        if (line_w_top < 1) line_w_top = 1;
+
+        for (int i = 0; i < n; i++) {
+          int y = i * LINE_H - yoff;
+          if (y >= H) continue;
+          if (y + LINE_H <= 0) continue;
+          auto &s = v[i];
+          int w = (int)s.size() * CHAR_W;
+          int avail = (y < LINE_H) ? line_w_top : W;
+          if (w <= avail) {
+            it.printf(0, y, id(f_console), id(c_green), "%s", s.c_str());
+          } else {
+            int cycle = w + GAP;
+            int off_x = ((int)(t * 0.075f)) % cycle;
+            it.printf(-off_x, y, id(f_console), id(c_green), "%s", s.c_str());
+            it.printf(-off_x + cycle, y, id(f_console), id(c_green), "%s", s.c_str());
+          }
+        }
+
+        if (id(has_pending)) {
+          int y = n * LINE_H - yoff;
+          if (y < H && y + LINE_H > 0) {
+            auto &s = id(pending_line);
+            int w = (int)s.size() * CHAR_W;
+            int avail = (y < LINE_H) ? line_w_top : W;
+            if (w <= avail) {
+              it.printf(0, y, id(f_console), id(c_green), "%s", s.c_str());
+            } else {
+              int cycle = w + GAP;
+              int off_x = ((int)(t * 0.075f)) % cycle;
+              it.printf(-off_x, y, id(f_console), id(c_green), "%s", s.c_str());
+              it.printf(-off_x + cycle, y, id(f_console), id(c_green), "%s", s.c_str());
+            }
+          }
+        }
+
+        it.filled_rectangle(line_w_top, 0, W - line_w_top, LINE_H, id(c_black));
+        it.printf(W, 0, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", clk);
+      } else {
+        // ===== BLE RADAR =====
+        const int cx = 240;
+        const int cy = 240;
+        const int max_r = 220;
+
+        it.line(cx - max_r, cy, cx + max_r, cy, id(c_dim));
+        it.line(cx, cy - max_r, cx, cy + max_r, id(c_dim));
+
+        float sw = (float)(t % 6000) / 6000.0f * 6.28318f;
+        const int TRAIL_SEG = 10;
+        const float SEG_ANGLE = 0.14f;
+        for (int i = TRAIL_SEG; i >= 1; i--) {
+          float a1 = sw - (float)i * SEG_ANGLE;
+          float a2 = sw - (float)(i - 1) * SEG_ANGLE;
+          int p1x = cx + (int)(cosf(a1) * (float)max_r);
+          int p1y = cy + (int)(sinf(a1) * (float)max_r);
+          int p2x = cx + (int)(cosf(a2) * (float)max_r);
+          int p2y = cy + (int)(sinf(a2) * (float)max_r);
+          // Gradient 240→12 (≈95%→5%) линейно по trail
+          int intensity = 12 + (TRAIL_SEG - i) * 26;
+          if (intensity > 240) intensity = 240;
+          if (intensity < 12) intensity = 12;
+          it.filled_triangle(cx, cy, p1x, p1y, p2x, p2y, Color(0, intensity, 0));
+        }
+        int sx0 = cx + (int)(cosf(sw) * (float)max_r);
+        int sy0 = cy + (int)(sinf(sw) * (float)max_r);
+        it.line(cx, cy, sx0, sy0, Color(140, 255, 140));
+
+        it.circle(cx, cy, 55, id(c_dim));
+        it.circle(cx, cy, 110, id(c_dim));
+        it.circle(cx, cy, 165, id(c_dim));
+        it.circle(cx, cy, max_r, id(c_green));
+
+        auto &addrs = id(dev_addr);
+        auto &names = id(dev_name);
+        auto &rssis = id(dev_rssi);
+        auto &rssis0 = id(dev_rssi0);
+        auto &seens = id(dev_seen);
+        auto &painted = id(dev_painted);
+
+        float prev = id(prev_sweep);
+        auto &dists = id(dev_dist);
+        if (dists.size() < addrs.size()) dists.resize(addrs.size(), 0);
+        for (size_t i = 0; i < addrs.size(); i++) {
+          uint32_t h = 0;
+          for (char c : addrs[i]) h = h * 31u + (uint8_t)c;
+          float ang = (float)(h % 360) * 0.0174533f;
+          bool crossed = false;
+          if (prev <= sw) {
+            if (ang > prev && ang <= sw) crossed = true;
+          } else {
+            if (ang > prev || ang <= sw) crossed = true;
+          }
+          if (crossed) {
+            painted[i] = t;
+            int r = rssis[i];
+            int d = 30 + ((-40 - r) * 180) / 60;
+            if (d < 30) d = 30;
+            if (d > 215) d = 215;
+            dists[i] = d;
+          }
+        }
+        id(prev_sweep) = sw;
+
+        auto &radar_idx = id(cache_radar_idx);
+        for (int idx_pos = 0; idx_pos < (int)radar_idx.size(); idx_pos++) {
+          size_t i = (size_t)radar_idx[idx_pos];
+          if (i >= addrs.size()) continue;
+          const char* label = nullptr;
+          if (strcasecmp(addrs[i].c_str(), "DE:AD:51:6E:27:C5") == 0) label = "ALEX";
+          else if (strcasecmp(addrs[i].c_str(), "CE:CD:12:23:1F:64") == 0) label = "IRA";
+          else if (strcasecmp(addrs[i].c_str(), "FD:D9:6C:D4:F9:F7") == 0) label = "LILA";
+          bool known = (label != nullptr);
+          if (painted[i] == 0 && !known) continue;
+          uint32_t age = (painted[i] == 0) ? 99999 : (t - painted[i]);
+          if (!known && age > 5000) continue;
+
+          int dist = (i < id(dev_dist).size()) ? id(dev_dist)[i] : 0;
+          if (dist == 0) {
+            int r = rssis[i];
+            dist = 30 + ((-40 - r) * 180) / 60;
+            if (dist < 30) dist = 30;
+            if (dist > 215) dist = 215;
+          }
+          uint32_t h = 0;
+          for (char c : addrs[i]) h = h * 31u + (uint8_t)c;
+          float ang = (float)(h % 360) * 0.0174533f;
+          int dx = cx + (int)(cosf(ang) * (float)dist);
+          int dy = cy + (int)(sinf(ang) * (float)dist);
+          int intensity;
+          int dot_r;
+          if (known) {
+            intensity = 240;
+            dot_r = (age < 200) ? 6 : 4;
+          } else {
+            intensity = 240 - (int)((float)age * 240.0f / 5000.0f);
+            if (intensity < 0) intensity = 0;
+            dot_r = (age < 200) ? 5 : 3;
+          }
+          it.filled_circle(dx, dy, dot_r, Color(0, intensity, 0));
+          if (label) {
+            int rssi_val = (i < rssis.size()) ? rssis[i] : -99;
+            char rssi_s[12];
+            snprintf(rssi_s, sizeof(rssi_s), "R:%d", rssi_val);
+            int name_w = (int)strlen(label) * 9;
+            int rssi_w = (int)strlen(rssi_s) * 9;
+            int max_w = (name_w > rssi_w) ? name_w : rssi_w;
+            int lx = (dx > cx) ? dx + dot_r + 6 : dx - dot_r - 6 - max_w;
+            int ly = dy - 8;
+            it.printf(lx, ly, id(f_console), Color(0, intensity, 0), "%s", label);
+            it.printf(lx, ly + 16, id(f_console), Color(0, intensity, 0), "%s", rssi_s);
+          }
+        }
+
+        // ===== Sidebar (x=480..799) =====
+        const int sb_x = 480;
+        const int CW = 9;
+        const int row_h = 18;
+        const int sb_y_start = 22;
+        const int visible_rows = 24;
+        const int sb_y_end = sb_y_start + visible_rows * row_h;
+        // Колонки сжаты вправо: SCAN[480..530] | NAME[530..705] (-9) | RSSI[705..799] (+9)
+        const int col1_x = sb_x + 50;   // 530
+        const int col2_x = sb_x + 225;  // 705 (было 714, сжата NAME на 9px)
+        const int scan_cell_l = sb_x;       const int scan_cell_w = col1_x - sb_x;       // 50
+        const int name_cell_l = col1_x;     const int name_cell_w = col2_x - col1_x;     // 175
+        const int rssi_cell_l = col2_x;     const int rssi_cell_w = W - col2_x;          // 94
+
+        // Centered headers (4 chars * 9 = 36px wide)
+        const int hdr_w = 4 * CW;
+        it.printf(scan_cell_l + (scan_cell_w - hdr_w) / 2, 2, id(f_console), id(c_green), "SCAN");
+        it.printf(name_cell_l + (name_cell_w - hdr_w) / 2, 2, id(f_console), id(c_green), "NAME");
+        it.printf(rssi_cell_l + (rssi_cell_w - hdr_w) / 2, 2, id(f_console), id(c_green), "RSSI");
+
+        int N = (int)addrs.size();
+        int skip = (N > visible_rows) ? (N - visible_rows) : 0;
+
+        it.start_clipping(Rect(sb_x - 1, sb_y_start - 2, W - sb_x + 1, sb_y_end - sb_y_start + 4));
+        for (int i = skip; i < N; i++) {
+          size_t k = (size_t)i;
+          int row_y = sb_y_start + (i - skip) * row_h;
+          if (row_y > sb_y_end) continue;
+          std::string nm = names[k];
+          if (nm.empty()) nm = addrs[k];
+          uint16_t scan_id = (k < id(dev_scan_id).size()) ? id(dev_scan_id)[k] : 0;
+          char sc[8];
+          snprintf(sc, sizeof(sc), "%04X", scan_id);
+          int r0 = (k < rssis0.size()) ? rssis0[k] : rssis[k];
+
+          // SCAN — center (4 chars)
+          int scan_w = 4 * CW;
+          it.printf(scan_cell_l + (scan_cell_w - scan_w) / 2, row_y, id(f_console), id(c_green), "%s", sc);
+
+          // NAME — все строки сдвинуты на +13 (центруются в колонке после её сжатия)
+          int name_x = name_cell_l + 13;
+          int name_max_chars = (name_cell_w - 17) / CW;
+          if ((int)nm.size() <= name_max_chars) {
+            it.printf(name_x, row_y, id(f_console), id(c_green), "%s", nm.c_str());
+          } else {
+            std::string padded = nm + "    ";
+            int cycle_px = (int)padded.size() * CW;
+            int off_px = (int)((t / 60) % (uint32_t)cycle_px);
+            it.start_clipping(Rect(name_x, row_y, name_cell_w - 8, row_h));
+            it.printf(name_x - off_px, row_y, id(f_console), id(c_green), "%s", padded.c_str());
+            it.printf(name_x - off_px + cycle_px, row_y, id(f_console), id(c_green), "%s", padded.c_str());
+            it.end_clipping();
+          }
+
+          // RSSI — center (7 chars: " -43 dB")
+          char rb[12];
+          snprintf(rb, sizeof(rb), "%4d dB", r0);
+          int rssi_w = (int)strlen(rb) * CW;
+          it.printf(rssi_cell_l + (rssi_cell_w - rssi_w) / 2, row_y, id(f_console), id(c_green), "%s", rb);
+        }
+        it.end_clipping();
+
+        const int bottom_y = H - 1;
+        it.line(sb_x - 4, 0, sb_x - 4, bottom_y, id(c_dim));
+        it.line(W - 1, 0, W - 1, bottom_y, id(c_dim));
+        it.line(sb_x - 4, 0, W - 1, 0, id(c_dim));
+        it.line(sb_x - 4, sb_y_start - 2, W - 1, sb_y_start - 2, id(c_dim));
+        it.line(sb_x - 4, sb_y_end, W - 1, sb_y_end, id(c_dim));
+        it.line(sb_x - 4, bottom_y, W - 1, bottom_y, id(c_dim));
+        it.line(col1_x, 0, col1_x, sb_y_end, id(c_dim));
+        it.line(col2_x, 0, col2_x, sb_y_end, id(c_dim));
+
+        char clk[16];
+        auto tn = id(homeassistant_time).now();
+        if (tn.is_valid()) snprintf(clk, sizeof(clk), "%02d:%02d:%02d", tn.hour, tn.minute, tn.second);
+        else snprintf(clk, sizeof(clk), "--:--:--");
+        it.printf(4, 2, id(f_console), id(c_green), "%s", clk);
+        char fps_s[16];
+        snprintf(fps_s, sizeof(fps_s), "FPS:%d", id(fps_value));
+        it.printf(4, 20, id(f_console), id(c_green), "%s", fps_s);
+
+        char dt[24];
+        if (tn.is_valid()) snprintf(dt, sizeof(dt), "%04d.%02d.%02d", tn.year, tn.month, tn.day_of_month);
+        else snprintf(dt, sizeof(dt), "----.--.--");
+        it.printf(sb_x - 8, 2, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", dt);
+
+        it.printf(4, H - 18, id(f_console), id(c_green), "BLE RADAR");
+        char mem[16];
+        snprintf(mem, sizeof(mem), "MEM %uK", (unsigned)(esp_get_free_heap_size() / 1024));
+        it.printf(sb_x - 8, H - 18, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", mem);
+
+        char devc[24];
+        snprintf(devc, sizeof(devc), "Found: %u/min", (unsigned)id(cache_uniq60));
+        it.printf(sb_x + 4, sb_y_end + 4, id(f_console), id(c_green), "%s", devc);
+        uint32_t up_s = t / 1000;
+        unsigned d = up_s / 86400, h = (up_s % 86400) / 3600, m = (up_s % 3600) / 60, ss = up_s % 60;
+        char upbuf[32];
+        if (d > 0) snprintf(upbuf, sizeof(upbuf), "Up: %ud %02u:%02u", d, h, m);
+        else snprintf(upbuf, sizeof(upbuf), "Up: %02u:%02u:%02u", h, m, ss);
+        it.printf(W - 4, sb_y_end + 4, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", upbuf);
+      }
