@@ -25,70 +25,42 @@ sensor:
     id: mqtt_energy_cost
     topic: ${topic}_cost
     retain: true
-    unit_of_measurement: UAH
-    accuracy_decimals: 2
-    filters:
-      - round: 2
 
   - platform: mqtt_subscribe
     name: mqtt_energy_day${mk}
     id: mqtt_energy_day
     topic: ${topic}_day
     retain: true
-    unit_of_measurement: kWh
-    accuracy_decimals: 2
-    filters:
-      - round: 2
 
   - platform: mqtt_subscribe
     name: mqtt_energy_night${mk}
     id: mqtt_energy_night
     topic: ${topic}_night
     retain: true
-    unit_of_measurement: kWh
-    accuracy_decimals: 2
-    filters:
-      - round: 2
     
   - platform: mqtt_subscribe
     name: mqtt_energy_total${mk}
     id: mqtt_energy_total
     topic: ${topic}_total
     retain: true
-    unit_of_measurement: kWh
-    accuracy_decimals: 2
-    filters:
-      - round: 2
     
   - platform: mqtt_subscribe
     name: mqtt_unaccounted_day${mk}
     id: mqtt_unaccounted_day
     topic: ${topic_var}_day
     retain: true
-    unit_of_measurement: kWh
-    accuracy_decimals: 2
-    filters:
-      - round: 2
 
   - platform: mqtt_subscribe
     name: mqtt_unaccounted_night${mk}
     id: mqtt_unaccounted_night
     topic: ${topic_var}_night
     retain: true
-    unit_of_measurement: kWh
-    accuracy_decimals: 2
-    filters:
-      - round: 2
     
   - platform: mqtt_subscribe
     name: mqtt_unaccounted_total${mk}
     id: mqtt_unaccounted_total
     topic: ${topic_var}_total
     retain: true
-    unit_of_measurement: kWh
-    accuracy_decimals: 2
-    filters:
-      - round: 2
 
 time:
   - platform: homeassistant
@@ -175,7 +147,7 @@ time:
                   mqtt.connected:
               then:
                 - lambda: "id(var_energy_night) = id(var_energy_night) + id(pzem_power).state / 120000;"
-                - logger.log: mqtt is disconnected, write to memory var_energy_night !lambda "return id(var_energy_night);"
+                - logger.log: mqtt is disconnected, write to memory var_energy_night !lambda "retun id(var_energy_night);"
               else:
                 - logger.log: mqtt is connected, skipping write to memory var_energy_night
 
@@ -187,7 +159,7 @@ time:
                   mqtt.connected:
               then:
                 - lambda: "id(var_energy_total) = id(var_energy_day) + id(var_energy_night);"
-                - logger.log: mqtt is disconnected, write to memory var_energy_night !lambda "return id(var_energy_total);"
+                - logger.log: mqtt is disconnected, write to memory var_energy_night !lambda "retun id(var_energy_total);"
               else:
                 - logger.log: mqtt is connected, skipping write to memory var_energy_total
 
