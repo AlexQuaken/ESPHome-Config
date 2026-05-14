@@ -1,0 +1,66 @@
+#В Электрощитке
+substitutions:
+  board_name: 'power-meter'
+  static_ip: '192.168.0.169'
+  topic: "communal_payments/118/energy/esp_energy"
+  topic_var: "communal_payments/118/energy/unaccounted/esp_energy"
+  mk: ''
+
+globals:
+  - id: delta
+    type: float
+    restore_value: no
+    initial_value: '20000'
+
+esphome:
+  name: ${board_name}
+  
+esp8266:
+  board: nodemcuv2
+  restore_from_flash: false
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+  led: !include packages/3status_led_esp32.yaml
+  pzemac: !include packages/6pzem_energy.yaml
+
+logger:
+  level: VERBOSE
+
+uart:
+  tx_pin: D5
+  rx_pin: D6
+  stop_bits: 1
+  baud_rate: 9600
+
+sensor:
+  - platform: pzemac
+    current:
+      name: "PZEM Current"
+      accuracy_decimals: 2
+      filters:
+        - round: 2
+    voltage:
+      name: "PZEM Voltage"
+      accuracy_decimals: 1
+      unit_of_measurement: "V"
+      filters:
+        - round: 1
+    power:
+      name: "PZEM Power"
+      id: pzem_power
+      accuracy_decimals: 1
+      filters:
+        - round: 1
+    frequency:
+      name: "PZEM Frequency"
+      accuracy_decimals: 1
+      filters:
+        - round: 1
+    power_factor:
+      name: "PZEM Power Factor"
+      accuracy_decimals: 2
+      filters:
+        - round: 2
+    update_interval: 30s
