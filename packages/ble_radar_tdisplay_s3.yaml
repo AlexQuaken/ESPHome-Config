@@ -35,14 +35,26 @@ interval:
   - interval: 700ms
     then:
       - lambda: |-
-          // Жёлтый target-tracker: переключается раз в оборот sweep (6 сек + jitter).
-          // Хранит MAC цели вместо индекса — индексы сдвигаются при cleanup
-          // устройств и target скакал бы на чужие. История last-3 MAC исключает
-          // повторение свежей цели.
+          // Жёлтый target-tracker (по мотивам esp32_p4_radar.ino).
+          // Cooldown ~6 сек (1 оборот sweep) + jitter; target — std::string MAC
+          // (устойчив к сдвигу индексов при cleanup). Known (Alex/Ira/Lila)
+          // никогда не цель. Force re-pick если target пропал из addrs.
           uint32_t now = millis();
-          if (now < id(target_switch_at)) return;
           auto &cache = id(cache_radar_idx);
           auto &addrs = id(dev_addr);
+          // Проверка: текущий target ещё в массиве?
+          const std::string &cur_mac = id(target_mac);
+          bool target_alive = false;
+          if (!cur_mac.empty()) {
+            for (size_t k = 0; k < addrs.size(); k++) {
+              if (addrs[k] == cur_mac) { target_alive = true; break; }
+            }
+          }
+          if (!target_alive && !cur_mac.empty()) {
+            // target пропал — re-pick сразу, не ждём cooldown.
+            id(target_switch_at) = 0;
+          }
+          if (now < id(target_switch_at)) return;
           if (cache.empty()) {
             id(target_mac).clear();
             id(target_switch_at) = now + 1500;
@@ -51,13 +63,16 @@ interval:
           const std::string &h0 = id(target_hist_0);
           const std::string &h1 = id(target_hist_1);
           const std::string &h2 = id(target_hist_2);
-          // Соберём MAC-кандидаты исключая историю
+          // Исключаем known (Alex/Ira/Lila) и last-3 историю
           std::vector<std::string> candidates;
           candidates.reserve(cache.size());
           for (size_t k = 0; k < cache.size(); k++) {
             int idx = cache[k];
             if (idx < 0 || idx >= (int)addrs.size()) continue;
             const std::string &m = addrs[idx];
+            if (strcasecmp(m.c_str(), "DE:AD:51:6E:27:C5") == 0) continue;
+            if (strcasecmp(m.c_str(), "CE:CD:12:23:1F:64") == 0) continue;
+            if (strcasecmp(m.c_str(), "FD:D9:6C:D4:F9:F7") == 0) continue;
             if (m == h0 || m == h1 || m == h2) continue;
             candidates.push_back(m);
           }
@@ -65,36 +80,29 @@ interval:
           if (!candidates.empty()) {
             new_mac = candidates[esp_random() % candidates.size()];
           } else {
-            // Fallback: только если все cache в history (≤3 устройств)
-            int idx = cache[esp_random() % cache.size()];
-            if (idx >= 0 && idx < (int)addrs.size()) new_mac = addrs[idx];
-          }
-          if (new_mac.empty()) {
-            id(target_switch_at) = now + 1500;
-            return;
-          }
-          // Запомнить координаты текущего таргета по MAC (для анимации перехода)
-          auto &angs = id(dev_ang);
-          auto &dists = id(dev_dist);
-          const std::string &cur_mac = id(target_mac);
-          if (!cur_mac.empty()) {
-            for (size_t k = 0; k < addrs.size(); k++) {
-              if (addrs[k] == cur_mac) {
-                float pa = (k < angs.size()) ? angs[k] : 0.0f;
-                int pd = (k < dists.size()) ? dists[k] : 30;
-                if (pd <= 0) pd = 30;
-                id(target_prev_x) = 80.0f + cosf(pa) * (float)pd;
-                id(target_prev_y) = 85.0f + sinf(pa) * (float)pd;
-                break;
-              }
+            // Fallback: все unknown сидят в history — берём любого unknown.
+            for (size_t k = 0; k < cache.size(); k++) {
+              int idx = cache[k];
+              if (idx < 0 || idx >= (int)addrs.size()) continue;
+              const std::string &m = addrs[idx];
+              if (strcasecmp(m.c_str(), "DE:AD:51:6E:27:C5") == 0) continue;
+              if (strcasecmp(m.c_str(), "CE:CD:12:23:1F:64") == 0) continue;
+              if (strcasecmp(m.c_str(), "FD:D9:6C:D4:F9:F7") == 0) continue;
+              candidates.push_back(m);
             }
+            if (candidates.empty()) {
+              // Совсем нет unknown — ничего не рисуем, переждём.
+              id(target_mac).clear();
+              id(target_switch_at) = now + 2000;
+              return;
+            }
+            new_mac = candidates[esp_random() % candidates.size()];
           }
           // Сдвиг истории
           id(target_hist_2) = id(target_hist_1);
           id(target_hist_1) = id(target_hist_0);
           id(target_hist_0) = new_mac;
           id(target_mac) = new_mac;
-          id(target_anim_start) = now;
           // ≈1 оборот sweep (6 сек) + jitter ±1.5 сек
           id(target_switch_at) = now + 5500 + (esp_random() % 1500);
   - interval: 1s
@@ -744,7 +752,8 @@ display:
         }
 
         // Жёлтый target-tracker: квадратная мишень поверх всех точек.
-        // Lookup по MAC — устойчиво к сдвигу индексов при cleanup устройств.
+        // Постоянный lerp k=0.12 (как в esp32_p4_radar.ino) — мишень плавно
+        // следует за целью и сама собой переезжает при смене target_mac.
         {
           const std::string &tmac = id(target_mac);
           int tidx = -1;
@@ -764,34 +773,26 @@ display:
             }
             float tgt_x = (float)cx + cosf(ta) * (float)td;
             float tgt_y = (float)cy + sinf(ta) * (float)td;
-            uint32_t anim_age = t - id(target_anim_start);
-            float ax, ay;
-            if (anim_age < 800) {
-              float k = (float)anim_age / 800.0f;
-              float e = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k);
-              ax = id(target_prev_x) + (tgt_x - id(target_prev_x)) * e;
-              ay = id(target_prev_y) + (tgt_y - id(target_prev_y)) * e;
-            } else {
-              ax = tgt_x;
-              ay = tgt_y;
-            }
-            int tx = (int)ax;
-            int ty = (int)ay;
-            Color tc = Color(255, 200, 0);
-            // Квадрат 10×10 px: 4 L-уголка по 4px, между ними gap 2px.
-            // tx-5..tx+4, ty-5..ty+4 (10 px по стороне).
-            // Верх-лево (4 px горизонталь + 4 px вертикаль)
-            it.line(tx - 5, ty - 5, tx - 2, ty - 5, tc);
-            it.line(tx - 5, ty - 5, tx - 5, ty - 2, tc);
+            // Lerp 12% к цели на каждый кадр — gentle, постоянный
+            id(target_prev_x) += (tgt_x - id(target_prev_x)) * 0.12f;
+            id(target_prev_y) += (tgt_y - id(target_prev_y)) * 0.12f;
+            int tx = (int)id(target_prev_x);
+            int ty = (int)id(target_prev_y);
+            Color tc = Color(255, 220, 0);
+            // Квадрат 10×10 px: 4 L-уголка по 3px, между ними gap 4px.
+            // tx-5..tx+4, ty-5..ty+4 (10 px), уголки занимают 3 px по краям.
+            // Верх-лево (3px горизонталь + 3px вертикаль)
+            it.line(tx - 5, ty - 5, tx - 3, ty - 5, tc);
+            it.line(tx - 5, ty - 5, tx - 5, ty - 3, tc);
             // Верх-право
-            it.line(tx + 1, ty - 5, tx + 4, ty - 5, tc);
-            it.line(tx + 4, ty - 5, tx + 4, ty - 2, tc);
+            it.line(tx + 2, ty - 5, tx + 4, ty - 5, tc);
+            it.line(tx + 4, ty - 5, tx + 4, ty - 3, tc);
             // Низ-лево
-            it.line(tx - 5, ty + 1, tx - 5, ty + 4, tc);
-            it.line(tx - 5, ty + 4, tx - 2, ty + 4, tc);
+            it.line(tx - 5, ty + 2, tx - 5, ty + 4, tc);
+            it.line(tx - 5, ty + 4, tx - 3, ty + 4, tc);
             // Низ-право
-            it.line(tx + 1, ty + 4, tx + 4, ty + 4, tc);
-            it.line(tx + 4, ty + 1, tx + 4, ty + 4, tc);
+            it.line(tx + 2, ty + 4, tx + 4, ty + 4, tc);
+            it.line(tx + 4, ty + 2, tx + 4, ty + 4, tc);
           }
         }
 
