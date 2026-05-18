@@ -330,8 +330,9 @@ api:
 display:
   - platform: tdisplays3
     id: lcd
-    width: 320
-    height: 170
+    # width/height не указываем — defaults 170x320 (native ST7789 portrait).
+    # rotation:270 поворачивает в render-time → it.get_width()=320, get_height()=170.
+    rotation: 270
     backlight: true
     update_interval: 33ms
     lambda: |-
