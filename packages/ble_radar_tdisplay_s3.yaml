@@ -466,13 +466,12 @@ display:
         it.line(cx - max_r, cy, cx + max_r, cy, id(c_dim));
         it.line(cx, cy - max_r, cx, cy + max_r, id(c_dim));
 
-        // Подписи RSSI на левой части горизонтальной линии креста (без знака минус,
-        // компактно по 2 символа: 50/65/80/95). Текст 10px ширины помещается в
-        // 14px шаг между кругами.
-        it.printf(cx - 14 - 12, cy - 4, id(f_console), id(c_dim), "50");
-        it.printf(cx - 28 - 12, cy - 4, id(f_console), id(c_dim), "65");
-        it.printf(cx - 42 - 12, cy - 4, id(f_console), id(c_dim), "80");
-        it.printf(cx - 56 - 12, cy - 4, id(f_console), id(c_dim), "95");
+        // Подписи RSSI на верхней части вертикальной линии креста — над каждым
+        // кругом по центру (cy - r - 9). Без знака минус — компактно по 2 символа.
+        it.printf(cx - 5, cy - 14 - 9, id(f_console), id(c_dim), "50");
+        it.printf(cx - 5, cy - 28 - 9, id(f_console), id(c_dim), "65");
+        it.printf(cx - 5, cy - 42 - 9, id(f_console), id(c_dim), "80");
+        it.printf(cx - 5, cy - 56 - 9, id(f_console), id(c_dim), "95");
 
         auto &addrs = id(dev_addr);
         auto &names = id(dev_name);
@@ -506,10 +505,37 @@ display:
         id(prev_sweep) = sw;
 
         auto &radar_idx = id(cache_radar_idx);
-        // Bbox-ы уже размещённых known labels — для collision-check между Alex/Ira/Lila.
-        int known_n = 0;
-        int known_x[3], known_y[3], known_w[3];
+        // Сортируем radar_idx так, чтобы известные (Alex/Ira/Lila) шли первыми —
+        // тогда unknown точки в Pass 2 видят их bbox и обходят радиально.
+        std::stable_sort(radar_idx.begin(), radar_idx.end(), [&](int a, int b) {
+          auto is_kn = [&](int idx) {
+            if (idx < 0 || (size_t)idx >= addrs.size()) return false;
+            const char *s = addrs[idx].c_str();
+            return strcasecmp(s, "DE:AD:51:6E:27:C5") == 0
+                || strcasecmp(s, "CE:CD:12:23:1F:64") == 0
+                || strcasecmp(s, "FD:D9:6C:D4:F9:F7") == 0;
+          };
+          return (int)is_kn(a) > (int)is_kn(b);
+        });
+        // Bbox-ы всех размещённых элементов на радаре — для collision-check.
+        // Pre-fill: 4 подписи кругов 50/65/80/95 (на cy-r-9, шрифт 10x9).
+        // Дальше при рендере точек и labels добавляются их bbox (max 24).
+        int bb_n = 4;
+        int bb_x[24] = {cx - 5, cx - 5, cx - 5, cx - 5};
+        int bb_y[24] = {cy - 14 - 9, cy - 28 - 9, cy - 42 - 9, cy - 56 - 9};
+        int bb_w[24] = {10, 10, 10, 10};
+        int bb_h[24] = {9, 9, 9, 9};
         const int LABEL_H = 18;  // 2 строки по 9px (имя + R:rssi)
+        auto overlap_any = [&](int x, int y, int w, int h) -> int {
+          for (int k = 0; k < bb_n; k++) {
+            if (x < bb_x[k] + bb_w[k] + 1 && x + w + 1 > bb_x[k] &&
+                y < bb_y[k] + bb_h[k] + 1 && y + h + 1 > bb_y[k]) return k;
+          }
+          return -1;
+        };
+        auto add_bb = [&](int x, int y, int w, int h) {
+          if (bb_n < 24) { bb_x[bb_n] = x; bb_y[bb_n] = y; bb_w[bb_n] = w; bb_h[bb_n] = h; bb_n++; }
+        };
         for (int idx_pos = 0; idx_pos < (int)radar_idx.size(); idx_pos++) {
           size_t i = (size_t)radar_idx[idx_pos];
           if (i >= addrs.size()) continue;
@@ -545,7 +571,21 @@ display:
           float ang = (i < angs.size()) ? angs[i] : 0.0f;
           int dx = cx + (int)(cosf(ang) * (float)dist);
           int dy = cy + (int)(sinf(ang) * (float)dist);
+          // Collision avoidance точки: сдвиг радиально (наружу/внутрь) на 2..10 px
+          // если bbox точки пересекается с уже размещёнными элементами.
+          int dot_w = dot_r * 2 + 1;
+          for (int g = 1; g <= 6; g++) {
+            if (overlap_any(dx - dot_r, dy - dot_r, dot_w, dot_w) < 0) break;
+            int try_dist;
+            if (g & 1) try_dist = dist + ((g + 1) / 2) * 2;   // 2, 4, 6
+            else       try_dist = dist - (g / 2) * 2;          // -2, -4, -6
+            if (try_dist < 4) try_dist = 4;
+            if (try_dist > max_r) try_dist = max_r;
+            dx = cx + (int)(cosf(ang) * (float)try_dist);
+            dy = cy + (int)(sinf(ang) * (float)try_dist);
+          }
           it.filled_circle(dx, dy, dot_r, Color(0, intensity, 0));
+          add_bb(dx - dot_r, dy - dot_r, dot_w, dot_w);
           if (label) {
             int rssi_val = (i < rssis.size()) ? rssis[i] : -99;
             char rssi_s[8];
@@ -575,35 +615,22 @@ display:
             if (lx + max_w > x_max) lx = x_max - max_w;
             if (ly < y_min) ly = y_min;
             if (ly + LABEL_H > y_max) ly = y_max - LABEL_H;
-            // Collision avoidance: проверить overlap с уже размещёнными known labels.
-            // Если есть — сдвиг по вертикали (вниз, потом вверх). Pixel margin = 1.
-            for (int g = 0; g < 8; g++) {  // до 8 попыток сдвига
-              bool hit = false;
-              for (int k = 0; k < known_n; k++) {
-                if (lx < known_x[k] + known_w[k] + 1 && lx + max_w + 1 > known_x[k] &&
-                    ly < known_y[k] + LABEL_H + 1 && ly + LABEL_H + 1 > known_y[k]) {
-                  hit = true;
-                  int try_down = known_y[k] + LABEL_H + 2;
-                  if (try_down + LABEL_H <= y_max) {
-                    ly = try_down;
-                  } else {
-                    int try_up = known_y[k] - LABEL_H - 2;
-                    if (try_up >= y_min) ly = try_up;
-                    else ly = y_max - LABEL_H;  // clamp в любом случае
-                  }
-                  break;
-                }
+            // Collision avoidance label: сдвиг по вертикали (вниз, потом вверх).
+            for (int g = 0; g < 12; g++) {
+              int hit = overlap_any(lx, ly, max_w, LABEL_H);
+              if (hit < 0) break;
+              int try_down = bb_y[hit] + bb_h[hit] + 2;
+              if (try_down + LABEL_H <= y_max) {
+                ly = try_down;
+              } else {
+                int try_up = bb_y[hit] - LABEL_H - 2;
+                if (try_up >= y_min) ly = try_up;
+                else ly = y_max - LABEL_H;
               }
-              if (!hit) break;
             }
             it.printf(lx, ly, id(f_console), Color(0, intensity, 0), "%s", label);
             it.printf(lx, ly + 9, id(f_console), Color(0, intensity, 0), "%s", rssi_s);
-            if (known_n < 3) {
-              known_x[known_n] = lx;
-              known_y[known_n] = ly;
-              known_w[known_n] = max_w;
-              known_n++;
-            }
+            add_bb(lx, ly, max_w, LABEL_H);
           }
         }
 
