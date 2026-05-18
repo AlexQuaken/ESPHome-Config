@@ -36,45 +36,64 @@ interval:
     then:
       - lambda: |-
           // Жёлтый target-tracker: переключается раз в оборот sweep (6 сек + jitter).
-          // Не выбирает индекс из last-3 истории — каждая цель новая.
+          // Хранит MAC цели вместо индекса — индексы сдвигаются при cleanup
+          // устройств и target скакал бы на чужие. История last-3 MAC исключает
+          // повторение свежей цели.
           uint32_t now = millis();
           if (now < id(target_switch_at)) return;
           auto &cache = id(cache_radar_idx);
+          auto &addrs = id(dev_addr);
           if (cache.empty()) {
-            id(target_idx) = -1;
+            id(target_mac).clear();
             id(target_switch_at) = now + 1500;
             return;
           }
-          // Соберём допустимые кандидаты (исключая историю)
-          int h0 = id(target_hist_0), h1 = id(target_hist_1), h2 = id(target_hist_2);
-          int candidates[24];
-          int cn = 0;
-          for (int k = 0; k < (int)cache.size() && cn < 24; k++) {
+          const std::string &h0 = id(target_hist_0);
+          const std::string &h1 = id(target_hist_1);
+          const std::string &h2 = id(target_hist_2);
+          // Соберём MAC-кандидаты исключая историю
+          std::vector<std::string> candidates;
+          candidates.reserve(cache.size());
+          for (size_t k = 0; k < cache.size(); k++) {
             int idx = cache[k];
-            if (idx == h0 || idx == h1 || idx == h2) continue;
-            candidates[cn++] = idx;
+            if (idx < 0 || idx >= (int)addrs.size()) continue;
+            const std::string &m = addrs[idx];
+            if (m == h0 || m == h1 || m == h2) continue;
+            candidates.push_back(m);
           }
-          // Если в кеше ≤3 устройств — допустимых может не быть, fallback на весь cache.
-          int new_idx;
-          if (cn > 0) new_idx = candidates[esp_random() % cn];
-          else        new_idx = cache[esp_random() % cache.size()];
-          // Запомнить текущую позицию для анимации перехода
-          int prev_idx = id(target_idx);
-          auto &addrs = id(dev_addr);
+          std::string new_mac;
+          if (!candidates.empty()) {
+            new_mac = candidates[esp_random() % candidates.size()];
+          } else {
+            // Fallback: только если все cache в history (≤3 устройств)
+            int idx = cache[esp_random() % cache.size()];
+            if (idx >= 0 && idx < (int)addrs.size()) new_mac = addrs[idx];
+          }
+          if (new_mac.empty()) {
+            id(target_switch_at) = now + 1500;
+            return;
+          }
+          // Запомнить координаты текущего таргета по MAC (для анимации перехода)
           auto &angs = id(dev_ang);
           auto &dists = id(dev_dist);
-          if (prev_idx >= 0 && prev_idx < (int)addrs.size()) {
-            float pa = (prev_idx < (int)angs.size()) ? angs[prev_idx] : 0.0f;
-            int pd = (prev_idx < (int)dists.size()) ? dists[prev_idx] : 30;
-            if (pd <= 0) pd = 30;
-            id(target_prev_x) = 80.0f + cosf(pa) * (float)pd;
-            id(target_prev_y) = 85.0f + sinf(pa) * (float)pd;
+          const std::string &cur_mac = id(target_mac);
+          if (!cur_mac.empty()) {
+            for (size_t k = 0; k < addrs.size(); k++) {
+              if (addrs[k] == cur_mac) {
+                float pa = (k < angs.size()) ? angs[k] : 0.0f;
+                int pd = (k < dists.size()) ? dists[k] : 30;
+                if (pd <= 0) pd = 30;
+                id(target_prev_x) = 80.0f + cosf(pa) * (float)pd;
+                id(target_prev_y) = 85.0f + sinf(pa) * (float)pd;
+                break;
+              }
+            }
           }
           // Сдвиг истории
           id(target_hist_2) = id(target_hist_1);
           id(target_hist_1) = id(target_hist_0);
-          id(target_hist_0) = new_idx;
-          id(target_idx) = new_idx;
+          id(target_hist_0) = new_mac;
+          id(target_mac) = new_mac;
           id(target_anim_start) = now;
           // ≈1 оборот sweep (6 сек) + jitter ±1.5 сек
           id(target_switch_at) = now + 5500 + (esp_random() % 1500);
@@ -276,10 +295,9 @@ globals:
   - id: dev_ang
     type: std::vector<float>
     restore_value: no
-  - id: target_idx
-    type: int
+  - id: target_mac
+    type: std::string
     restore_value: no
-    initial_value: '-1'
   - id: target_switch_at
     type: uint32_t
     restore_value: no
@@ -297,17 +315,14 @@ globals:
     restore_value: no
     initial_value: '0.0'
   - id: target_hist_0
-    type: int
+    type: std::string
     restore_value: no
-    initial_value: '-1'
   - id: target_hist_1
-    type: int
+    type: std::string
     restore_value: no
-    initial_value: '-1'
   - id: target_hist_2
-    type: int
+    type: std::string
     restore_value: no
-    initial_value: '-1'
   - id: dev_dist
     type: std::vector<int>
     restore_value: no
@@ -728,11 +743,17 @@ display:
           }
         }
 
-        // Жёлтый target-tracker: crosshair поверх всех точек. Плавно "перелетает"
-        // на новое устройство за 800ms (easeOut), потом висит на нём.
+        // Жёлтый target-tracker: квадратная мишень поверх всех точек.
+        // Lookup по MAC — устойчиво к сдвигу индексов при cleanup устройств.
         {
-          int tidx = id(target_idx);
-          if (tidx >= 0 && tidx < (int)addrs.size()) {
+          const std::string &tmac = id(target_mac);
+          int tidx = -1;
+          if (!tmac.empty()) {
+            for (size_t k = 0; k < addrs.size(); k++) {
+              if (addrs[k] == tmac) { tidx = (int)k; break; }
+            }
+          }
+          if (tidx >= 0) {
             float ta = (tidx < (int)angs.size()) ? angs[tidx] : 0.0f;
             int td = (tidx < (int)dists.size()) ? dists[tidx] : 0;
             if (td == 0) {
@@ -746,7 +767,6 @@ display:
             uint32_t anim_age = t - id(target_anim_start);
             float ax, ay;
             if (anim_age < 800) {
-              // easeOut: 1 - (1-x)^3, x = anim_age/800
               float k = (float)anim_age / 800.0f;
               float e = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k);
               ax = id(target_prev_x) + (tgt_x - id(target_prev_x)) * e;
@@ -758,20 +778,20 @@ display:
             int tx = (int)ax;
             int ty = (int)ay;
             Color tc = Color(255, 200, 0);
-            // Квадратная мишень: 4 L-уголка по 3px, между ними gap 2px.
-            // Внешний размер квадрата 8x8 (от tx-4 до tx+3, аналогично по y).
-            // Верх-лево
-            it.line(tx - 4, ty - 4, tx - 2, ty - 4, tc);
-            it.line(tx - 4, ty - 4, tx - 4, ty - 2, tc);
+            // Квадрат 10×10 px: 4 L-уголка по 4px, между ними gap 2px.
+            // tx-5..tx+4, ty-5..ty+4 (10 px по стороне).
+            // Верх-лево (4 px горизонталь + 4 px вертикаль)
+            it.line(tx - 5, ty - 5, tx - 2, ty - 5, tc);
+            it.line(tx - 5, ty - 5, tx - 5, ty - 2, tc);
             // Верх-право
-            it.line(tx + 1, ty - 4, tx + 3, ty - 4, tc);
-            it.line(tx + 3, ty - 4, tx + 3, ty - 2, tc);
+            it.line(tx + 1, ty - 5, tx + 4, ty - 5, tc);
+            it.line(tx + 4, ty - 5, tx + 4, ty - 2, tc);
             // Низ-лево
-            it.line(tx - 4, ty + 1, tx - 4, ty + 3, tc);
-            it.line(tx - 4, ty + 3, tx - 2, ty + 3, tc);
+            it.line(tx - 5, ty + 1, tx - 5, ty + 4, tc);
+            it.line(tx - 5, ty + 4, tx - 2, ty + 4, tc);
             // Низ-право
-            it.line(tx + 1, ty + 3, tx + 3, ty + 3, tc);
-            it.line(tx + 3, ty + 1, tx + 3, ty + 3, tc);
+            it.line(tx + 1, ty + 4, tx + 4, ty + 4, tc);
+            it.line(tx + 4, ty + 1, tx + 4, ty + 4, tc);
           }
         }
 
