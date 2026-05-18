@@ -569,68 +569,83 @@ display:
             if (dist > max_r) dist = max_r;
           }
           float ang = (i < angs.size()) ? angs[i] : 0.0f;
-          int dx = cx + (int)(cosf(ang) * (float)dist);
-          int dy = cy + (int)(sinf(ang) * (float)dist);
-          // Collision avoidance точки: сдвиг радиально (наружу/внутрь) на 2..10 px
-          // если bbox точки пересекается с уже размещёнными элементами.
           int dot_w = dot_r * 2 + 1;
-          for (int g = 1; g <= 6; g++) {
-            if (overlap_any(dx - dot_r, dy - dot_r, dot_w, dot_w) < 0) break;
-            int try_dist;
-            if (g & 1) try_dist = dist + ((g + 1) / 2) * 2;   // 2, 4, 6
-            else       try_dist = dist - (g / 2) * 2;          // -2, -4, -6
-            if (try_dist < 4) try_dist = 4;
-            if (try_dist > max_r) try_dist = max_r;
-            dx = cx + (int)(cosf(ang) * (float)try_dist);
-            dy = cy + (int)(sinf(ang) * (float)try_dist);
-          }
-          it.filled_circle(dx, dy, dot_r, Color(0, intensity, 0));
-          add_bb(dx - dot_r, dy - dot_r, dot_w, dot_w);
-          if (label) {
+          const int M = 4;
+          int x_min = cx - max_r + M;
+          int x_max = cx + max_r - M;
+          int y_min = M;
+          int y_max = cy + max_r - M;
+
+          if (known) {
+            // Known: точка + 2 строки текста (ALEX, R:-50) рисуются как единый
+            // блок с одним общим хитбоксом. Радиально сдвигается весь блок при
+            // overlap. Текст справа от точки, если справа не лезет — слева.
             int rssi_val = (i < rssis.size()) ? rssis[i] : -99;
             char rssi_s[8];
             snprintf(rssi_s, sizeof(rssi_s), "R:%d", rssi_val);
             int name_w = (int)strlen(label) * 5;
             int rssi_w = (int)strlen(rssi_s) * 5;
-            int max_w = (name_w > rssi_w) ? name_w : rssi_w;
-            const int M = 4;
-            int x_min = cx - max_r + M;
-            int x_max = cx + max_r - M;
-            int y_min = M;
-            int y_max = cy + max_r - M;
-            int lx, ly = dy - 4;
-            int room_right = x_max - (dx + dot_r + 5);
-            int room_left = (dx - dot_r - 5) - x_min;
-            if (room_right >= max_w) {
-              lx = dx + dot_r + 5;
-            } else if (room_left >= max_w) {
-              lx = dx - dot_r - 5 - max_w;
-            } else {
-              lx = dx - max_w / 2;
-              if (lx < x_min) lx = x_min;
-              if (lx + max_w > x_max) lx = x_max - max_w;
-              ly = (dy - 20 >= y_min) ? (dy - 20) : (dy + dot_r + 2);
-            }
-            if (lx < x_min) lx = x_min;
-            if (lx + max_w > x_max) lx = x_max - max_w;
-            if (ly < y_min) ly = y_min;
-            if (ly + LABEL_H > y_max) ly = y_max - LABEL_H;
-            // Collision avoidance label: сдвиг по вертикали (вниз, потом вверх).
-            for (int g = 0; g < 12; g++) {
-              int hit = overlap_any(lx, ly, max_w, LABEL_H);
-              if (hit < 0) break;
-              int try_down = bb_y[hit] + bb_h[hit] + 2;
-              if (try_down + LABEL_H <= y_max) {
-                ly = try_down;
-              } else {
-                int try_up = bb_y[hit] - LABEL_H - 2;
-                if (try_up >= y_min) ly = try_up;
-                else ly = y_max - LABEL_H;
+            int text_w = (name_w > rssi_w) ? name_w : rssi_w;
+            const int GAP = 2;
+            int block_w = dot_w + GAP + text_w;
+            int block_h = LABEL_H;
+
+            int block_left = 0, block_top = 0, dx_use = 0, label_x = 0;
+            bool placed = false;
+            for (int g = 0; g <= 8 && !placed; g++) {
+              int try_dist = dist;
+              if (g > 0) {
+                if (g & 1) try_dist = dist + ((g + 1) / 2) * 3;
+                else       try_dist = dist - (g / 2) * 3;
+                if (try_dist < 4) try_dist = 4;
+                if (try_dist > max_r) try_dist = max_r;
+              }
+              int tdx = cx + (int)(cosf(ang) * (float)try_dist);
+              int tdy = cy + (int)(sinf(ang) * (float)try_dist);
+              // Сначала пробуем "текст справа", потом "текст слева"
+              for (int s = 0; s < 2 && !placed; s++) {
+                int side = (s == 0) ? +1 : -1;
+                int tbl = (side == +1) ? (tdx - dot_r) : (tdx - dot_r - GAP - text_w);
+                int tbt = tdy - 4;
+                if (tbl < x_min) tbl = x_min;
+                if (tbl + block_w > x_max) tbl = x_max - block_w;
+                if (tbt < y_min) tbt = y_min;
+                if (tbt + block_h > y_max) tbt = y_max - block_h;
+                if (overlap_any(tbl, tbt, block_w, block_h) >= 0) continue;
+                block_left = tbl;
+                block_top = tbt;
+                if (side == +1) {
+                  dx_use = tbl + dot_r;
+                  label_x = dx_use + dot_r + GAP;
+                } else {
+                  label_x = tbl;
+                  dx_use = tbl + text_w + GAP + dot_r;
+                }
+                placed = true;
               }
             }
-            it.printf(lx, ly, id(f_console), Color(0, intensity, 0), "%s", label);
-            it.printf(lx, ly + 9, id(f_console), Color(0, intensity, 0), "%s", rssi_s);
-            add_bb(lx, ly, max_w, LABEL_H);
+            // Fallback: если все варианты заняты — рисуем где получилось последнее.
+            int draw_dy = block_top + 4;
+            it.filled_circle(dx_use, draw_dy, dot_r, Color(0, intensity, 0));
+            it.printf(label_x, block_top, id(f_console), Color(0, intensity, 0), "%s", label);
+            it.printf(label_x, block_top + 9, id(f_console), Color(0, intensity, 0), "%s", rssi_s);
+            add_bb(block_left, block_top, block_w, block_h);
+          } else {
+            // Unknown: только точка, обходит уже размещённые блоки радиально.
+            int dx = cx + (int)(cosf(ang) * (float)dist);
+            int dy = cy + (int)(sinf(ang) * (float)dist);
+            for (int g = 1; g <= 6; g++) {
+              if (overlap_any(dx - dot_r, dy - dot_r, dot_w, dot_w) < 0) break;
+              int try_dist;
+              if (g & 1) try_dist = dist + ((g + 1) / 2) * 2;
+              else       try_dist = dist - (g / 2) * 2;
+              if (try_dist < 4) try_dist = 4;
+              if (try_dist > max_r) try_dist = max_r;
+              dx = cx + (int)(cosf(ang) * (float)try_dist);
+              dy = cy + (int)(sinf(ang) * (float)try_dist);
+            }
+            it.filled_circle(dx, dy, dot_r, Color(0, intensity, 0));
+            add_bb(dx - dot_r, dy - dot_r, dot_w, dot_w);
           }
         }
 
