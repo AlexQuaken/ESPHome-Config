@@ -506,6 +506,10 @@ display:
         id(prev_sweep) = sw;
 
         auto &radar_idx = id(cache_radar_idx);
+        // Bbox-ы уже размещённых known labels — для collision-check между Alex/Ira/Lila.
+        int known_n = 0;
+        int known_x[3], known_y[3], known_w[3];
+        const int LABEL_H = 18;  // 2 строки по 9px (имя + R:rssi)
         for (int idx_pos = 0; idx_pos < (int)radar_idx.size(); idx_pos++) {
           size_t i = (size_t)radar_idx[idx_pos];
           if (i >= addrs.size()) continue;
@@ -514,14 +518,23 @@ display:
           else if (strcasecmp(addrs[i].c_str(), "CE:CD:12:23:1F:64") == 0) label = "IRA";
           else if (strcasecmp(addrs[i].c_str(), "FD:D9:6C:D4:F9:F7") == 0) label = "LILA";
           bool known = (label != nullptr);
-          if (painted[i] == 0) continue;  // sweep ещё не зацепил это устройство
-          // Затухание с момента последнего прохода sweep, период = 6 сек (один оборот).
-          // На следующем обороте painted[i] обновится → яркость "вспышкой" вернётся.
-          uint32_t age = t - painted[i];
-          if (age > 6000) age = 6000;
-          int intensity = 240 - (int)((age * 204) / 6000);  // 240 → 36 (~15%)
-          if (intensity < 36) intensity = 36;
-          int dot_r = (age < 200) ? 3 : 2;
+          int intensity;
+          int dot_r;
+          if (known) {
+            // Alex/Ira/Lila — пока в массиве (т.е. видим в последние 30 сек) —
+            // светятся всегда, без зависимости от sweep.
+            intensity = 240;
+            dot_r = 3;
+          } else {
+            if (painted[i] == 0) continue;  // sweep ещё не зацепил это устройство
+            // Затухание с момента последнего прохода sweep, период = 6 сек (один оборот).
+            // На следующем обороте painted[i] обновится → яркость "вспышкой" вернётся.
+            uint32_t age = t - painted[i];
+            if (age > 6000) age = 6000;
+            intensity = 240 - (int)((age * 204) / 6000);  // 240 → 36 (~15%)
+            if (intensity < 36) intensity = 36;
+            dot_r = (age < 200) ? 3 : 2;
+          }
           int dist = (i < id(dev_dist).size()) ? id(dev_dist)[i] : 0;
           if (dist == 0) {
             int r = rssis[i];
@@ -561,9 +574,36 @@ display:
             if (lx < x_min) lx = x_min;
             if (lx + max_w > x_max) lx = x_max - max_w;
             if (ly < y_min) ly = y_min;
-            if (ly + 18 > y_max) ly = y_max - 18;
+            if (ly + LABEL_H > y_max) ly = y_max - LABEL_H;
+            // Collision avoidance: проверить overlap с уже размещёнными known labels.
+            // Если есть — сдвиг по вертикали (вниз, потом вверх). Pixel margin = 1.
+            for (int g = 0; g < 8; g++) {  // до 8 попыток сдвига
+              bool hit = false;
+              for (int k = 0; k < known_n; k++) {
+                if (lx < known_x[k] + known_w[k] + 1 && lx + max_w + 1 > known_x[k] &&
+                    ly < known_y[k] + LABEL_H + 1 && ly + LABEL_H + 1 > known_y[k]) {
+                  hit = true;
+                  int try_down = known_y[k] + LABEL_H + 2;
+                  if (try_down + LABEL_H <= y_max) {
+                    ly = try_down;
+                  } else {
+                    int try_up = known_y[k] - LABEL_H - 2;
+                    if (try_up >= y_min) ly = try_up;
+                    else ly = y_max - LABEL_H;  // clamp в любом случае
+                  }
+                  break;
+                }
+              }
+              if (!hit) break;
+            }
             it.printf(lx, ly, id(f_console), Color(0, intensity, 0), "%s", label);
             it.printf(lx, ly + 9, id(f_console), Color(0, intensity, 0), "%s", rssi_s);
+            if (known_n < 3) {
+              known_x[known_n] = lx;
+              known_y[known_n] = ly;
+              known_w[known_n] = max_w;
+              known_n++;
+            }
           }
         }
 
