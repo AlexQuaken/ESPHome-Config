@@ -32,6 +32,38 @@ interval:
             id(radar_mode_sw).publish_state(true);
             ESP_LOGI("auto", "Auto-switched to radar mode after 60s");
           }
+  - interval: 700ms
+    then:
+      - lambda: |-
+          // Жёлтый target-tracker: каждые ~3 сек (+ jitter) переключается на
+          // случайное устройство из cache_radar_idx. Запоминает прежние
+          // координаты для плавной анимации перехода.
+          uint32_t now = millis();
+          if (now < id(target_switch_at)) return;
+          auto &cache = id(cache_radar_idx);
+          if (cache.empty()) {
+            id(target_idx) = -1;
+            id(target_switch_at) = now + 1000;
+            return;
+          }
+          int pick = (int)(esp_random() % cache.size());
+          int new_idx = cache[pick];
+          // Запомним текущую позицию (где была цель) для анимации перехода
+          int prev_idx = id(target_idx);
+          auto &addrs = id(dev_addr);
+          auto &angs = id(dev_ang);
+          auto &dists = id(dev_dist);
+          if (prev_idx >= 0 && prev_idx < (int)addrs.size()) {
+            float pa = (prev_idx < (int)angs.size()) ? angs[prev_idx] : 0.0f;
+            int pd = (prev_idx < (int)dists.size()) ? dists[prev_idx] : 30;
+            if (pd <= 0) pd = 30;
+            id(target_prev_x) = 80.0f + cosf(pa) * (float)pd;
+            id(target_prev_y) = 85.0f + sinf(pa) * (float)pd;
+          }
+          id(target_idx) = new_idx;
+          id(target_anim_start) = now;
+          // 2-4 сек до следующего переключения
+          id(target_switch_at) = now + 2000 + (esp_random() % 2000);
   - interval: 1s
     then:
       - lambda: |-
@@ -230,6 +262,26 @@ globals:
   - id: dev_ang
     type: std::vector<float>
     restore_value: no
+  - id: target_idx
+    type: int
+    restore_value: no
+    initial_value: '-1'
+  - id: target_switch_at
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: target_anim_start
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: target_prev_x
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: target_prev_y
+    type: float
+    restore_value: no
+    initial_value: '0.0'
   - id: dev_dist
     type: std::vector<int>
     restore_value: no
@@ -466,12 +518,13 @@ display:
         it.line(cx - max_r, cy, cx + max_r, cy, id(c_dim));
         it.line(cx, cy - max_r, cx, cy + max_r, id(c_dim));
 
-        // Подписи RSSI на верхней части вертикальной линии креста — над каждым
-        // кругом по центру (cy - r - 9). Без знака минус — компактно по 2 символа.
-        it.printf(cx - 5, cy - 14 - 9, id(f_console), id(c_dim), "50");
-        it.printf(cx - 5, cy - 28 - 9, id(f_console), id(c_dim), "65");
-        it.printf(cx - 5, cy - 42 - 9, id(f_console), id(c_dim), "80");
-        it.printf(cx - 5, cy - 56 - 9, id(f_console), id(c_dim), "95");
+        // Подписи RSSI на верхней части вертикали креста, со сдвигом вправо
+        // на 2 px от вертикальной линии — чтобы линия креста не перекрывала
+        // цифры. Без знака минус, компактно по 2 символа.
+        it.printf(cx + 2, cy - 14 - 9, id(f_console), id(c_dim), "50");
+        it.printf(cx + 2, cy - 28 - 9, id(f_console), id(c_dim), "65");
+        it.printf(cx + 2, cy - 42 - 9, id(f_console), id(c_dim), "80");
+        it.printf(cx + 2, cy - 56 - 9, id(f_console), id(c_dim), "95");
 
         auto &addrs = id(dev_addr);
         auto &names = id(dev_name);
@@ -521,7 +574,7 @@ display:
         // Pre-fill: 4 подписи кругов 50/65/80/95 (на cy-r-9, шрифт 10x9).
         // Дальше при рендере точек и labels добавляются их bbox (max 24).
         int bb_n = 4;
-        int bb_x[24] = {cx - 5, cx - 5, cx - 5, cx - 5};
+        int bb_x[24] = {cx + 2, cx + 2, cx + 2, cx + 2};
         int bb_y[24] = {cy - 14 - 9, cy - 28 - 9, cy - 42 - 9, cy - 56 - 9};
         int bb_w[24] = {10, 10, 10, 10};
         int bb_h[24] = {9, 9, 9, 9};
@@ -577,9 +630,11 @@ display:
           int y_max = cy + max_r - M;
 
           if (known) {
-            // Known: точка + 2 строки текста (ALEX, R:-50) рисуются как единый
-            // блок с одним общим хитбоксом. Радиально сдвигается весь блок при
-            // overlap. Текст справа от точки, если справа не лезет — слева.
+            // Known: единый блок [точка][gap][2 строки текста]. Точка ВСЕГДА слева,
+            // текст ВСЕГДА справа — без зеркалирования. При коллизии или overflow
+            // блок целиком сдвигается: сначала радиально (dist±), затем углом (ang±),
+            // затем комбинации. Точка может уйти с истинной позиции по RSSI на
+            // 5-15 px ради читаемости.
             int rssi_val = (i < rssis.size()) ? rssis[i] : -99;
             char rssi_s[8];
             snprintf(rssi_s, sizeof(rssi_s), "R:%d", rssi_val);
@@ -589,63 +644,100 @@ display:
             const int GAP = 2;
             int block_w = dot_w + GAP + text_w;
             int block_h = LABEL_H;
-
+            const float dist_steps[] = {0, 3, -3, 6, -6, 10, -10, 0, 0, 6, -6};
+            const float ang_steps[]  = {0, 0,  0, 0,  0,  0,   0, 0.20f, -0.20f, 0.20f, -0.20f};
             int block_left = 0, block_top = 0, dx_use = 0, label_x = 0;
             bool placed = false;
-            for (int g = 0; g <= 8 && !placed; g++) {
-              int try_dist = dist;
-              if (g > 0) {
-                if (g & 1) try_dist = dist + ((g + 1) / 2) * 3;
-                else       try_dist = dist - (g / 2) * 3;
-                if (try_dist < 4) try_dist = 4;
-                if (try_dist > max_r) try_dist = max_r;
-              }
-              int tdx = cx + (int)(cosf(ang) * (float)try_dist);
-              int tdy = cy + (int)(sinf(ang) * (float)try_dist);
-              // Сначала пробуем "текст справа", потом "текст слева"
-              for (int s = 0; s < 2 && !placed; s++) {
-                int side = (s == 0) ? +1 : -1;
-                int tbl = (side == +1) ? (tdx - dot_r) : (tdx - dot_r - GAP - text_w);
-                int tbt = tdy - 4;
-                if (tbl < x_min) tbl = x_min;
-                if (tbl + block_w > x_max) tbl = x_max - block_w;
-                if (tbt < y_min) tbt = y_min;
-                if (tbt + block_h > y_max) tbt = y_max - block_h;
-                if (overlap_any(tbl, tbt, block_w, block_h) >= 0) continue;
-                block_left = tbl;
-                block_top = tbt;
-                if (side == +1) {
-                  dx_use = tbl + dot_r;
-                  label_x = dx_use + dot_r + GAP;
-                } else {
-                  label_x = tbl;
-                  dx_use = tbl + text_w + GAP + dot_r;
-                }
+            int last_left = 0, last_top = 0, last_dx = 0, last_lx = 0;
+            for (int g = 0; g < 11; g++) {
+              int try_dist = dist + (int)dist_steps[g];
+              float try_ang = ang + ang_steps[g];
+              if (try_dist < 4) try_dist = 4;
+              if (try_dist > max_r) try_dist = max_r;
+              int tdx = cx + (int)(cosf(try_ang) * (float)try_dist);
+              int tdy = cy + (int)(sinf(try_ang) * (float)try_dist);
+              int tbl = tdx - dot_r;
+              int tbt = tdy - 4;
+              if (tbl < x_min) tbl = x_min;
+              if (tbl + block_w > x_max) tbl = x_max - block_w;
+              if (tbt < y_min) tbt = y_min;
+              if (tbt + block_h > y_max) tbt = y_max - block_h;
+              int tdx_use = tbl + dot_r;
+              int tlx = tdx_use + dot_r + GAP;
+              last_left = tbl; last_top = tbt; last_dx = tdx_use; last_lx = tlx;
+              if (overlap_any(tbl, tbt, block_w, block_h) < 0) {
+                block_left = tbl; block_top = tbt;
+                dx_use = tdx_use; label_x = tlx;
                 placed = true;
+                break;
               }
             }
-            // Fallback: если все варианты заняты — рисуем где получилось последнее.
+            if (!placed) {
+              block_left = last_left; block_top = last_top;
+              dx_use = last_dx; label_x = last_lx;
+            }
             int draw_dy = block_top + 4;
             it.filled_circle(dx_use, draw_dy, dot_r, Color(0, intensity, 0));
             it.printf(label_x, block_top, id(f_console), Color(0, intensity, 0), "%s", label);
             it.printf(label_x, block_top + 9, id(f_console), Color(0, intensity, 0), "%s", rssi_s);
             add_bb(block_left, block_top, block_w, block_h);
           } else {
-            // Unknown: только точка, обходит уже размещённые блоки радиально.
+            // Unknown: только точка. Большой набор попыток обхода —
+            // комбинации радиальных и угловых сдвигов, до 11 вариантов.
+            const float u_dist_steps[] = {0, 5, -5, 10, -10, 15, 0, 0, 8, -8, 12};
+            const float u_ang_steps[]  = {0, 0,  0,  0,   0,  0, 0.12f, -0.12f, 0.12f, -0.12f, 0.20f};
             int dx = cx + (int)(cosf(ang) * (float)dist);
             int dy = cy + (int)(sinf(ang) * (float)dist);
-            for (int g = 1; g <= 6; g++) {
+            for (int g = 0; g < 11; g++) {
               if (overlap_any(dx - dot_r, dy - dot_r, dot_w, dot_w) < 0) break;
-              int try_dist;
-              if (g & 1) try_dist = dist + ((g + 1) / 2) * 2;
-              else       try_dist = dist - (g / 2) * 2;
+              int try_dist = dist + (int)u_dist_steps[g];
+              float try_ang = ang + u_ang_steps[g];
               if (try_dist < 4) try_dist = 4;
               if (try_dist > max_r) try_dist = max_r;
-              dx = cx + (int)(cosf(ang) * (float)try_dist);
-              dy = cy + (int)(sinf(ang) * (float)try_dist);
+              dx = cx + (int)(cosf(try_ang) * (float)try_dist);
+              dy = cy + (int)(sinf(try_ang) * (float)try_dist);
             }
             it.filled_circle(dx, dy, dot_r, Color(0, intensity, 0));
             add_bb(dx - dot_r, dy - dot_r, dot_w, dot_w);
+          }
+        }
+
+        // Жёлтый target-tracker: crosshair поверх всех точек. Плавно "перелетает"
+        // на новое устройство за 800ms (easeOut), потом висит на нём.
+        {
+          int tidx = id(target_idx);
+          if (tidx >= 0 && tidx < (int)addrs.size()) {
+            float ta = (tidx < (int)angs.size()) ? angs[tidx] : 0.0f;
+            int td = (tidx < (int)dists.size()) ? dists[tidx] : 0;
+            if (td == 0) {
+              int r = rssis[tidx];
+              td = 14 + ((-50 - r) * 56) / 60;
+              if (td < 14) td = 14;
+              if (td > max_r) td = max_r;
+            }
+            float tgt_x = (float)cx + cosf(ta) * (float)td;
+            float tgt_y = (float)cy + sinf(ta) * (float)td;
+            uint32_t anim_age = t - id(target_anim_start);
+            float ax, ay;
+            if (anim_age < 800) {
+              // easeOut: 1 - (1-x)^3, x = anim_age/800
+              float k = (float)anim_age / 800.0f;
+              float e = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k);
+              ax = id(target_prev_x) + (tgt_x - id(target_prev_x)) * e;
+              ay = id(target_prev_y) + (tgt_y - id(target_prev_y)) * e;
+            } else {
+              ax = tgt_x;
+              ay = tgt_y;
+            }
+            int tx = (int)ax;
+            int ty = (int)ay;
+            Color tc = Color(255, 200, 0);
+            it.circle(tx, ty, 5, tc);
+            it.circle(tx, ty, 7, tc);
+            it.line(tx - 9, ty, tx - 5, ty, tc);
+            it.line(tx + 5, ty, tx + 9, ty, tc);
+            it.line(tx, ty - 9, tx, ty - 5, tc);
+            it.line(tx, ty + 5, tx, ty + 9, tc);
           }
         }
 
