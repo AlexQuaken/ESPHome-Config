@@ -1,0 +1,63 @@
+# t-display-s3-23 — LilyGO T-Display-S3 (ESP32-S3 + ST7789 i80 320x170)
+# BLE radar + log console. Лог-режим первые 60s, после авто → radar.
+#
+# Внимание: используется framework: arduino (а не esp-idf) — это обусловлено
+# external_component landonr/lilygo-tdisplays3-esphome, обёрткой над TFT_eSPI.
+# После того как esphome/esphome PR #8228 (нативный i80 в ili9xxx) попадёт в
+# релиз — мигрируем на esp-idf и единый пакет ble_radar.
+#
+# Кнопки на плате: BOOT=GPIO0, KEY=GPIO14 — KEY используется для ручного
+# переключения log/radar (toggle id(display_mode)).
+substitutions:
+  board_name: 't-display-s3-23'
+  static_ip: '192.168.0.217'
+  number: '21'
+
+esphome:
+  name: ${board_name}
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          id(log_lines).push_back("${board_name} booted");
+          id(log_lines).push_back("display OK");
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: arduino
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+external_components:
+  - source: github://landonr/lilygo-tdisplays3-esphome
+    components: [tdisplays3]
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO14
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    name: ${board_name} KEY
+    id: btn_key
+    on_click:
+      then:
+        - lambda: |-
+            id(display_mode) = id(display_mode) == 0 ? 1 : 0;
+            id(radar_mode_sw).publish_state(id(display_mode) == 1);
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+  ble_common: !include packages/ble_common.yaml
+  ble_alex: !include packages/ble_alex.yaml
+  ble_ira: !include packages/ble_ira.yaml
+  ble_lila: !include packages/ble_lila.yaml
+  ble_radar: !include packages/ble_radar_tdisplay_s3.yaml
