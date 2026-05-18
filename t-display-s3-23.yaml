@@ -18,6 +18,9 @@ esphome:
   platformio_options:
     board_build.f_flash: 80000000L
     board_build.arduino.memory_type: qio_opi
+    build_flags:
+      - "-DARDUINO_USB_CDC_ON_BOOT=1"
+      - "-DARDUINO_USB_MODE=1"
   on_boot:
     priority: -100
     then:
@@ -37,7 +40,14 @@ psram:
   speed: 80MHz
 
 logger:
-  hardware_uart: USB_SERIAL_JTAG
+  hardware_uart: USB_CDC
+
+web_server:
+  port: 80
+  version: 3
+  local: true
+
+captive_portal:
 
 external_components:
   - source: github://landonr/lilygo-tdisplays3-esphome
