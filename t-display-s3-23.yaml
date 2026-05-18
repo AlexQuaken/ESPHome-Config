@@ -50,7 +50,9 @@ web_server:
 captive_portal:
 
 external_components:
-  - source: github://landonr/lilygo-tdisplays3-esphome
+  - source:
+      type: local
+      path: custom_components
     components: [tdisplays3]
 
 binary_sensor:

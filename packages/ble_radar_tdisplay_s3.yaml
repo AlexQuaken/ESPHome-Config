@@ -118,9 +118,23 @@ esp32_ble_tracker:
             }
 
 # SPI блока нет — i80 шина внутри tdisplays3 external component.
-# Backlight (GPIO38) тоже внутри компонента, без отдельной light entity.
-# Если нужна регулировка яркости — переключить tdisplays3 на backlight: false
-# и добавить output:ledc + light:monochromatic вручную.
+# Backlight через ledc PWM на GPIO38 + light:monochromatic — даёт slider
+# яркости в HA. В display: tdisplays3 ставим backlight: false (компонент
+# не трогает GPIO38).
+
+output:
+  - platform: ledc
+    pin: GPIO38
+    id: backlight_pwm
+    frequency: 5000Hz
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: ${board_name} Backlight
+    id: backlight
+    restore_mode: RESTORE_DEFAULT_ON
+    default_transition_length: 300ms
 
 switch:
   - platform: template
@@ -333,7 +347,7 @@ display:
     # width/height не указываем — defaults 170x320 (native ST7789 portrait).
     # rotation:270 поворачивает в render-time → it.get_width()=320, get_height()=170.
     rotation: 270
-    backlight: true
+    backlight: false  # GPIO38 управляется через ledc выше (light:monochromatic)
     update_interval: 33ms
     lambda: |-
       id(frame_counter)++;

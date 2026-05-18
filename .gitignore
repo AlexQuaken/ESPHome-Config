@@ -13,3 +13,4 @@
 **/platformio.ini
 **/partitions.csv
 /secrets.yaml
+__pycache__/
