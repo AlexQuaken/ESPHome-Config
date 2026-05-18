@@ -57,6 +57,7 @@ interval:
               painted.erase(painted.begin() + i);
               if (i < (int)dists.size()) dists.erase(dists.begin() + i);
               if (i < (int)scan_ids.size()) scan_ids.erase(scan_ids.begin() + i);
+              if (i < (int)id(dev_ang).size()) id(dev_ang).erase(id(dev_ang).begin() + i);
             }
           }
           auto &cache = id(cache_radar_idx);
@@ -110,6 +111,11 @@ esp32_ble_tracker:
             rssis0.push_back(rssi);
             seens.push_back(now);
             painted.push_back(0);
+            {
+              uint32_t h = 0;
+              for (char c : addr) h = h * 31u + (uint8_t)c;
+              id(dev_ang).push_back((float)(h % 360) * 0.0174533f);
+            }
             id(scan_counter)++;
             id(dev_scan_id).push_back(id(scan_counter));
             if ((int)addrs.size() > 14) {
@@ -220,6 +226,9 @@ globals:
     restore_value: no
   - id: dev_painted
     type: std::vector<uint32_t>
+    restore_value: no
+  - id: dev_ang
+    type: std::vector<float>
     restore_value: no
   - id: dev_dist
     type: std::vector<int>
@@ -425,10 +434,7 @@ display:
         // ============ BLE RADAR MODE ============
         const int cx = 80;
         const int cy = 85;
-        const int max_r = 80;
-
-        it.line(cx - max_r, cy, cx + max_r, cy, id(c_dim));
-        it.line(cx, cy - max_r, cx, cy + max_r, id(c_dim));
+        const int max_r = 70;
 
         float sw = (float)(t % 6000) / 6000.0f * 6.28318f;
         const int TRAIL_SEG = 22;
@@ -448,9 +454,25 @@ display:
         int sy0 = cy + (int)(sinf(sw) * (float)max_r);
         it.line(cx, cy, sx0, sy0, Color(140, 255, 140));
 
-        it.circle(cx, cy, 27, id(c_dim));
-        it.circle(cx, cy, 53, id(c_dim));
+        // 5 кругов RSSI: радиусы соответствуют RSSI -50..-110 dBm (шаг 15).
+        // Внешний (-110) без подписи — границу понятно так.
+        it.circle(cx, cy, 14, id(c_dim));
+        it.circle(cx, cy, 28, id(c_dim));
+        it.circle(cx, cy, 42, id(c_dim));
+        it.circle(cx, cy, 56, id(c_dim));
         it.circle(cx, cy, max_r, id(c_green));
+
+        // Крест ПОСЛЕ кругов и trail — чтобы оси были видны поверх свечения
+        it.line(cx - max_r, cy, cx + max_r, cy, id(c_dim));
+        it.line(cx, cy - max_r, cx, cy + max_r, id(c_dim));
+
+        // Подписи RSSI на левой части горизонтальной линии креста (без знака минус,
+        // компактно по 2 символа: 50/65/80/95). Текст 10px ширины помещается в
+        // 14px шаг между кругами.
+        it.printf(cx - 14 - 12, cy - 4, id(f_console), id(c_dim), "50");
+        it.printf(cx - 28 - 12, cy - 4, id(f_console), id(c_dim), "65");
+        it.printf(cx - 42 - 12, cy - 4, id(f_console), id(c_dim), "80");
+        it.printf(cx - 56 - 12, cy - 4, id(f_console), id(c_dim), "95");
 
         auto &addrs = id(dev_addr);
         auto &names = id(dev_name);
@@ -458,14 +480,14 @@ display:
         auto &rssis0 = id(dev_rssi0);
         auto &seens = id(dev_seen);
         auto &painted = id(dev_painted);
+        auto &angs = id(dev_ang);
 
         float prev = id(prev_sweep);
         auto &dists = id(dev_dist);
         if (dists.size() < addrs.size()) dists.resize(addrs.size(), 0);
+        if (angs.size() < addrs.size()) angs.resize(addrs.size(), 0.0f);
         for (size_t i = 0; i < addrs.size(); i++) {
-          uint32_t h = 0;
-          for (char c : addrs[i]) h = h * 31u + (uint8_t)c;
-          float ang = (float)(h % 360) * 0.0174533f;
+          float ang = angs[i];
           bool crossed = false;
           if (prev <= sw) {
             if (ang > prev && ang <= sw) crossed = true;
@@ -475,9 +497,9 @@ display:
           if (crossed) {
             painted[i] = t;
             int r = rssis[i];
-            int d = 10 + ((-40 - r) * 70) / 60;
-            if (d < 10) d = 10;
-            if (d > 80) d = 80;
+            int d = 14 + ((-50 - r) * 56) / 60;
+            if (d < 14) d = 14;
+            if (d > 70) d = 70;
             dists[i] = d;
           }
         }
@@ -492,32 +514,24 @@ display:
           else if (strcasecmp(addrs[i].c_str(), "CE:CD:12:23:1F:64") == 0) label = "IRA";
           else if (strcasecmp(addrs[i].c_str(), "FD:D9:6C:D4:F9:F7") == 0) label = "LILA";
           bool known = (label != nullptr);
-          if (painted[i] == 0 && !known) continue;
-          uint32_t age = (painted[i] == 0) ? 99999 : (t - painted[i]);
-          if (!known && age > 5000) continue;
-
+          if (painted[i] == 0) continue;  // sweep ещё не зацепил это устройство
+          // Затухание с момента последнего прохода sweep, период = 6 сек (один оборот).
+          // На следующем обороте painted[i] обновится → яркость "вспышкой" вернётся.
+          uint32_t age = t - painted[i];
+          if (age > 6000) age = 6000;
+          int intensity = 240 - (int)((age * 204) / 6000);  // 240 → 36 (~15%)
+          if (intensity < 36) intensity = 36;
+          int dot_r = (age < 200) ? 3 : 2;
           int dist = (i < id(dev_dist).size()) ? id(dev_dist)[i] : 0;
           if (dist == 0) {
             int r = rssis[i];
-            dist = 10 + ((-40 - r) * 70) / 60;
-            if (dist < 10) dist = 10;
-            if (dist > 80) dist = 80;
+            dist = 14 + ((-50 - r) * 56) / 60;
+            if (dist < 14) dist = 14;
+            if (dist > max_r) dist = max_r;
           }
-          uint32_t h = 0;
-          for (char c : addrs[i]) h = h * 31u + (uint8_t)c;
-          float ang = (float)(h % 360) * 0.0174533f;
+          float ang = (i < angs.size()) ? angs[i] : 0.0f;
           int dx = cx + (int)(cosf(ang) * (float)dist);
           int dy = cy + (int)(sinf(ang) * (float)dist);
-          int intensity;
-          int dot_r;
-          if (known) {
-            intensity = 240;
-            dot_r = (age < 200) ? 3 : 2;
-          } else {
-            intensity = 240 - (int)((float)age * 240.0f / 5000.0f);
-            if (intensity < 0) intensity = 0;
-            dot_r = (age < 200) ? 3 : 2;
-          }
           it.filled_circle(dx, dy, dot_r, Color(0, intensity, 0));
           if (label) {
             int rssi_val = (i < rssis.size()) ? rssis[i] : -99;
