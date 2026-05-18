@@ -10,7 +10,7 @@
 # переключения log/radar (toggle id(display_mode)).
 substitutions:
   board_name: 't-display-s3-23'
-  static_ip: '192.168.0.217'
+  static_ip: '192.168.0.218'
   number: '21'
 
 esphome:

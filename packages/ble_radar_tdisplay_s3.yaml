@@ -23,7 +23,7 @@ interval:
   - interval: 10s
     then:
       - lambda: |-
-          ESP_LOGI("hb", "up=%lus heap=%uKB fps=%d dev=%u mode=%d", (unsigned long)(millis()/1000), (unsigned)(esp_get_free_heap_size()/1024), id(fps_value)/4, (unsigned)id(dev_addr).size(), id(display_mode));
+          ESP_LOGI("hb", "up=%lus heap=%uKB fps=%d dev=%u mode=%d", (unsigned long)(millis()/1000), (unsigned)(esp_get_free_heap_size()/1024), id(fps_value), (unsigned)id(dev_addr).size(), id(display_mode));
   - interval: 5s
     then:
       - lambda: |-
@@ -625,7 +625,7 @@ display:
         else snprintf(clk, sizeof(clk), "--:--:--");
         it.printf(0, 1, id(f_console), id(c_green), "%s", clk);
         char fps_s[16];
-        snprintf(fps_s, sizeof(fps_s), "FPS:%d", id(fps_value) / 4);
+        snprintf(fps_s, sizeof(fps_s), "FPS:%d", id(fps_value));
         int fw = (int)strlen(fps_s) * 5;
         it.filled_rectangle(0, 11, fw + 2, 9, id(c_black));
         it.printf(0, 11, id(f_console), id(c_green), "%s", fps_s);

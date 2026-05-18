@@ -14,6 +14,7 @@ void TDisplayS3::setup() {
   this->tft_->fillScreen(TFT_BLACK);
 
   this->spr_ = new TFT_eSprite(this->tft_);
+  this->spr_->setColorDepth(8);  // 1 байт/пиксель → push через i80 в 2× быстрее
   if (this->spr_->createSprite(get_width_internal(), get_height_internal()) == nullptr) {
     this->mark_failed();
   }
