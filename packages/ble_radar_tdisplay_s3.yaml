@@ -35,14 +35,12 @@ interval:
   - interval: 700ms
     then:
       - lambda: |-
-          // Жёлтый target-tracker (по мотивам esp32_p4_radar.ino).
-          // Cooldown ~6 сек (1 оборот sweep) + jitter; target — std::string MAC
-          // (устойчив к сдвигу индексов при cleanup). Known (Alex/Ira/Lila)
-          // никогда не цель. Force re-pick если target пропал из addrs.
+          // State machine для target. Capture происходит не здесь, а в момент
+          // sweep crossing (см. блок в основном interval) — мишень всегда
+          // лочится на свежеподсвеченную точку с intensity=240.
+          // Здесь только переход tracking → waiting и release потерянной цели.
           uint32_t now = millis();
-          auto &cache = id(cache_radar_idx);
           auto &addrs = id(dev_addr);
-          // Проверка: текущий target ещё в массиве?
           const std::string &cur_mac = id(target_mac);
           bool target_alive = false;
           if (!cur_mac.empty()) {
@@ -51,60 +49,17 @@ interval:
             }
           }
           if (!target_alive && !cur_mac.empty()) {
-            // target пропал — re-pick сразу, не ждём cooldown.
-            id(target_switch_at) = 0;
-          }
-          if (now < id(target_switch_at)) return;
-          if (cache.empty()) {
+            // Цель пропала из массива — в waiting немедленно
             id(target_mac).clear();
-            id(target_switch_at) = now + 1500;
+            id(target_switch_at) = now;  // готов ловить следующее crossing
             return;
           }
-          const std::string &h0 = id(target_hist_0);
-          const std::string &h1 = id(target_hist_1);
-          const std::string &h2 = id(target_hist_2);
-          // Исключаем known (Alex/Ira/Lila) и last-3 историю
-          std::vector<std::string> candidates;
-          candidates.reserve(cache.size());
-          for (size_t k = 0; k < cache.size(); k++) {
-            int idx = cache[k];
-            if (idx < 0 || idx >= (int)addrs.size()) continue;
-            const std::string &m = addrs[idx];
-            if (strcasecmp(m.c_str(), "DE:AD:51:6E:27:C5") == 0) continue;
-            if (strcasecmp(m.c_str(), "CE:CD:12:23:1F:64") == 0) continue;
-            if (strcasecmp(m.c_str(), "FD:D9:6C:D4:F9:F7") == 0) continue;
-            if (m == h0 || m == h1 || m == h2) continue;
-            candidates.push_back(m);
+          // Если в tracking и время держания на цели вышло — в waiting
+          if (!cur_mac.empty() && now >= id(target_switch_at)) {
+            id(target_mac).clear();
+            // Пауза 0.5-1.5 сек перед следующим захватом, чтобы было заметно
+            id(target_switch_at) = now + 500 + (esp_random() % 1000);
           }
-          std::string new_mac;
-          if (!candidates.empty()) {
-            new_mac = candidates[esp_random() % candidates.size()];
-          } else {
-            // Fallback: все unknown сидят в history — берём любого unknown.
-            for (size_t k = 0; k < cache.size(); k++) {
-              int idx = cache[k];
-              if (idx < 0 || idx >= (int)addrs.size()) continue;
-              const std::string &m = addrs[idx];
-              if (strcasecmp(m.c_str(), "DE:AD:51:6E:27:C5") == 0) continue;
-              if (strcasecmp(m.c_str(), "CE:CD:12:23:1F:64") == 0) continue;
-              if (strcasecmp(m.c_str(), "FD:D9:6C:D4:F9:F7") == 0) continue;
-              candidates.push_back(m);
-            }
-            if (candidates.empty()) {
-              // Совсем нет unknown — ничего не рисуем, переждём.
-              id(target_mac).clear();
-              id(target_switch_at) = now + 2000;
-              return;
-            }
-            new_mac = candidates[esp_random() % candidates.size()];
-          }
-          // Сдвиг истории
-          id(target_hist_2) = id(target_hist_1);
-          id(target_hist_1) = id(target_hist_0);
-          id(target_hist_0) = new_mac;
-          id(target_mac) = new_mac;
-          // ≈1 оборот sweep (6 сек) + jitter ±1.5 сек
-          id(target_switch_at) = now + 5500 + (esp_random() % 1500);
   - interval: 1s
     then:
       - lambda: |-
@@ -602,6 +557,31 @@ display:
             if (d < 14) d = 14;
             if (d > 70) d = 70;
             dists[i] = d;
+            // Capture свежего unknown crossing на target — только если сейчас
+            // waiting (target_mac пуст и cooldown истёк). Исключаем known и
+            // history последних трёх.
+            if (id(target_mac).empty() && t >= id(target_switch_at)) {
+              const std::string &m = addrs[i];
+              bool is_known = (strcasecmp(m.c_str(), "DE:AD:51:6E:27:C5") == 0
+                            || strcasecmp(m.c_str(), "CE:CD:12:23:1F:64") == 0
+                            || strcasecmp(m.c_str(), "FD:D9:6C:D4:F9:F7") == 0);
+              const std::string &h0 = id(target_hist_0);
+              const std::string &h1 = id(target_hist_1);
+              const std::string &h2 = id(target_hist_2);
+              bool in_history = (m == h0 || m == h1 || m == h2);
+              if (!is_known && !in_history) {
+                // 50% шанс на захват — чтобы мишень не цеплялась за первое
+                // попавшееся, разнообразит выбор
+                if ((esp_random() & 1) == 0) {
+                  id(target_hist_2) = id(target_hist_1);
+                  id(target_hist_1) = id(target_hist_0);
+                  id(target_hist_0) = m;
+                  id(target_mac) = m;
+                  // Держать на цели 3-5 сек
+                  id(target_switch_at) = t + 3000 + (esp_random() % 2000);
+                }
+              }
+            }
           }
         }
         id(prev_sweep) = sw;
