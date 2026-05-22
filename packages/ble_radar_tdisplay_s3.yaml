@@ -32,34 +32,9 @@ interval:
             id(radar_mode_sw).publish_state(true);
             ESP_LOGI("auto", "Auto-switched to radar mode after 60s");
           }
-  - interval: 700ms
-    then:
-      - lambda: |-
-          // State machine для target. Capture происходит не здесь, а в момент
-          // sweep crossing (см. блок в основном interval) — мишень всегда
-          // лочится на свежеподсвеченную точку с intensity=240.
-          // Здесь только переход tracking → waiting и release потерянной цели.
-          uint32_t now = millis();
-          auto &addrs = id(dev_addr);
-          const std::string &cur_mac = id(target_mac);
-          bool target_alive = false;
-          if (!cur_mac.empty()) {
-            for (size_t k = 0; k < addrs.size(); k++) {
-              if (addrs[k] == cur_mac) { target_alive = true; break; }
-            }
-          }
-          if (!target_alive && !cur_mac.empty()) {
-            // Цель пропала из массива — в waiting немедленно
-            id(target_mac).clear();
-            id(target_switch_at) = now;  // готов ловить следующее crossing
-            return;
-          }
-          // Если в tracking и время держания на цели вышло — в waiting
-          if (!cur_mac.empty() && now >= id(target_switch_at)) {
-            id(target_mac).clear();
-            // Пауза 0.5-1.5 сек перед следующим захватом, чтобы было заметно
-            id(target_switch_at) = now + 500 + (esp_random() % 1000);
-          }
+  # interval target-tracker удалён — вся логика swap делается в crossing-блоке
+  # основного render-интервала. target_switch_at используется как "ready-to-swap"
+  # timestamp, мишень всегда видна (мигает при потере цели).
   - interval: 1s
     then:
       - lambda: |-
@@ -557,10 +532,10 @@ display:
             if (d < 14) d = 14;
             if (d > 70) d = 70;
             dists[i] = d;
-            // Capture свежего unknown crossing на target — только если сейчас
-            // waiting (target_mac пуст и cooldown истёк). Исключаем known и
-            // history последних трёх.
-            if (id(target_mac).empty() && t >= id(target_switch_at)) {
+            // Capture свежего unknown crossing на target. Срабатывает если
+            // cooldown истёк ИЛИ текущая цель потеряна. Исключаем known,
+            // history последних трёх и self-capture.
+            {
               const std::string &m = addrs[i];
               bool is_known = (strcasecmp(m.c_str(), "DE:AD:51:6E:27:C5") == 0
                             || strcasecmp(m.c_str(), "CE:CD:12:23:1F:64") == 0
@@ -569,15 +544,21 @@ display:
               const std::string &h1 = id(target_hist_1);
               const std::string &h2 = id(target_hist_2);
               bool in_history = (m == h0 || m == h1 || m == h2);
-              if (!is_known && !in_history) {
-                // 50% шанс на захват — чтобы мишень не цеплялась за первое
-                // попавшееся, разнообразит выбор
+              const std::string &cur_mac = id(target_mac);
+              bool cur_alive = false;
+              if (!cur_mac.empty()) {
+                for (size_t k = 0; k < addrs.size(); k++) {
+                  if (addrs[k] == cur_mac) { cur_alive = true; break; }
+                }
+              }
+              bool ready = (t >= id(target_switch_at)) || !cur_alive;
+              if (!is_known && !in_history && ready && cur_mac != m) {
                 if ((esp_random() & 1) == 0) {
                   id(target_hist_2) = id(target_hist_1);
                   id(target_hist_1) = id(target_hist_0);
                   id(target_hist_0) = m;
                   id(target_mac) = m;
-                  // Держать на цели 3-5 сек
+                  // Hold 3-5 сек до следующего swap
                   id(target_switch_at) = t + 3000 + (esp_random() % 2000);
                 }
               }
@@ -731,9 +712,9 @@ display:
           }
         }
 
-        // Жёлтый target-tracker: квадратная мишень поверх всех точек.
-        // Постоянный lerp k=0.12 (как в esp32_p4_radar.ino) — мишень плавно
-        // следует за целью и сама собой переезжает при смене target_mac.
+        // Жёлтый target: всегда виден. Lerp 12% за кадр к цели если она в
+        // addrs; если потеряна — мигает на target_prev_x/y (последняя позиция)
+        // и ждёт пока crossing-блок захватит новую цель.
         {
           const std::string &tmac = id(target_mac);
           int tidx = -1;
@@ -742,7 +723,8 @@ display:
               if (addrs[k] == tmac) { tidx = (int)k; break; }
             }
           }
-          if (tidx >= 0) {
+          bool alive = (tidx >= 0);
+          if (alive) {
             float ta = (tidx < (int)angs.size()) ? angs[tidx] : 0.0f;
             int td = (tidx < (int)dists.size()) ? dists[tidx] : 0;
             if (td == 0) {
@@ -753,24 +735,26 @@ display:
             }
             float tgt_x = (float)cx + cosf(ta) * (float)td;
             float tgt_y = (float)cy + sinf(ta) * (float)td;
-            // Lerp 12% к цели на каждый кадр — gentle, постоянный
             id(target_prev_x) += (tgt_x - id(target_prev_x)) * 0.12f;
             id(target_prev_y) += (tgt_y - id(target_prev_y)) * 0.12f;
-            int tx = (int)id(target_prev_x);
-            int ty = (int)id(target_prev_y);
+          }
+          // Pre-init: если позиция в (0,0) при первом запуске — стартуем с центра
+          if (id(target_prev_x) < 1.0f && id(target_prev_y) < 1.0f) {
+            id(target_prev_x) = (float)cx;
+            id(target_prev_y) = (float)cy;
+          }
+          int tx = (int)id(target_prev_x);
+          int ty = (int)id(target_prev_y);
+          // Blink при потере цели: рисуем 300ms из 500ms
+          bool draw = alive || ((t / 250) % 2 == 0);
+          if (draw) {
             Color tc = Color(255, 220, 0);
-            // Квадрат 10×10 px: 4 L-уголка по 3px, между ними gap 4px.
-            // tx-5..tx+4, ty-5..ty+4 (10 px), уголки занимают 3 px по краям.
-            // Верх-лево (3px горизонталь + 3px вертикаль)
             it.line(tx - 5, ty - 5, tx - 3, ty - 5, tc);
             it.line(tx - 5, ty - 5, tx - 5, ty - 3, tc);
-            // Верх-право
             it.line(tx + 2, ty - 5, tx + 4, ty - 5, tc);
             it.line(tx + 4, ty - 5, tx + 4, ty - 3, tc);
-            // Низ-лево
             it.line(tx - 5, ty + 2, tx - 5, ty + 4, tc);
             it.line(tx - 5, ty + 4, tx - 3, ty + 4, tc);
-            // Низ-право
             it.line(tx + 2, ty + 4, tx + 4, ty + 4, tc);
             it.line(tx + 4, ty + 2, tx + 4, ty + 4, tc);
           }
