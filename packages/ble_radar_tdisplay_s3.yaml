@@ -532,34 +532,40 @@ display:
             if (d < 14) d = 14;
             if (d > 70) d = 70;
             dists[i] = d;
-            // Capture свежего unknown crossing на target. Срабатывает если
-            // cooldown истёк ИЛИ текущая цель потеряна. Исключаем known,
-            // history последних трёх и self-capture.
+            // Capture свежего crossing на target. Только устройства из
+            // cache_radar_idx — иначе мишень лочится на безымянный девайс,
+            // которого нет на экране как точка, и перелетает на пустое место.
             {
-              const std::string &m = addrs[i];
-              bool is_known = (strcasecmp(m.c_str(), "DE:AD:51:6E:27:C5") == 0
-                            || strcasecmp(m.c_str(), "CE:CD:12:23:1F:64") == 0
-                            || strcasecmp(m.c_str(), "FD:D9:6C:D4:F9:F7") == 0);
-              const std::string &h0 = id(target_hist_0);
-              const std::string &h1 = id(target_hist_1);
-              const std::string &h2 = id(target_hist_2);
-              bool in_history = (m == h0 || m == h1 || m == h2);
-              const std::string &cur_mac = id(target_mac);
-              bool cur_alive = false;
-              if (!cur_mac.empty()) {
-                for (size_t k = 0; k < addrs.size(); k++) {
-                  if (addrs[k] == cur_mac) { cur_alive = true; break; }
-                }
+              auto &ridx = id(cache_radar_idx);
+              bool in_radar = false;
+              for (int idx : ridx) {
+                if (idx == (int)i) { in_radar = true; break; }
               }
-              bool ready = (t >= id(target_switch_at)) || !cur_alive;
-              if (!is_known && !in_history && ready && cur_mac != m) {
-                if ((esp_random() & 1) == 0) {
-                  id(target_hist_2) = id(target_hist_1);
-                  id(target_hist_1) = id(target_hist_0);
-                  id(target_hist_0) = m;
-                  id(target_mac) = m;
-                  // Hold 3-5 сек до следующего swap
-                  id(target_switch_at) = t + 3000 + (esp_random() % 2000);
+              if (in_radar) {
+                const std::string &m = addrs[i];
+                bool is_known = (strcasecmp(m.c_str(), "DE:AD:51:6E:27:C5") == 0
+                              || strcasecmp(m.c_str(), "CE:CD:12:23:1F:64") == 0
+                              || strcasecmp(m.c_str(), "FD:D9:6C:D4:F9:F7") == 0);
+                const std::string &h0 = id(target_hist_0);
+                const std::string &h1 = id(target_hist_1);
+                const std::string &h2 = id(target_hist_2);
+                bool in_history = (m == h0 || m == h1 || m == h2);
+                const std::string &cur_mac = id(target_mac);
+                bool cur_alive = false;
+                if (!cur_mac.empty()) {
+                  for (size_t k = 0; k < addrs.size(); k++) {
+                    if (addrs[k] == cur_mac) { cur_alive = true; break; }
+                  }
+                }
+                bool ready = (t >= id(target_switch_at)) || !cur_alive;
+                if (!is_known && !in_history && ready && cur_mac != m) {
+                  if ((esp_random() & 1) == 0) {
+                    id(target_hist_2) = id(target_hist_1);
+                    id(target_hist_1) = id(target_hist_0);
+                    id(target_hist_0) = m;
+                    id(target_mac) = m;
+                    id(target_switch_at) = t + 3000 + (esp_random() % 2000);
+                  }
                 }
               }
             }
@@ -598,6 +604,15 @@ display:
         };
         auto add_bb = [&](int x, int y, int w, int h) {
           if (bb_n < 24) { bb_x[bb_n] = x; bb_y[bb_n] = y; bb_w[bb_n] = w; bb_h[bb_n] = h; bb_n++; }
+        };
+        // drawn — собираем фактически нарисованные точки этого кадра для
+        // привязки target. Только эти позиции считаются "целью существует".
+        int drawn_n = 0;
+        int drawn_idx[24];
+        int drawn_x[24];
+        int drawn_y[24];
+        auto add_drawn = [&](int idx, int x, int y) {
+          if (drawn_n < 24) { drawn_idx[drawn_n] = idx; drawn_x[drawn_n] = x; drawn_y[drawn_n] = y; drawn_n++; }
         };
         for (int idx_pos = 0; idx_pos < (int)radar_idx.size(); idx_pos++) {
           size_t i = (size_t)radar_idx[idx_pos];
@@ -691,6 +706,7 @@ display:
             it.printf(label_x, block_top, id(f_console), Color(0, intensity, 0), "%s", label);
             it.printf(label_x, block_top + 9, id(f_console), Color(0, intensity, 0), "%s", rssi_s);
             add_bb(block_left, block_top, block_w, block_h);
+            add_drawn((int)i, dx_use, draw_dy);
           } else {
             // Unknown: только точка. Большой набор попыток обхода —
             // комбинации радиальных и угловых сдвигов, до 11 вариантов.
@@ -709,34 +725,31 @@ display:
             }
             it.filled_circle(dx, dy, dot_r, Color(0, intensity, 0));
             add_bb(dx - dot_r, dy - dot_r, dot_w, dot_w);
+            add_drawn((int)i, dx, dy);
           }
         }
 
-        // Жёлтый target: всегда виден. Lerp 12% за кадр к цели если она в
-        // addrs; если потеряна — мигает на target_prev_x/y (последняя позиция)
-        // и ждёт пока crossing-блок захватит новую цель.
+        // Жёлтый target: всегда виден. Alive=true только если target_mac среди
+        // фактически нарисованных в этом кадре точек (drawn). Иначе мигает
+        // на последней позиции и ждёт новый захват из crossing-блока.
         {
           const std::string &tmac = id(target_mac);
-          int tidx = -1;
+          int tgt_x_drawn = -1;
+          int tgt_y_drawn = -1;
           if (!tmac.empty()) {
-            for (size_t k = 0; k < addrs.size(); k++) {
-              if (addrs[k] == tmac) { tidx = (int)k; break; }
+            for (int k = 0; k < drawn_n; k++) {
+              int di = drawn_idx[k];
+              if (di >= 0 && di < (int)addrs.size() && addrs[di] == tmac) {
+                tgt_x_drawn = drawn_x[k];
+                tgt_y_drawn = drawn_y[k];
+                break;
+              }
             }
           }
-          bool alive = (tidx >= 0);
+          bool alive = (tgt_x_drawn >= 0);
           if (alive) {
-            float ta = (tidx < (int)angs.size()) ? angs[tidx] : 0.0f;
-            int td = (tidx < (int)dists.size()) ? dists[tidx] : 0;
-            if (td == 0) {
-              int r = rssis[tidx];
-              td = 14 + ((-50 - r) * 56) / 60;
-              if (td < 14) td = 14;
-              if (td > max_r) td = max_r;
-            }
-            float tgt_x = (float)cx + cosf(ta) * (float)td;
-            float tgt_y = (float)cy + sinf(ta) * (float)td;
-            id(target_prev_x) += (tgt_x - id(target_prev_x)) * 0.12f;
-            id(target_prev_y) += (tgt_y - id(target_prev_y)) * 0.12f;
+            id(target_prev_x) += ((float)tgt_x_drawn - id(target_prev_x)) * 0.12f;
+            id(target_prev_y) += ((float)tgt_y_drawn - id(target_prev_y)) * 0.12f;
           }
           // Pre-init: если позиция в (0,0) при первом запуске — стартуем с центра
           if (id(target_prev_x) < 1.0f && id(target_prev_y) < 1.0f) {
