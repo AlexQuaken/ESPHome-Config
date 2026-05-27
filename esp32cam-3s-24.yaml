@@ -31,14 +31,3 @@ packages:
   device_base: !include packages/1wifi_api_ota_logger.yaml
   base_sensors: !include packages/2common_sensors.yaml
   esp32cam: !include packages/8esp32-cam-s3-freenove.yaml
-
-# WS2812 на GPIO48 — статусный/декоративный индикатор
-light:
-  - platform: esp32_rmt_led_strip
-    chipset: WS2812
-    rgb_order: GRB
-    pin: GPIO48
-    num_leds: 1
-    name: ${board_name}_status_led
-    id: status_ws2812
-    default_transition_length: 0s
