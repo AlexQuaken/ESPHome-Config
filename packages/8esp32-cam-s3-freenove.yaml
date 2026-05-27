@@ -1,0 +1,37 @@
+esp32_camera_web_server:
+  - port: 8080
+    mode: stream
+  - port: 8081
+    mode: snapshot
+
+i2c:
+  - id: bus_cam
+    sda: GPIO4
+    scl: GPIO5
+    frequency: 100kHz
+    scan: false
+
+esp32_camera:
+  external_clock:
+    pin: GPIO15
+    frequency: 20MHz
+  i2c_id: bus_cam
+  data_pins: [GPIO11, GPIO9, GPIO8, GPIO10, GPIO12, GPIO18, GPIO17, GPIO16]
+  vsync_pin: GPIO6
+  href_pin: GPIO7
+  pixel_clock_pin: GPIO13
+
+  name: ${board_name}_Camera
+  resolution: 1024x768
+  jpeg_quality: 8
+  max_framerate: 10fps
+  idle_framerate: 0.2fps
+  frame_buffer_count: 2
+  aec2: true
+  agc_mode: AUTO
+  agc_gain_ceiling: 16x
+  aec_mode: AUTO
+  ae_level: 0
+  wb_mode: AUTO
+  vertical_flip: false
+  horizontal_mirror: false
