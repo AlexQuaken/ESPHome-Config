@@ -22,16 +22,18 @@ esp32_camera:
   pixel_clock_pin: GPIO13
 
   name: ${board_name}_Camera
-  resolution: 1024x768
-  jpeg_quality: 8
-  max_framerate: 10fps
+  resolution: 1600x1200
+  jpeg_quality: 6
+  max_framerate: 5fps
   idle_framerate: 0.2fps
   frame_buffer_count: 2
   aec2: true
   agc_mode: AUTO
-  agc_gain_ceiling: 16x
+  agc_gain_ceiling: 32x
   aec_mode: AUTO
   ae_level: 1
   wb_mode: AUTO
+  contrast: 1
+  saturation: 1
   vertical_flip: true
-  horizontal_mirror: true
+  horizontal_mirror: false
