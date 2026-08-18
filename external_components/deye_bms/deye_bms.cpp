@@ -127,6 +127,7 @@ struct Aes128 {
 // сырыми байтами (AA55...0D0A).
 static const char REQ_CELLS[] = "aa5501040003700d0a";
 static const char REQ_MAIN[] = "aa5501a00079b00d0a";
+static const char REQ_INFO[] = "aa5501010000200d0a";  // func 01: паспорт + число циклов
 
 static const uint8_t IV[16] = {'0', '0', '0', '0', '0', '0', '0', '0',
                                '0', '0', '0', '0', '0', '0', '0', '0'};
@@ -309,9 +310,10 @@ void DeyeBMS::send_result_() {
 }
 
 void DeyeBMS::send_next_poll_() {
-  const char *req = (this->poll_idx_ == 0) ? REQ_CELLS : REQ_MAIN;
+  const char *reqs[3] = {REQ_CELLS, REQ_MAIN, REQ_INFO};
+  const char *req = reqs[this->poll_idx_ % 3];
   size_t len = strlen(req);
-  this->poll_idx_ = (this->poll_idx_ + 1) % 2;
+  this->poll_idx_ = (this->poll_idx_ + 1) % 3;
   std::vector<uint8_t> enc;
   this->aes_encrypt_((const uint8_t *) req, len, enc);
   this->rx_buf_.clear();
@@ -408,8 +410,28 @@ void DeyeBMS::parse_frame_(const std::vector<uint8_t> &f) {
     if (this->temp_cell_ != nullptr) this->temp_cell_->publish_state(tcell);
     if (this->temp_mos_ != nullptr) this->temp_mos_->publish_state(tmos);
     if (this->temp_env_ != nullptr) this->temp_env_->publish_state(tenv);
+    // хвост A0 (стабильные лимиты/ёмкость), поля LE /10
+    if (f.size() >= 36) {
+      if (this->charge_current_limit_ != nullptr)
+        this->charge_current_limit_->publish_state(le16(f, 24) / 10.0f);
+      if (this->discharge_current_limit_ != nullptr)
+        this->discharge_current_limit_->publish_state(le16(f, 26) / 10.0f);
+      if (this->charge_voltage_limit_ != nullptr)
+        this->charge_voltage_limit_->publish_state(le16(f, 28) / 10.0f);
+      if (this->discharge_voltage_limit_ != nullptr)
+        this->discharge_voltage_limit_->publish_state(le16(f, 30) / 10.0f);
+      if (this->full_capacity_ != nullptr)
+        this->full_capacity_->publish_state(le16(f, 34) / 10.0f);
+    }
     ESP_LOGD(TAG, "телеметрия: soc=%.1f%% totalV=%.2fV I=%.2fA tCell=%.1f tMos=%.1f tEnv=%.1f", soc,
              totalv, cur, tcell, tmos, tenv);
+  } else if (func == 0x01) {
+    // паспорт: число циклов — big-endian 16-бит на смещении 14 (кадр: ...00 00 00 02...)
+    if (f.size() >= 16 && this->cycles_ != nullptr) {
+      uint16_t cyc = ((uint16_t) f[14] << 8) | f[15];
+      this->cycles_->publish_state(cyc);
+      ESP_LOGD(TAG, "паспорт: циклы=%u", cyc);
+    }
   }
 }
 

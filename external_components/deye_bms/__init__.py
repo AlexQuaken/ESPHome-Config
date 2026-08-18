@@ -10,6 +10,7 @@ from esphome.const import (
     DEVICE_CLASS_TEMPERATURE,
     DEVICE_CLASS_BATTERY,
     STATE_CLASS_MEASUREMENT,
+    STATE_CLASS_TOTAL_INCREASING,
     UNIT_VOLT,
     UNIT_AMPERE,
     UNIT_CELSIUS,
@@ -39,8 +40,15 @@ CONF_SOH = "state_of_health"
 CONF_TEMP_CELL = "temperature_cell"
 CONF_TEMP_MOS = "temperature_mos"
 CONF_TEMP_ENV = "temperature_env"
+CONF_CHARGE_CURRENT_LIMIT = "charge_current_limit"
+CONF_DISCHARGE_CURRENT_LIMIT = "discharge_current_limit"
+CONF_CHARGE_VOLTAGE_LIMIT = "charge_voltage_limit"
+CONF_DISCHARGE_VOLTAGE_LIMIT = "discharge_voltage_limit"
+CONF_FULL_CAPACITY = "full_capacity"
+CONF_CYCLES = "cycles"
 
 UNIT_MILLIVOLT = "mV"
+UNIT_AMPERE_HOUR = "Ah"
 
 
 def cell_sensor():
@@ -115,6 +123,35 @@ CONFIG_SCHEMA = (
                 device_class=DEVICE_CLASS_TEMPERATURE,
                 state_class=STATE_CLASS_MEASUREMENT,
             ),
+            cv.Optional(CONF_CHARGE_CURRENT_LIMIT): sensor.sensor_schema(
+                unit_of_measurement=UNIT_AMPERE,
+                accuracy_decimals=1,
+                device_class=DEVICE_CLASS_CURRENT,
+            ),
+            cv.Optional(CONF_DISCHARGE_CURRENT_LIMIT): sensor.sensor_schema(
+                unit_of_measurement=UNIT_AMPERE,
+                accuracy_decimals=1,
+                device_class=DEVICE_CLASS_CURRENT,
+            ),
+            cv.Optional(CONF_CHARGE_VOLTAGE_LIMIT): sensor.sensor_schema(
+                unit_of_measurement=UNIT_VOLT,
+                accuracy_decimals=1,
+                device_class=DEVICE_CLASS_VOLTAGE,
+            ),
+            cv.Optional(CONF_DISCHARGE_VOLTAGE_LIMIT): sensor.sensor_schema(
+                unit_of_measurement=UNIT_VOLT,
+                accuracy_decimals=1,
+                device_class=DEVICE_CLASS_VOLTAGE,
+            ),
+            cv.Optional(CONF_FULL_CAPACITY): sensor.sensor_schema(
+                unit_of_measurement=UNIT_AMPERE_HOUR,
+                accuracy_decimals=1,
+                state_class=STATE_CLASS_MEASUREMENT,
+            ),
+            cv.Optional(CONF_CYCLES): sensor.sensor_schema(
+                accuracy_decimals=0,
+                state_class=STATE_CLASS_TOTAL_INCREASING,
+            ),
         }
     )
     .extend(cv.polling_component_schema("10s"))
@@ -147,6 +184,12 @@ async def to_code(config):
         (CONF_TEMP_CELL, var.set_temp_cell),
         (CONF_TEMP_MOS, var.set_temp_mos),
         (CONF_TEMP_ENV, var.set_temp_env),
+        (CONF_CHARGE_CURRENT_LIMIT, var.set_charge_current_limit),
+        (CONF_DISCHARGE_CURRENT_LIMIT, var.set_discharge_current_limit),
+        (CONF_CHARGE_VOLTAGE_LIMIT, var.set_charge_voltage_limit),
+        (CONF_DISCHARGE_VOLTAGE_LIMIT, var.set_discharge_voltage_limit),
+        (CONF_FULL_CAPACITY, var.set_full_capacity),
+        (CONF_CYCLES, var.set_cycles),
     ]:
         if key in config:
             s = await sensor.new_sensor(config[key])

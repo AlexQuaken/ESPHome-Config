@@ -21,3 +21,6 @@ packages:
   ble_ira: !include packages/ble_ira.yaml
   ble_lila: !include packages/ble_lila.yaml
   deye_battery: !include packages/deye_battery.yaml
+
+safe_mode:
+  num_attempts: 50

@@ -50,6 +50,12 @@ class DeyeBMS : public esphome::ble_client::BLEClientNode, public PollingCompone
   void set_temp_cell(sensor::Sensor *s) { this->temp_cell_ = s; }
   void set_temp_mos(sensor::Sensor *s) { this->temp_mos_ = s; }
   void set_temp_env(sensor::Sensor *s) { this->temp_env_ = s; }
+  void set_charge_current_limit(sensor::Sensor *s) { this->charge_current_limit_ = s; }
+  void set_discharge_current_limit(sensor::Sensor *s) { this->discharge_current_limit_ = s; }
+  void set_charge_voltage_limit(sensor::Sensor *s) { this->charge_voltage_limit_ = s; }
+  void set_discharge_voltage_limit(sensor::Sensor *s) { this->discharge_voltage_limit_ = s; }
+  void set_full_capacity(sensor::Sensor *s) { this->full_capacity_ = s; }
+  void set_cycles(sensor::Sensor *s) { this->cycles_ = s; }
 
  protected:
   std::string ble_name_;
@@ -82,6 +88,12 @@ class DeyeBMS : public esphome::ble_client::BLEClientNode, public PollingCompone
   sensor::Sensor *temp_cell_{nullptr};
   sensor::Sensor *temp_mos_{nullptr};
   sensor::Sensor *temp_env_{nullptr};
+  sensor::Sensor *charge_current_limit_{nullptr};
+  sensor::Sensor *discharge_current_limit_{nullptr};
+  sensor::Sensor *charge_voltage_limit_{nullptr};
+  sensor::Sensor *discharge_voltage_limit_{nullptr};
+  sensor::Sensor *full_capacity_{nullptr};
+  sensor::Sensor *cycles_{nullptr};
 
   // --- протокол ---
   void start_handshake_();

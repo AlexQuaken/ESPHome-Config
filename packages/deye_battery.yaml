@@ -53,3 +53,15 @@ deye_bms:
     name: "Deye batt temp MOS"
   temperature_env:
     name: "Deye batt temp env"
+  charge_current_limit:
+    name: "Deye batt charge current limit"
+  discharge_current_limit:
+    name: "Deye batt discharge current limit"
+  charge_voltage_limit:
+    name: "Deye batt charge voltage limit"
+  discharge_voltage_limit:
+    name: "Deye batt discharge voltage limit"
+  full_capacity:
+    name: "Deye batt full capacity"
+  cycles:
+    name: "Deye batt cycles"
