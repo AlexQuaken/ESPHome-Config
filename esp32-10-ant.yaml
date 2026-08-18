@@ -20,3 +20,4 @@ packages:
   ble_alex: !include packages/ble_alex.yaml
   ble_ira: !include packages/ble_ira.yaml
   ble_lila: !include packages/ble_lila.yaml
+  deye_battery: !include packages/deye_battery.yaml

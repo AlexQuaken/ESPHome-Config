@@ -1,0 +1,55 @@
+external_components:
+  - source:
+      type: local
+      path: external_components
+    components: [deye_bms]
+
+ble_client:
+  - mac_address: 3C:1A:CC:4C:11:2A
+    id: deye_batt_client
+
+deye_bms:
+  ble_client_id: deye_batt_client
+  ble_name: "BAT25212000E3050050"
+  update_interval: 5s
+  cells:
+    - name: "Deye batt cell 1"
+    - name: "Deye batt cell 2"
+    - name: "Deye batt cell 3"
+    - name: "Deye batt cell 4"
+    - name: "Deye batt cell 5"
+    - name: "Deye batt cell 6"
+    - name: "Deye batt cell 7"
+    - name: "Deye batt cell 8"
+    - name: "Deye batt cell 9"
+    - name: "Deye batt cell 10"
+    - name: "Deye batt cell 11"
+    - name: "Deye batt cell 12"
+    - name: "Deye batt cell 13"
+    - name: "Deye batt cell 14"
+    - name: "Deye batt cell 15"
+    - name: "Deye batt cell 16"
+  cell_max_voltage:
+    name: "Deye batt cell max"
+  cell_min_voltage:
+    name: "Deye batt cell min"
+  cell_delta_voltage:
+    name: "Deye batt cell delta"
+  cell_max_number:
+    name: "Deye batt cell max no"
+  cell_min_number:
+    name: "Deye batt cell min no"
+  total_voltage:
+    name: "Deye batt total voltage"
+  current:
+    name: "Deye batt current"
+  state_of_charge:
+    name: "Deye batt SOC"
+  state_of_health:
+    name: "Deye batt SOH"
+  temperature_cell:
+    name: "Deye batt temp cell"
+  temperature_mos:
+    name: "Deye batt temp MOS"
+  temperature_env:
+    name: "Deye batt temp env"
