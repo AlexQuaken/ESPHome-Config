@@ -1,0 +1,12 @@
+INFO ESPHome 2026.5.0
+INFO Reading configuration esp32-10-ant.yaml...
+WARNING The 'custom_components' folder is deprecated and will be removed in 2026.6.0. Please use 'external_components' instead. See https://esphome.io/components/external_components.html for more information.
+Failed config
+
+logger: [source esp32-10-ant.yaml:49]
+  level: DEBUG
+  logs: 
+    
+    The configured log level for esp32_ble_client (VERBOSE) must not be less severe than the global log level (DEBUG).
+    esp32_ble_client: VERBOSE
+    esp32_ble_tracker: INFO

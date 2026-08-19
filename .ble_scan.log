@@ -1,0 +1,997 @@
+INFO ESPHome 2026.5.0
+INFO Loaded validated config cache for esp32-10-ant.yaml, skipping validation.
+INFO Starting log output from 192.168.0.173 using esphome API
+INFO Successfully resolved esp32-10-ant @ 192.168.0.173 in 0.000s
+INFO Successfully connected to esp32-10-ant @ 192.168.0.173 in 0.005s
+INFO Successful handshake with esp32-10-ant @ 192.168.0.173 in 0.051s
+[22:32:40.147][I][app:151]: ESPHome version 2026.5.0 compiled on 2026-08-17 22:15:25 +0300
+[22:32:40.147][I][app:158]: ESP32 Chip: ESP32 rev1.0, 2 core(s)
+[22:32:40.147][W][app:190]: Bootloader too old for OTA rollback and SRAM1 as IRAM (+40KB). Flash via USB once to update the bootloader
+[22:32:40.147][C][logger:219]: Logger:
+[22:32:40.147][C][logger:219]:   Max Level: DEBUG
+[22:32:40.147][C][logger:219]:   Initial Level: DEBUG
+[22:32:40.147][C][logger:226]:   Log Baud Rate: 115200
+[22:32:40.147][C][logger:226]:   Hardware UART: UART0
+[22:32:40.147][C][logger:235]:   Task Log Buffer Size: 768 bytes
+[22:32:40.159][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:40.159][I][ble_scan:030]: 74:A3:4A:B6:E2:7C | MJ_MR_V1 | RSSI -86
+[22:32:40.159][C][status_led:022]: Status LED:
+[22:32:40.159][C][status_led:152]:   Pin: GPIO2
+[22:32:40.187][C][uptime.sensor:017]: Uptime Sensor 'esp32-10-ant_Uptime_s'
+[22:32:40.187][C][uptime.sensor:017]:   State Class: 'total_increasing'
+[22:32:40.187][C][uptime.sensor:017]:   Unit of Measurement: 's'
+[22:32:40.187][C][uptime.sensor:017]:   Accuracy Decimals: 0
+[22:32:40.187][C][uptime.sensor:232]:   Device Class: 'duration'
+[22:32:40.187][C][uptime.sensor:223]:   Icon: 'mdi:timer-outline'
+[22:32:40.187][C][uptime.sensor:019]:   Type: Seconds
+[22:32:40.276][C][template.text_sensor:016]: Template Sensor 'esp32-10-ant_Uptime'
+[22:32:40.276][C][template.text_sensor:223]:   Icon: 'mdi:clock-start'
+[22:32:40.276][C][template.text_sensor:016]: Template Sensor 'esp32-10-ant WiFi Strength'
+[22:32:40.276][C][template.text_sensor:223]:   Icon: 'mdi:wifi'
+[22:32:40.276][C][safe_mode.button:014]: Safe Mode Button 'esp32-10-ant Safe Mode (OTA)'
+[22:32:40.276][C][safe_mode.button:223]:   Icon: 'mdi:restart-alert'
+[22:32:40.276][C][ble_rssi:017]: BLE RSSI Sensor 'alex_ble 10 RSSI'
+[22:32:40.276][C][ble_rssi:017]:   State Class: 'measurement'
+[22:32:40.276][C][ble_rssi:017]:   Unit of Measurement: 'dBm'
+[22:32:40.276][C][ble_rssi:017]:   Accuracy Decimals: 0
+[22:32:40.276][C][ble_rssi:232]:   Device Class: 'signal_strength'
+[22:32:40.353][C][ble_rssi:017]: BLE RSSI Sensor 'ira_ble 10 RSSI'
+[22:32:40.353][C][ble_rssi:017]:   State Class: 'measurement'
+[22:32:40.353][C][ble_rssi:017]:   Unit of Measurement: 'dBm'
+[22:32:40.353][C][ble_rssi:017]:   Accuracy Decimals: 0
+[22:32:40.353][C][ble_rssi:232]:   Device Class: 'signal_strength'
+[22:32:40.353][C][ble_rssi:017]: BLE RSSI Sensor 'lila_ble 10 RSSI'
+[22:32:40.353][C][ble_rssi:017]:   State Class: 'measurement'
+[22:32:40.353][C][ble_rssi:017]:   Unit of Measurement: 'dBm'
+[22:32:40.353][C][ble_rssi:017]:   Accuracy Decimals: 0
+[22:32:40.353][C][ble_rssi:232]:   Device Class: 'signal_strength'
+[22:32:40.361][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:40.361][C][restart:088]: Restart Switch 'esp32-10-ant_Restart'
+[22:32:40.361][C][restart:088]:   Restore Mode: always OFF
+[22:32:40.361][C][restart:223]:   Icon: 'mdi:restart'
+[22:32:40.363][C][homeassistant.time:009]: Home Assistant Time
+[22:32:40.405][C][time:049]: Timezone: UTC+2:00 (DST UTC+3:00)
+[22:32:40.406][C][time:055]: Current time: 2026-08-17 22:32:40
+[22:32:40.406][C][ble_presence:016]: BLE Presence 'alex_ble 10'
+[22:32:40.406][C][ble_presence:016]: BLE Presence 'ira_ble 10'
+[22:32:40.454][C][ble_presence:016]: BLE Presence 'lila_ble 10'
+[22:32:40.464][C][esp32_ble:663]: BLE:
+[22:32:40.464][C][esp32_ble:663]:   MAC address: 30:AE:A4:9D:57:AE
+[22:32:40.464][C][esp32_ble:663]:   IO Capability: none
+[22:32:40.464][C][esp32_ble_tracker:702]: BLE Tracker:
+[22:32:40.465][C][esp32_ble_tracker:703]:   Scan Duration: 120 s
+[22:32:40.465][C][esp32_ble_tracker:703]:   Scan Interval: 320.0 ms
+[22:32:40.465][C][esp32_ble_tracker:703]:   Scan Window: 30.0 ms
+[22:32:40.465][C][esp32_ble_tracker:703]:   Scan Type: ACTIVE
+[22:32:40.465][C][esp32_ble_tracker:703]:   Continuous Scanning: YES
+[22:32:40.496][C][esp32_ble_tracker:711]:   Scanner State: RUNNING
+[22:32:40.496][C][esp32_ble_tracker:711]:   Connecting: 0, discovered: 0, disconnecting: 0, active: 0
+[22:32:40.496][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:40.500][C][wifi:1526]: WiFi:
+[22:32:40.500][C][wifi:1526]:   Local MAC: 30:AE:A4:9D:57:AC
+[22:32:40.500][C][wifi:1526]:   Connected: YES
+[22:32:40.500][C][wifi:1237]:   IP Address: 192.168.0.173
+[22:32:40.560][C][wifi:1248]:   SSID: 'SmartHome'
+[22:32:40.560][C][wifi:1248]:   BSSID: 50:FF:20:31:18:0C
+[22:32:40.560][C][wifi:1248]:   Hostname: 'esp32-10-ant'
+[22:32:40.560][C][wifi:1248]:   Signal strength: -44 dB ▂▄▆█
+[22:32:40.560][C][wifi:1248]:   Channel: 9
+[22:32:40.560][C][wifi:1248]:   Subnet: 255.255.255.0
+[22:32:40.560][C][wifi:1248]:   Gateway: 192.168.0.1
+[22:32:40.560][C][wifi:1248]:   DNS1: 192.168.0.7
+[22:32:40.560][C][wifi:1248]:   DNS2: 192.168.0.1
+[22:32:40.560][C][esphome.ota:097]: Over-The-Air updates:
+[22:32:40.560][C][esphome.ota:097]:   Address: 192.168.0.173:3232
+[22:32:40.560][C][esphome.ota:097]:   Version: 2
+[22:32:40.560][C][esphome.ota:104]:   Password configured
+[22:32:40.560][C][safe_mode:058]: Safe Mode:
+[22:32:40.560][C][safe_mode:058]:   Successful after: 60s
+[22:32:40.560][C][safe_mode:058]:   Invoke after: 10 attempts
+[22:32:40.560][C][safe_mode:058]:   Duration: 300s
+[22:32:40.572][C][safe_mode:079]:   Bootloader rollback: supported
+[22:32:40.577][C][api:243]: Server:
+[22:32:40.577][C][api:243]:   Address: 192.168.0.173:6053
+[22:32:40.577][C][api:243]:   Listen backlog: 4
+[22:32:40.577][C][api:243]:   Max connections: 5
+[22:32:40.584][C][api:255]:   Noise encryption: NO
+[22:32:40.593][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:40.658][C][mqtt:191]: MQTT:
+[22:32:40.658][C][mqtt:191]:   Server Address: 192.168.0.6:1883 (192.168.0.6)
+[22:32:40.658][C][mqtt:191]:   Username: 'mqtt'
+[22:32:40.658][C][mqtt:191]:   Client ID: 'esp32-10-ant-30aea49d57ac'
+[22:32:40.658][C][mqtt:191]:   Clean Session: NO
+[22:32:40.659][C][mqtt:202]:   Discovery IP enabled
+[22:32:40.659][C][mqtt:210]:   Topic Prefix: 'esp/esp32-10-ant'
+[22:32:40.659][C][mqtt:212]:   Log Topic: 'esp/esp32-10-ant/debug'
+[22:32:40.667][C][mqtt:215]:   Availability: 'esp/status/status'
+[22:32:40.667][C][wifi_signal.sensor:017]: WiFi Signal 'esp32-10-ant_WiFi_RSSI'
+[22:32:40.667][C][wifi_signal.sensor:017]:   State Class: 'measurement'
+[22:32:40.667][C][wifi_signal.sensor:017]:   Unit of Measurement: 'dBm'
+[22:32:40.667][C][wifi_signal.sensor:017]:   Accuracy Decimals: 0
+[22:32:40.667][C][wifi_signal.sensor:232]:   Device Class: 'signal_strength'
+[22:32:40.667][C][mdns:230]: mDNS:
+[22:32:40.667][C][mdns:230]:   Hostname: esp32-10-ant
+[22:32:40.707][C][mqtt.button:028]: MQTT Button 'esp32-10-ant Safe Mode (OTA)': 
+[22:32:40.707][C][mqtt.button:045]:   Command Topic: 'esp/esp32-10-ant/button/esp32-10-ant_safe_mode__ota_/command'
+[22:32:40.707][C][mqtt.sensor:027]: MQTT Sensor 'esp32-10-ant_Uptime_s':
+[22:32:40.707][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/esp32-10-ant_uptime_s/state'
+[22:32:40.763][C][mqtt.sensor:027]: MQTT Sensor 'esp32-10-ant_WiFi_RSSI':
+[22:32:40.763][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/esp32-10-ant_wifi_rssi/state'
+[22:32:40.763][C][mqtt.sensor:027]: MQTT Sensor 'alex_ble 10 RSSI':
+[22:32:40.763][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/alex_ble_10_rssi/state'
+[22:32:40.777][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:40.781][C][mqtt.sensor:027]: MQTT Sensor 'ira_ble 10 RSSI':
+[22:32:40.784][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/ira_ble_10_rssi/state'
+[22:32:40.807][C][mqtt.sensor:027]: MQTT Sensor 'lila_ble 10 RSSI':
+[22:32:40.814][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/lila_ble_10_rssi/state'
+[22:32:40.867][C][mqtt.switch:040]: MQTT Switch 'esp32-10-ant_Restart': 
+[22:32:40.867][C][mqtt.switch:043]:   State Topic: 'esp/esp32-10-ant/switch/esp32-10-ant_restart/state'
+[22:32:40.868][C][mqtt.switch:045]:   Command Topic: 'esp/esp32-10-ant/switch/esp32-10-ant_restart/command'
+[22:32:40.873][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:40.873][I][ble_scan:030]: C9:55:1C:B8:0F:58 | RDL51822 | RSSI -76
+[22:32:40.873][C][mqtt.text_sensor:024]: MQTT Text Sensor 'esp32-10-ant_Uptime':
+[22:32:40.874][C][mqtt.text_sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/esp32-10-ant_uptime/state'
+[22:32:40.903][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:40.903][C][mqtt.text_sensor:024]: MQTT Text Sensor 'esp32-10-ant WiFi Strength':
+[22:32:40.904][C][mqtt.text_sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/esp32-10-ant_wifi_strength/state'
+[22:32:40.908][C][mqtt.binary_sensor:021]: MQTT Binary Sensor 'alex_ble 10':
+[22:32:40.917][C][mqtt.binary_sensor:043]:   State Topic: 'esp/esp32-10-ant/binary_sensor/alex_ble_10/state'
+[22:32:40.967][C][mqtt.binary_sensor:021]: MQTT Binary Sensor 'ira_ble 10':
+[22:32:40.967][C][mqtt.binary_sensor:043]:   State Topic: 'esp/esp32-10-ant/binary_sensor/ira_ble_10/state'
+[22:32:40.967][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:32:40.982][C][mqtt.binary_sensor:021]: MQTT Binary Sensor 'lila_ble 10':
+[22:32:40.983][C][mqtt.binary_sensor:043]:   State Topic: 'esp/esp32-10-ant/binary_sensor/lila_ble_10/state'
+[22:32:40.983][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:41.068][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:41.179][I][ble_scan:030]: A4:C1:38:24:A7:A1 | LYWSD03MMC | RSSI -78
+[22:32:41.179][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -60
+[22:32:41.179][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:41.273][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:41.312][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:41.312][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:32:41.312][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:41.580][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:41.592][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:41.684][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:32:41.786][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -84
+[22:32:41.790][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:41.896][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:41.999][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -94
+[22:32:42.198][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:42.298][I][ble_scan:030]: A4:C1:38:79:32:27 | LYWSD03MMC | RSSI -75
+[22:32:42.412][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:42.412][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:42.502][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:32:42.611][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -87
+[22:32:42.631][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:42.707][I][ble_scan:030]: A4:C1:38:37:49:4D | LYWSD03MMC | RSSI -54
+[22:32:42.716][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -75
+[22:32:42.913][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:42.921][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:32:42.921][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -87
+[22:32:42.928][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:43.117][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -91
+[22:32:43.227][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:43.227][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:32:43.227][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:32:43.232][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:43.321][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:32:43.423][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:43.424][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:43.424][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:43.527][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -89
+[22:32:43.539][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -39
+[22:32:43.628][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:43.734][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:32:43.742][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:43.742][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -34
+[22:32:43.751][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:43.834][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:43.839][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:32:43.840][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -89
+[22:32:43.840][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:32:43.840][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:44.039][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -92
+[22:32:44.048][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -68
+[22:32:44.048][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:44.148][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:44.191][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:44.244][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -39
+[22:32:44.272][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:44.349][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -68
+[22:32:44.358][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:44.358][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:44.367][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -34
+[22:32:44.448][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -89
+[22:32:44.560][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -57
+[22:32:44.560][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -89
+[22:32:44.560][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:44.652][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -68
+[22:32:44.684][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:44.755][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -60
+[22:32:44.755][I][ble_scan:030]: A4:C1:38:11:2E:2E | LYWSD03MMC | RSSI -83
+[22:32:44.756][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:44.770][I][ble_scan:030]: A4:C1:38:37:49:4D | LYWSD03MMC | RSSI -48
+[22:32:44.770][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -86
+[22:32:44.858][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:44.879][I][ble_scan:030]: C9:55:1C:B8:0F:58 | RDL51822 | RSSI -76
+[22:32:44.972][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:44.972][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:45.070][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:45.267][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:45.377][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:45.382][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:45.575][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -91
+[22:32:45.575][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:45.588][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:45.680][I][ble_scan:030]: A4:C1:38:79:32:27 | LYWSD03MMC | RSSI -74
+[22:32:45.788][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:45.881][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -91
+[22:32:45.917][I][ble_scan:030]: C9:55:1C:B8:0F:58 | RDL51822 | RSSI -78
+[22:32:45.917][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:45.995][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -40
+[22:32:46.090][I][ble_scan:030]: A4:C1:38:F4:70:01 | LYWSD03MMC | RSSI -43
+[22:32:46.198][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:46.198][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:46.291][I][ble_scan:030]: 22:F6:C7:F1:78:A2 | XO-M50 | RSSI -93
+[22:32:46.393][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -47
+[22:32:46.613][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:46.706][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:46.741][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:46.905][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:32:47.008][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -86
+[22:32:47.008][I][ble_scan:030]: A4:C1:38:0D:34:F6 | LYWSD03MMC | RSSI -74
+[22:32:47.008][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -46
+[22:32:47.008][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:47.212][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -90
+[22:32:47.315][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -57
+[22:32:47.417][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:47.417][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:47.521][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:47.578][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:32:47.578][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:47.622][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -51
+[22:32:47.726][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:32:47.831][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:47.831][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:47.831][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -92
+[22:32:47.838][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -39
+[22:32:47.930][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:32:47.930][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:47.931][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:48.035][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:48.138][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -39
+[22:32:48.145][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -85
+[22:32:48.236][I][ble_scan:030]: 74:A3:4A:B6:E2:7C | MJ_MR_V1 | RSSI -87
+[22:32:48.349][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:32:48.349][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -89
+[22:32:48.349][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:48.354][W][api.connection:2463]: ESPHome Logs 2026.5.0 (192.168.0.6): Reading failed CONNECTION_CLOSED errno=128
+[22:32:48.441][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:48.466][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:32:48.544][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:48.646][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:32:48.756][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:48.756][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:48.756][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:32:48.762][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:32:48.851][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -86
+[22:32:48.878][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:48.953][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:32:48.961][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:49.158][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:49.264][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:49.467][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -86
+[22:32:49.568][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:49.671][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:49.774][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -91
+[22:32:49.784][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:49.875][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:49.987][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:49.987][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -66
+[22:32:49.997][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:50.079][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:50.116][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:50.186][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -68
+[22:32:50.198][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:50.202][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -80
+[22:32:50.284][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:50.387][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -85
+[22:32:50.387][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:32:50.387][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -83
+[22:32:50.490][I][ble_scan:030]: 4C:65:A8:DA:8F:1B | MJ_HT_V1 | RSSI -81
+[22:32:50.493][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:50.493][I][ble_scan:030]: 74:A3:4A:B6:E2:7C | MJ_MR_V1 | RSSI -77
+[22:32:50.493][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:50.591][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:32:50.606][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:50.694][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:50.694][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:50.801][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -84
+[22:32:50.801][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:50.801][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -94
+[22:32:50.801][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:50.899][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -37
+[22:32:50.934][I][ble_scan:030]: C9:55:1C:B8:0F:58 | RDL51822 | RSSI -81
+[22:32:50.935][I][ble_scan:030]: A4:C1:38:E2:9A:E1 | LYWSD03MMC | RSSI -56
+[22:32:51.002][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:51.016][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:32:51.016][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -93
+[22:32:51.016][I][ble_scan:030]: 3F:59:C8:52:4D:04 | LYWSD02 | RSSI -80
+[22:32:51.104][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:51.215][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:51.215][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:32:51.308][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:51.309][I][ble_scan:030]: A4:C1:38:37:49:4D | LYWSD03MMC | RSSI -54
+[22:32:51.348][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:32:51.411][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:51.411][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:51.411][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:51.514][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:32:51.719][I][ble_scan:030]: A4:C1:38:11:2E:2E | LYWSD03MMC | RSSI -88
+[22:32:51.719][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -34
+[22:32:51.719][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:32:51.838][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -85
+[22:32:51.839][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -37
+[22:32:51.927][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:52.034][I][ble_scan:030]: 3F:59:C8:52:4D:04 | LYWSD02 | RSSI -88
+[22:32:52.134][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:52.134][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:52.135][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -34
+[22:32:52.231][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:52.344][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:52.438][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:52.439][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -84
+[22:32:52.439][I][ble_scan:030]: A4:C1:38:24:A7:A1 | LYWSD03MMC | RSSI -79
+[22:32:52.549][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:52.549][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:52.640][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:52.640][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:52.746][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -89
+[22:32:52.845][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:52.845][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:32:52.845][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -75
+[22:32:52.955][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:52.955][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -95
+[22:32:52.955][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:52.961][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:32:53.049][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:53.152][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -57
+[22:32:53.152][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -90
+[22:32:53.152][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -52
+[22:32:53.266][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:53.266][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:53.357][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:53.357][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:53.402][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -91
+[22:32:53.504][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:53.562][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:32:53.664][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:53.780][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:32:53.780][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -75
+[22:32:53.780][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:53.869][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:53.971][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -38
+[22:32:53.981][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:53.981][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:54.073][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:32:54.226][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:54.278][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:54.286][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -38
+[22:32:54.287][I][ble_scan:030]: A4:C1:38:79:32:27 | LYWSD03MMC | RSSI -75
+[22:32:54.381][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:32:54.389][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:54.389][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -46
+[22:32:54.594][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:32:54.688][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:32:54.719][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:54.791][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -80
+[22:32:54.894][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:55.000][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:32:55.000][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -86
+[22:32:55.001][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -88
+[22:32:55.001][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:32:55.201][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:32:55.213][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:55.218][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -39
+[22:32:55.307][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -75
+[22:32:55.460][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:32:55.460][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:55.510][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:55.510][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:32:55.539][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:55.615][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -91
+[22:32:55.623][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:55.633][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -92
+[22:32:55.639][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:55.715][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:55.821][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:55.821][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:55.928][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:55.930][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -87
+[22:32:55.930][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:55.930][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -75
+[22:32:55.954][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:56.020][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:32:56.020][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:56.020][I][ble_scan:030]: A4:C1:38:37:49:4D | LYWSD03MMC | RSSI -64
+[22:32:56.034][I][ble_scan:030]: A4:C1:38:E2:9A:E1 | LYWSD03MMC | RSSI -52
+[22:32:56.034][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:56.122][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:56.129][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:32:56.326][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:56.326][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:56.326][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -90
+[22:32:56.326][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -68
+[22:32:56.428][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:56.445][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -60
+[22:32:56.535][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -54
+[22:32:56.535][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -75
+[22:32:56.745][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:56.745][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -66
+[22:32:56.941][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -92
+[22:32:56.941][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -66
+[22:32:57.147][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:57.147][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:57.186][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -90
+[22:32:57.248][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:57.352][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -88
+[22:32:57.555][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:32:57.555][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:57.555][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:57.565][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -80
+[22:32:57.659][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -90
+[22:32:57.676][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -87
+[22:32:57.676][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:57.760][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:57.965][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:57.965][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:57.965][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:57.988][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:58.170][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -91
+[22:32:58.171][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:58.171][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:58.282][I][ble_scan:030]: 22:F6:C7:F1:78:A2 | XO-M50 | RSSI -92
+[22:32:58.282][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:58.288][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:58.288][I][ble_scan:030]: A4:C1:38:37:49:4D | LYWSD03MMC | RSSI -48
+[22:32:58.378][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:58.480][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:58.486][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -90
+[22:32:58.486][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:58.580][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:58.591][I][ble_scan:030]: A4:C1:38:76:70:46 | LYWSD03MMC | RSSI -65
+[22:32:58.597][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -60
+[22:32:58.603][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:58.681][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -91
+[22:32:58.787][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:58.787][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:58.787][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:58.831][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:58.890][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:32:58.913][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:58.913][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:58.998][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -54
+[22:32:59.092][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -34
+[22:32:59.093][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:59.093][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:59.203][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:59.203][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -89
+[22:32:59.203][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:32:59.203][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:59.297][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:32:59.398][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:59.509][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:59.607][I][ble_scan:030]: A4:C1:38:24:A7:A1 | LYWSD03MMC | RSSI -79
+[22:32:59.705][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:59.736][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:59.736][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:59.811][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -39
+[22:32:59.817][I][ble_scan:030]: A4:C1:38:F4:70:01 | LYWSD03MMC | RSSI -41
+[22:32:59.827][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:00.014][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -51
+[22:33:00.016][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:00.115][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:33:00.147][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -38
+[22:33:00.217][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -46
+[22:33:00.217][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:33:00.330][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:33:00.432][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -37
+[22:33:00.526][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:00.526][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:33:00.645][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:33:00.645][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:00.832][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -87
+[22:33:00.832][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:00.939][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:00.973][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:01.139][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -87
+[22:33:01.139][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -46
+[22:33:01.248][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:33:01.249][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:33:01.249][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:33:01.345][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:01.382][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -60
+[22:33:01.446][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:01.463][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -84
+[22:33:01.549][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -80
+[22:33:01.661][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:33:01.661][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:01.661][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:33:01.661][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:33:01.753][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -47
+[22:33:01.792][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -84
+[22:33:01.793][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -92
+[22:33:01.966][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -92
+[22:33:02.064][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -47
+[22:33:02.266][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:33:02.369][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -89
+[22:33:02.371][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:02.572][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:33:02.675][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:33:02.682][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:02.682][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -75
+[22:33:02.885][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -34
+[22:33:02.885][I][ble_scan:030]: A4:C1:38:37:49:4D | LYWSD03MMC | RSSI -65
+[22:33:02.885][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:33:02.885][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:02.991][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:33:02.991][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:03.085][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -34
+[22:33:03.085][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:33:03.188][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -90
+[22:33:03.291][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:33:03.291][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:33:03.291][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -91
+[22:33:03.304][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:03.392][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:33:03.438][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:33:03.495][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -68
+[22:33:03.507][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:03.507][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:03.507][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -38
+[22:33:03.507][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -60
+[22:33:03.598][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:33:03.699][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:33:03.699][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:03.699][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:33:03.802][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -66
+[22:33:03.802][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -34
+[22:33:03.802][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:03.802][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -89
+[22:33:03.849][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -57
+[22:33:03.849][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -88
+[22:33:03.907][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:33:03.909][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -56
+[22:33:04.006][I][ble_scan:030]: C9:55:1C:B8:0F:58 | RDL51822 | RSSI -78
+[22:33:04.015][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:33:04.019][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:33:04.110][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:04.119][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:04.120][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:33:04.120][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -90
+[22:33:04.120][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:33:04.219][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:33:04.313][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:33:04.329][I][ble_scan:030]: 22:F6:C7:F1:78:A2 | XO-M50 | RSSI -93
+[22:33:04.329][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -66
+[22:33:04.422][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:33:04.526][I][ble_scan:030]: 74:A3:4A:B6:E2:7C | MJ_MR_V1 | RSSI -87
+[22:33:04.530][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:33:04.536][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:04.628][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:33:04.841][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:33:04.928][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:33:05.031][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:33:05.041][I][ble_scan:030]: A4:C1:38:37:49:4D | LYWSD03MMC | RSSI -48
+[22:33:05.041][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:05.236][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:05.238][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -93
+[22:33:05.248][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:05.338][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -88
+[22:33:05.351][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:05.351][I][ble_scan:030]: A4:C1:38:76:70:46 | LYWSD03MMC | RSSI -65
+[22:33:05.543][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -92
+[22:33:05.577][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:05.657][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:05.680][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:05.884][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:05.885][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:33:05.885][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -68
+[22:33:05.885][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -38
+[22:33:05.967][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:05.990][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -56
+[22:33:06.157][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:33:06.157][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -90
+[22:33:06.265][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:06.265][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:33:06.376][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:33:06.380][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:33:06.464][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:06.482][I][ble_scan:030]: 4C:65:A8:DA:8F:1B | MJ_HT_V1 | RSSI -78
+[22:33:06.482][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -85
+[22:33:06.574][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -54
+[22:33:06.672][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:06.673][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:33:06.673][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:33:06.771][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:07.078][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:33:07.079][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:33:07.079][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:07.079][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:33:07.088][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:07.181][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -56
+[22:33:07.390][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:07.391][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -87
+[22:33:07.591][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:33:07.693][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:07.795][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:33:07.814][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:07.905][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:33:07.905][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:33:08.000][I][ble_scan:030]: A4:C1:38:11:2E:2E | LYWSD03MMC | RSSI -83
+[22:33:08.004][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:08.045][I][ble_scan:030]: C9:55:1C:B8:0F:58 | RDL51822 | RSSI -80
+[22:33:08.045][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:08.102][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -90
+[22:33:08.118][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:33:08.205][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:08.308][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:33:08.308][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:33:08.308][I][ble_scan:030]: A4:C1:38:F4:70:01 | LYWSD03MMC | RSSI -41
+[22:33:08.318][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:08.319][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:33:08.410][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -60
+[22:33:08.410][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:33:08.455][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:08.515][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:33:08.537][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -66
+[22:33:08.618][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:08.625][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:33:08.725][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -89
+[22:33:08.819][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:33:08.819][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:33:08.868][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -66
+[22:33:08.922][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -60
+[22:33:08.948][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:09.024][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:33:09.230][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:33:09.230][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:33:09.230][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:33:09.231][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:09.434][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:33:09.442][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:33:09.741][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -91
+[22:33:09.741][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:09.853][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -85
+[22:33:10.048][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -90
+[22:33:10.101][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:10.355][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:10.467][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -80
+[22:33:10.479][I][ble_scan:030]: 4C:65:A8:DA:8F:1B | MJ_HT_V1 | RSSI -78
+[22:33:10.560][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:10.572][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:33:10.666][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:33:10.676][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:10.768][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:10.867][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:10.973][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -89
+[22:33:11.006][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:11.072][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:11.174][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -85
+[22:33:11.277][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -46
+[22:33:11.277][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -90
+[22:33:11.277][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:33:11.277][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:11.380][I][ble_scan:030]: A4:C1:38:E2:9A:E1 | LYWSD03MMC | RSSI -55
+[22:33:11.584][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:11.594][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:33:11.594][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -88
+[22:33:11.686][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -80
+[22:33:11.687][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:11.687][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:33:11.687][I][ble_scan:030]: A4:C1:38:F4:70:01 | LYWSD03MMC | RSSI -41
+[22:33:11.789][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -86
+[22:33:11.828][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:33:11.829][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:11.891][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -34
+[22:33:11.994][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:33:12.107][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:33:12.107][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:33:12.198][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:33:12.238][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:12.301][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -38
+[22:33:12.326][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:33:12.507][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -95
+[22:33:12.514][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -68
+[22:33:12.608][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:33:12.608][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:12.608][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:12.650][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -60
+[22:33:12.650][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -38
+[22:33:12.714][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:33:12.714][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:12.817][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:33:12.822][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:33:12.823][I][ble_scan:030]: 74:A3:4A:B6:E2:7C | MJ_MR_V1 | RSSI -76
+[22:33:12.823][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -34
+[22:33:12.927][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:13.021][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:33:13.061][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -46
+[22:33:13.120][I][ble_scan:030]: 3F:59:C8:52:4D:04 | LYWSD02 | RSSI -88
+[22:33:13.229][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:13.334][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -87
+[22:33:13.334][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:13.427][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:33:13.632][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:13.648][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:13.741][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -95
+[22:33:13.837][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:33:13.885][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:13.989][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:14.050][I][ble_scan:030]: A4:C1:38:37:49:4D | LYWSD03MMC | RSSI -64
+[22:33:14.144][I][ble_scan:030]: C9:55:1C:B8:0F:58 | RDL51822 | RSSI -78
+[22:33:14.154][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:14.155][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:14.268][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:33:14.352][I][ble_scan:030]: A4:C1:38:0D:34:F6 | LYWSD03MMC | RSSI -75
+[22:33:14.452][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:33:14.460][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:14.465][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -60
+[22:33:14.555][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -84
+[22:33:14.666][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:33:14.666][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:33:14.666][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:14.758][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -87
+[22:33:14.789][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:33:14.789][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:14.789][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:33:14.861][I][ble_scan:030]: A4:C1:38:E2:9A:E1 | LYWSD03MMC | RSSI -50
+[22:33:14.870][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -84
+[22:33:14.870][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:33:14.879][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:15.066][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -57
+[22:33:15.074][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:15.168][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:33:15.203][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:15.271][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -88
+[22:33:15.282][I][ble_scan:030]: A4:C1:38:24:A7:A1 | LYWSD03MMC | RSSI -82
+[22:33:15.282][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -68
+[22:33:15.282][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -90
+[22:33:15.373][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:15.480][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -85
+[22:33:15.480][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -56
+[22:33:15.486][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:15.578][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -83
+[22:33:15.610][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:33:15.610][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:33:15.683][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:15.885][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:15.987][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:16.101][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:33:16.192][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:16.192][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:33:16.294][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:33:16.295][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -89
+[22:33:16.295][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:33:16.295][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:16.397][I][ble_scan:030]: 22:F6:C7:F1:78:A2 | XO-M50 | RSSI -96
+[22:33:16.435][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:33:16.435][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -46
+[22:33:16.499][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -34
+[22:33:16.601][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:16.611][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -38
+[22:33:16.711][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:33:16.711][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:33:16.806][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:33:16.909][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:33:16.909][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:16.909][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -88
+[22:33:17.015][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:33:17.118][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -46
+[22:33:17.318][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -93
+[22:33:17.319][I][ble_scan:030]: A4:C1:38:24:A7:A1 | LYWSD03MMC | RSSI -91
+[22:33:17.630][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:33:17.728][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:33:17.750][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:33:17.832][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:33:17.942][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:33:17.942][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:17.942][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:33:17.947][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -75
+[22:33:18.035][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:18.078][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -68
+[22:33:18.138][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -57
+[22:33:18.146][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:18.342][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:18.356][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:33:18.650][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:18.957][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -80
+[22:33:18.983][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:33:19.264][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:33:19.312][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:33:19.367][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:33:19.395][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:33:19.469][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+esphome.ota:097]:   Address: 192.168.0.173:3232
+[22:32:40.560][C][esphome.ota:097]:   Version: 2
+[22:32:40.560][C][esphome.ota:104]:   Password configured
+[22:32:40.560][C][safe_mode:058]: Safe Mode:
+[22:32:40.560][C][safe_mode:058]:   Successful after: 60s
+[22:32:40.560][C][safe_mode:058]:   Invoke after: 10 attempts
+[22:32:40.560][C][safe_mode:058]:   Duration: 300s
+[22:32:40.560][C][safe_mode:079]:   Bootloader rollback: supported
+[22:32:40.576][C][api:243]: Server:
+[22:32:40.576][C][api:243]:   Address: 192.168.0.173:6053
+[22:32:40.576][C][api:243]:   Listen backlog: 4
+[22:32:40.576][C][api:243]:   Max connections: 5
+[22:32:40.582][C][api:255]:   Noise encryption: NO
+[22:32:40.592][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:40.658][C][mqtt:191]: MQTT:
+[22:32:40.658][C][mqtt:191]:   Server Address: 192.168.0.6:1883 (192.168.0.6)
+[22:32:40.658][C][mqtt:191]:   Username: 'mqtt'
+[22:32:40.658][C][mqtt:191]:   Client ID: 'esp32-10-ant-30aea49d57ac'
+[22:32:40.658][C][mqtt:191]:   Clean Session: NO
+[22:32:40.659][C][mqtt:202]:   Discovery IP enabled
+[22:32:40.659][C][mqtt:210]:   Topic Prefix: 'esp/esp32-10-ant'
+[22:32:40.659][C][mqtt:212]:   Log Topic: 'esp/esp32-10-ant/debug'
+[22:32:40.659][C][mqtt:215]:   Availability: 'esp/status/status'
+[22:32:40.685][C][wifi_signal.sensor:017]: WiFi Signal 'esp32-10-ant_WiFi_RSSI'
+[22:32:40.685][C][wifi_signal.sensor:017]:   State Class: 'measurement'
+[22:32:40.685][C][wifi_signal.sensor:017]:   Unit of Measurement: 'dBm'
+[22:32:40.685][C][wifi_signal.sensor:017]:   Accuracy Decimals: 0
+[22:32:40.685][C][wifi_signal.sensor:232]:   Device Class: 'signal_strength'
+[22:32:40.686][C][mdns:230]: mDNS:
+[22:32:40.686][C][mdns:230]:   Hostname: esp32-10-ant
+[22:32:40.686][C][mqtt.button:028]: MQTT Button 'esp32-10-ant Safe Mode (OTA)': 
+[22:32:40.763][C][mqtt.button:045]:   Command Topic: 'esp/esp32-10-ant/button/esp32-10-ant_safe_mode__ota_/command'
+[22:32:40.763][C][mqtt.sensor:027]: MQTT Sensor 'esp32-10-ant_Uptime_s':
+[22:32:40.763][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/esp32-10-ant_uptime_s/state'
+[22:32:40.763][C][mqtt.sensor:027]: MQTT Sensor 'esp32-10-ant_WiFi_RSSI':
+[22:32:40.763][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/esp32-10-ant_wifi_rssi/state'
+[22:32:40.763][C][mqtt.sensor:027]: MQTT Sensor 'alex_ble 10 RSSI':
+[22:32:40.763][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/alex_ble_10_rssi/state'
+[22:32:40.763][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:40.774][C][mqtt.sensor:027]: MQTT Sensor 'ira_ble 10 RSSI':
+[22:32:40.779][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/ira_ble_10_rssi/state'
+[22:32:40.806][C][mqtt.sensor:027]: MQTT Sensor 'lila_ble 10 RSSI':
+[22:32:40.813][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/lila_ble_10_rssi/state'
+[22:32:40.867][C][mqtt.switch:040]: MQTT Switch 'esp32-10-ant_Restart': 
+[22:32:40.867][C][mqtt.switch:043]:   State Topic: 'esp/esp32-10-ant/switch/esp32-10-ant_restart/state'
+[22:32:40.868][C][mqtt.switch:045]:   Command Topic: 'esp/esp32-10-ant/switch/esp32-10-ant_restart/command'
+[22:32:40.868][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:40.874][I][ble_scan:030]: C9:55:1C:B8:0F:58 | RDL51822 | RSSI -76
+[22:32:40.874][C][mqtt.text_sensor:024]: MQTT Text Sensor 'esp32-10-ant_Uptime':
+[22:32:40.874][C][mqtt.text_sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/esp32-10-ant_uptime/state'
+[22:32:40.874][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:40.904][C][mqtt.text_sensor:024]: MQTT Text Sensor 'esp32-10-ant WiFi Strength':
+[22:32:40.904][C][mqtt.text_sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/esp32-10-ant_wifi_strength/state'
+[22:32:40.907][C][mqtt.binary_sensor:021]: MQTT Binary Sensor 'alex_ble 10':
+[22:32:40.913][C][mqtt.binary_sensor:043]:   State Topic: 'esp/esp32-10-ant/binary_sensor/alex_ble_10/state'
+[22:32:40.967][C][mqtt.binary_sensor:021]: MQTT Binary Sensor 'ira_ble 10':
+[22:32:40.967][C][mqtt.binary_sensor:043]:   State Topic: 'esp/esp32-10-ant/binary_sensor/ira_ble_10/state'
+[22:32:40.968][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:32:40.968][C][mqtt.binary_sensor:021]: MQTT Binary Sensor 'lila_ble 10':
+[22:32:40.980][C][mqtt.binary_sensor:043]:   State Topic: 'esp/esp32-10-ant/binary_sensor/lila_ble_10/state'
+[22:32:40.980][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:41.068][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:41.076][I][ble_scan:030]: A4:C1:38:24:A7:A1 | LYWSD03MMC | RSSI -78
+[22:32:41.179][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -60
+[22:32:41.179][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:41.273][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:41.273][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:41.311][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:32:41.311][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:41.580][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:41.591][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:41.684][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:32:41.786][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -84
+[22:32:41.803][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:41.896][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:42.000][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -94
+[22:32:42.198][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:42.298][I][ble_scan:030]: A4:C1:38:79:32:27 | LYWSD03MMC | RSSI -75
+[22:32:42.319][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:42.414][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:42.502][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:32:42.608][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -87
+[22:32:42.631][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:42.707][I][ble_scan:030]: A4:C1:38:37:49:4D | LYWSD03MMC | RSSI -54
+[22:32:42.715][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -75
+[22:32:42.913][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:42.913][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:32:42.922][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -87
+[22:32:42.926][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:43.117][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -91
+[22:32:43.120][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:43.227][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:32:43.227][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:32:43.231][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:43.321][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:32:43.423][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:43.450][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:43.451][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:43.527][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -89
+[22:32:43.541][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -39
+[22:32:43.628][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:43.734][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -53
+[22:32:43.734][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:43.743][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -34
+[22:32:43.751][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:43.835][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -67
+[22:32:43.835][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -77
+[22:32:43.860][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -89
+[22:32:43.860][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:32:43.861][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:44.039][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -92
+[22:32:44.049][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -68
+[22:32:44.049][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:44.146][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:44.149][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:44.244][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -39
+[22:32:44.272][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:44.349][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -68
+[22:32:44.354][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:44.359][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:44.366][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -34
+[22:32:44.448][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -89
+[22:32:44.448][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -57
+[22:32:44.562][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -89
+[22:32:44.562][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:44.652][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -68
+[22:32:44.653][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:44.755][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -60
+[22:32:44.763][I][ble_scan:030]: A4:C1:38:11:2E:2E | LYWSD03MMC | RSSI -83
+[22:32:44.764][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:44.764][I][ble_scan:030]: A4:C1:38:37:49:4D | LYWSD03MMC | RSSI -48
+[22:32:44.771][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -86
+[22:32:44.858][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:44.960][I][ble_scan:030]: C9:55:1C:B8:0F:58 | RDL51822 | RSSI -76
+[22:32:44.960][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:44.972][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:45.070][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:45.267][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:45.369][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:45.379][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:45.575][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -91
+[22:32:45.577][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:45.577][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:45.680][I][ble_scan:030]: A4:C1:38:79:32:27 | LYWSD03MMC | RSSI -74
+[22:32:45.788][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:45.881][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -91
+[22:32:45.882][I][ble_scan:030]: C9:55:1C:B8:0F:58 | RDL51822 | RSSI -78
+[22:32:45.917][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:45.994][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -40
+[22:32:46.090][I][ble_scan:030]: A4:C1:38:F4:70:01 | LYWSD03MMC | RSSI -43
+[22:32:46.189][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:46.199][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -43
+[22:32:46.291][I][ble_scan:030]: 22:F6:C7:F1:78:A2 | XO-M50 | RSSI -93
+[22:32:46.393][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -47
+[22:32:46.610][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -58
+[22:32:46.704][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:46.739][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:46.905][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -59
+[22:32:47.008][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -86
+[22:32:47.018][I][ble_scan:030]: A4:C1:38:0D:34:F6 | LYWSD03MMC | RSSI -74
+[22:32:47.018][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -46
+[22:32:47.018][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:47.212][I][ble_scan:030]: F4:1A:4A:C2:A0:68 | 1CGCC2511C0602 | RSSI -90
+[22:32:47.315][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -57
+[22:32:47.428][I][ble_scan:030]: 3C:1A:CC:4C:11:2A | BAT25212000E3050050 | RSSI -55
+[22:32:47.428][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:47.521][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -39
+[22:32:47.578][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -40
+[22:32:47.578][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -78
+[22:32:47.622][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -51
+[22:32:47.727][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -44
+[22:32:47.831][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:47.831][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -79
+[22:32:47.831][I][ble_scan:030]: D2:C6:46:76:3C:DE | T700_54 | RSSI -92
+[22:32:47.831][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -39
+[22:32:47.930][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -52
+[22:32:47.973][I][ble_scan:030]: 66:BC:46:B9:2F:0B | Nest Hub | RSSI -45
+[22:32:47.973][I][ble_scan:030]: 7C:49:EB:2D:25:AB | MiKettle | RSSI -76
+[22:32:48.035][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -33
+[22:32:48.138][I][ble_scan:030]: D4:27:87:97:FB:79 | AP_3435566592 | RSSI -39
+[22:32:48.146][I][ble_scan:030]: 11:75:68:29:03:BF | TimeBox-Evo-light | RSSI -85
+[22:32:48.236][I][ble_scan:030]: 74:A3:4A:B6:E2:7C | MJ_MR_V1 | RSSI -87

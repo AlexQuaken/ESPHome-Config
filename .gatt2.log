@@ -1,0 +1,192 @@
+INFO ESPHome 2026.5.0
+INFO Loaded validated config cache for esp32-10-ant.yaml, skipping validation.
+INFO Starting log output from 192.168.0.173 using esphome API
+INFO Successfully resolved esp32-10-ant @ 192.168.0.173 in 0.000s
+INFO Successfully connected to esp32-10-ant @ 192.168.0.173 in 0.049s
+INFO Successful handshake with esp32-10-ant @ 192.168.0.173 in 0.021s
+[22:55:16.457][I][app:151]: ESPHome version 2026.5.0 compiled on 2026-08-17 22:47:54 +0300
+[22:55:16.457][I][app:158]: ESP32 Chip: ESP32 rev1.0, 2 core(s)
+[22:55:16.457][W][app:190]: Bootloader too old for OTA rollback and SRAM1 as IRAM (+40KB). Flash via USB once to update the bootloader
+[22:55:16.457][C][logger:219]: Logger:
+[22:55:16.457][C][logger:219]:   Max Level: VERBOSE
+[22:55:16.457][C][logger:219]:   Initial Level: VERBOSE
+[22:55:16.457][C][logger:226]:   Log Baud Rate: 115200
+[22:55:16.457][C][logger:226]:   Hardware UART: UART0
+[22:55:16.457][C][logger:235]:   Task Log Buffer Size: 768 bytes
+[22:55:16.457][C][logger:241]:   Level for 'api': INFO
+[22:55:16.458][C][logger:241]:   Level for 'api.service': INFO
+[22:55:16.476][C][logger:241]:   Level for 'component': INFO
+[22:55:16.476][C][logger:241]:   Level for 'esp-idf': INFO
+[22:55:16.476][C][logger:241]:   Level for 'esp32_ble_client': VERBOSE
+[22:55:16.476][C][logger:241]:   Level for 'esp32_ble_tracker': INFO
+[22:55:16.486][C][logger:241]:   Level for 'mqtt': INFO
+[22:55:16.486][C][logger:241]:   Level for 'scheduler': INFO
+[22:55:16.486][C][logger:241]:   Level for 'sensor': INFO
+[22:55:16.486][C][logger:241]:   Level for 'text_sensor': INFO
+[22:55:16.557][C][logger:241]:   Level for 'wifi': INFO
+[22:55:16.557][I][logger:257]: VERBOSE logging is active — performance impact, short-term debugging only
+[22:55:16.557][I][logger:257]:   Set log level to DEBUG or lower for long-term use.
+[22:55:16.568][C][status_led:022]: Status LED:
+[22:55:16.568][C][status_led:152]:   Pin: GPIO2
+[22:55:16.568][I][bms:032]: advert: BAT25212000E3050050 | RSSI -55 | services 0
+[22:55:16.571][C][uptime.sensor:017]: Uptime Sensor 'esp32-10-ant_Uptime_s'
+[22:55:16.571][C][uptime.sensor:017]:   State Class: 'total_increasing'
+[22:55:16.571][C][uptime.sensor:017]:   Unit of Measurement: 's'
+[22:55:16.571][C][uptime.sensor:017]:   Accuracy Decimals: 0
+[22:55:16.577][C][uptime.sensor:232]:   Device Class: 'duration'
+[22:55:16.606][C][uptime.sensor:223]:   Icon: 'mdi:timer-outline'
+[22:55:16.606][C][uptime.sensor:019]:   Type: Seconds
+[22:55:16.606][C][template.text_sensor:016]: Template Sensor 'esp32-10-ant_Uptime'
+[22:55:16.656][C][template.text_sensor:223]:   Icon: 'mdi:clock-start'
+[22:55:16.657][C][template.text_sensor:016]: Template Sensor 'esp32-10-ant WiFi Strength'
+[22:55:16.658][C][template.text_sensor:223]:   Icon: 'mdi:wifi'
+[22:55:16.658][I][bms:032]: advert: BAT25212000E3050050 | RSSI -55 | services 0
+[22:55:16.658][C][safe_mode.button:014]: Safe Mode Button 'esp32-10-ant Safe Mode (OTA)'
+[22:55:16.690][C][safe_mode.button:223]:   Icon: 'mdi:restart-alert'
+[22:55:16.690][C][ble_rssi:017]: BLE RSSI Sensor 'alex_ble 10 RSSI'
+[22:55:16.690][C][ble_rssi:017]:   State Class: 'measurement'
+[22:55:16.690][C][ble_rssi:017]:   Unit of Measurement: 'dBm'
+[22:55:16.690][C][ble_rssi:017]:   Accuracy Decimals: 0
+[22:55:16.691][C][ble_rssi:232]:   Device Class: 'signal_strength'
+[22:55:16.691][C][ble_rssi:017]: BLE RSSI Sensor 'ira_ble 10 RSSI'
+[22:55:16.691][C][ble_rssi:017]:   State Class: 'measurement'
+[22:55:16.691][C][ble_rssi:017]:   Unit of Measurement: 'dBm'
+[22:55:16.691][C][ble_rssi:017]:   Accuracy Decimals: 0
+[22:55:16.760][C][ble_rssi:232]:   Device Class: 'signal_strength'
+[22:55:16.760][C][ble_rssi:017]: BLE RSSI Sensor 'lila_ble 10 RSSI'
+[22:55:16.760][C][ble_rssi:017]:   State Class: 'measurement'
+[22:55:16.760][C][ble_rssi:017]:   Unit of Measurement: 'dBm'
+[22:55:16.760][C][ble_rssi:017]:   Accuracy Decimals: 0
+[22:55:16.760][C][ble_rssi:232]:   Device Class: 'signal_strength'
+[22:55:16.760][C][restart:088]: Restart Switch 'esp32-10-ant_Restart'
+[22:55:16.760][C][restart:088]:   Restore Mode: always OFF
+[22:55:16.760][C][restart:223]:   Icon: 'mdi:restart'
+[22:55:16.760][I][bms:032]: advert: BAT25212000E3050050 | RSSI -67 | services 0
+[22:55:16.760][C][homeassistant.time:009]: Home Assistant Time
+[22:55:16.760][C][time:049]: Timezone: UTC+2:00 (DST UTC+3:00)
+[22:55:16.788][C][time:055]: Current time: 2026-08-17 22:55:16
+[22:55:16.788][C][ble_presence:016]: BLE Presence 'alex_ble 10'
+[22:55:16.792][C][ble_presence:016]: BLE Presence 'ira_ble 10'
+[22:55:16.814][C][ble_presence:016]: BLE Presence 'lila_ble 10'
+[22:55:16.872][C][esp32_ble:663]: BLE:
+[22:55:16.872][C][esp32_ble:663]:   MAC address: 30:AE:A4:9D:57:AE
+[22:55:16.872][C][esp32_ble:663]:   IO Capability: none
+[22:55:16.911][C][ble_client:026]: BLE Client:
+[22:55:16.911][C][esp32_ble_client:081]:   Address: 3C:1A:CC:4C:11:2A
+[22:55:16.911][C][esp32_ble_client:081]:   Auto-Connect: TRUE
+[22:55:16.911][C][esp32_ble_client:081]:   State: ESTABLISHED
+[22:55:16.911][C][esphome.ota:097]: Over-The-Air updates:
+[22:55:16.911][C][esphome.ota:097]:   Address: 192.168.0.173:3232
+[22:55:16.911][C][esphome.ota:097]:   Version: 2
+[22:55:16.975][C][esphome.ota:104]:   Password configured
+[22:55:16.975][C][safe_mode:058]: Safe Mode:
+[22:55:16.975][C][safe_mode:058]:   Successful after: 60s
+[22:55:16.975][C][safe_mode:058]:   Invoke after: 10 attempts
+[22:55:16.975][C][safe_mode:058]:   Duration: 300s
+[22:55:16.975][C][safe_mode:079]:   Bootloader rollback: supported
+[22:55:16.987][C][wifi_signal.sensor:017]: WiFi Signal 'esp32-10-ant_WiFi_RSSI'
+[22:55:16.987][C][wifi_signal.sensor:017]:   State Class: 'measurement'
+[22:55:16.987][C][wifi_signal.sensor:017]:   Unit of Measurement: 'dBm'
+[22:55:16.987][C][wifi_signal.sensor:017]:   Accuracy Decimals: 0
+[22:55:16.992][C][wifi_signal.sensor:232]:   Device Class: 'signal_strength'
+[22:55:17.011][C][mdns:230]: mDNS:
+[22:55:17.011][C][mdns:230]:   Hostname: esp32-10-ant
+[22:55:17.016][V][mdns:235]:   Services:
+[22:55:17.020][V][mdns:237]:   - _esphomelib, _tcp, 6053
+[22:55:17.067][V][mdns:240]:     TXT: version = 2026.5.0
+[22:55:17.068][V][mdns:240]:     TXT: config_hash = 61fea134
+[22:55:17.068][V][mdns:240]:     TXT: mac = 30aea49d57ac
+[22:55:17.068][V][mdns:240]:     TXT: platform = ESP32
+[22:55:17.068][V][mdns:240]:     TXT: board = esp32dev
+[22:55:17.068][V][mdns:240]:     TXT: network = wifi
+[22:55:17.068][C][mqtt.button:028]: MQTT Button 'esp32-10-ant Safe Mode (OTA)': 
+[22:55:17.068][C][mqtt.button:045]:   Command Topic: 'esp/esp32-10-ant/button/esp32-10-ant_safe_mode__ota_/command'
+[22:55:17.095][C][mqtt.sensor:027]: MQTT Sensor 'esp32-10-ant_Uptime_s':
+[22:55:17.096][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/esp32-10-ant_uptime_s/state'
+[22:55:17.096][C][mqtt.sensor:027]: MQTT Sensor 'esp32-10-ant_WiFi_RSSI':
+[22:55:17.096][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/esp32-10-ant_wifi_rssi/state'
+[22:55:17.116][C][mqtt.sensor:027]: MQTT Sensor 'alex_ble 10 RSSI':
+[22:55:17.122][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/alex_ble_10_rssi/state'
+[22:55:17.169][C][mqtt.sensor:027]: MQTT Sensor 'ira_ble 10 RSSI':
+[22:55:17.170][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/ira_ble_10_rssi/state'
+[22:55:17.185][C][mqtt.sensor:027]: MQTT Sensor 'lila_ble 10 RSSI':
+[22:55:17.185][C][mqtt.sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/lila_ble_10_rssi/state'
+[22:55:17.185][C][mqtt.switch:040]: MQTT Switch 'esp32-10-ant_Restart': 
+[22:55:17.185][C][mqtt.switch:043]:   State Topic: 'esp/esp32-10-ant/switch/esp32-10-ant_restart/state'
+[22:55:17.197][C][mqtt.switch:045]:   Command Topic: 'esp/esp32-10-ant/switch/esp32-10-ant_restart/command'
+[22:55:17.205][C][mqtt.text_sensor:024]: MQTT Text Sensor 'esp32-10-ant_Uptime':
+[22:55:17.210][C][mqtt.text_sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/esp32-10-ant_uptime/state'
+[22:55:17.273][C][mqtt.text_sensor:024]: MQTT Text Sensor 'esp32-10-ant WiFi Strength':
+[22:55:17.273][C][mqtt.text_sensor:043]:   State Topic: 'esp/esp32-10-ant/sensor/esp32-10-ant_wifi_strength/state'
+[22:55:17.273][C][mqtt.binary_sensor:021]: MQTT Binary Sensor 'alex_ble 10':
+[22:55:17.273][C][mqtt.binary_sensor:043]:   State Topic: 'esp/esp32-10-ant/binary_sensor/alex_ble_10/state'
+[22:55:17.273][C][mqtt.binary_sensor:021]: MQTT Binary Sensor 'ira_ble 10':
+[22:55:17.484][C][mqtt.binary_sensor:043]:   State Topic: 'esp/esp32-10-ant/binary_sensor/ira_ble_10/state'
+[22:55:17.485][C][mqtt.binary_sensor:021]: MQTT Binary Sensor 'lila_ble 10':
+[22:55:17.485][C][mqtt.binary_sensor:043]:   State Topic: 'esp/esp32-10-ant/binary_sensor/lila_ble_10/state'
+[22:55:18.527][V][esp32_ble:427]: gattc_event [esp_gatt_if: 3] - 41
+[22:55:18.534][V][esp32_ble_client:288]: [0] [3C:1A:CC:4C:11:2A] gattc_event_handler: event=41 gattc_if=3
+[22:55:18.538][D][esp32_ble_client:379]: [0] [3C:1A:CC:4C:11:2A] ESP_GATTC_DISCONNECT_EVT, reason 0x08
+[22:55:18.538][V][esp32_ble_client:045]: [0] [3C:1A:CC:4C:11:2A] Set state 1
+[22:55:18.542][V][esp32_ble:427]: gattc_event [esp_gatt_if: 3] - 5
+[22:55:18.549][V][esp32_ble_client:288]: [0] [3C:1A:CC:4C:11:2A] gattc_event_handler: event=5 gattc_if=3
+[22:55:18.554][D][esp32_ble_client:211]: [0] [3C:1A:CC:4C:11:2A] ESP_GATTC_CLOSE_EVT
+[22:55:18.603][V][esp32_ble_client:045]: [0] [3C:1A:CC:4C:11:2A] Set state 2
+[22:55:18.603][W][bms:047]: отключились от батареи
+[22:55:19.321][I][bms:032]: advert: BAT25212000E3050050 | RSSI -67 | services 0
+[22:55:19.323][D][esp32_ble_client:207]: [0] [3C:1A:CC:4C:11:2A] Found device
+[22:55:19.323][V][esp32_ble_client:045]: [0] [3C:1A:CC:4C:11:2A] Set state 3
+[22:55:19.323][I][esp32_ble_client:125]: [0] [3C:1A:CC:4C:11:2A] 0x00 Connecting
+[22:55:19.337][V][esp32_ble_client:045]: [0] [3C:1A:CC:4C:11:2A] Set state 4
+[22:55:19.343][V][esp32_ble:449]: gap_event_handler - 18
+[22:55:19.525][V][esp32_ble:427]: gattc_event [esp_gatt_if: 3] - 40
+[22:55:19.525][V][esp32_ble_client:288]: [0] [3C:1A:CC:4C:11:2A] gattc_event_handler: event=40 gattc_if=3
+[22:55:19.525][D][esp32_ble_client:211]: [0] [3C:1A:CC:4C:11:2A] ESP_GATTC_CONNECT_EVT
+[22:55:19.525][V][esp32_ble:427]: gattc_event [esp_gatt_if: 3] - 2
+[22:55:19.525][V][esp32_ble_client:288]: [0] [3C:1A:CC:4C:11:2A] gattc_event_handler: event=2 gattc_if=3
+[22:55:19.525][D][esp32_ble_client:211]: [0] [3C:1A:CC:4C:11:2A] ESP_GATTC_OPEN_EVT
+[22:55:19.525][V][esp32_ble_client:045]: [0] [3C:1A:CC:4C:11:2A] Set state 5
+[22:55:19.526][I][esp32_ble_client:343]: [0] [3C:1A:CC:4C:11:2A] Connection open
+[22:55:19.628][D][esp32_ble_client:207]: [0] [3C:1A:CC:4C:11:2A] Searching for services
+[22:55:19.628][V][esp32_ble:449]: gap_event_handler - 2
+[22:55:19.628][V][esp32_ble:449]: gap_event_handler - 7
+[22:55:20.451][V][esp32_ble:427]: gattc_event [esp_gatt_if: 3] - 46
+[22:55:20.487][V][esp32_ble_client:288]: [0] [3C:1A:CC:4C:11:2A] gattc_event_handler: event=46 gattc_if=3
+[22:55:20.487][V][esp32_ble_client:544]: [0] [3C:1A:CC:4C:11:2A] Event 46
+[22:55:20.497][V][esp32_ble:427]: gattc_event [esp_gatt_if: 3] - 7
+[22:55:20.502][V][esp32_ble_client:288]: [0] [3C:1A:CC:4C:11:2A] gattc_event_handler: event=7 gattc_if=3
+[22:55:20.552][V][esp32_ble:427]: gattc_event [esp_gatt_if: 3] - 7
+[22:55:20.552][V][esp32_ble_client:288]: [0] [3C:1A:CC:4C:11:2A] gattc_event_handler: event=7 gattc_if=3
+[22:55:20.553][V][esp32_ble:427]: gattc_event [esp_gatt_if: 3] - 7
+[22:55:20.553][V][esp32_ble_client:288]: [0] [3C:1A:CC:4C:11:2A] gattc_event_handler: event=7 gattc_if=3
+[22:55:20.553][V][esp32_ble:427]: gattc_event [esp_gatt_if: 3] - 7
+[22:55:20.553][V][esp32_ble_client:288]: [0] [3C:1A:CC:4C:11:2A] gattc_event_handler: event=7 gattc_if=3
+[22:55:20.553][V][esp32_ble:427]: gattc_event [esp_gatt_if: 3] - 6
+[22:55:20.553][V][esp32_ble_client:288]: [0] [3C:1A:CC:4C:11:2A] gattc_event_handler: event=6 gattc_if=3
+[22:55:20.553][D][esp32_ble_client:211]: [0] [3C:1A:CC:4C:11:2A] ESP_GATTC_SEARCH_CMPL_EVT
+[22:55:20.553][V][esp32_ble_client:456]: [0] [3C:1A:CC:4C:11:2A] Service UUID: 0x1800
+[22:55:20.553][V][esp32_ble_client:457]: [0] [3C:1A:CC:4C:11:2A]  start_handle: 0x1  end_handle: 0x9
+[22:55:20.571][V][esp32_ble_client:456]: [0] [3C:1A:CC:4C:11:2A] Service UUID: 0x1801
+[22:55:20.576][V][esp32_ble_client:457]: [0] [3C:1A:CC:4C:11:2A]  start_handle: 0xa  end_handle: 0xd
+[22:55:20.576][V][esp32_ble_client:456]: [0] [3C:1A:CC:4C:11:2A] Service UUID: 0xFFF1
+[22:55:20.582][V][esp32_ble_client:457]: [0] [3C:1A:CC:4C:11:2A]  start_handle: 0xe  end_handle: 0x11
+[22:55:20.592][V][esp32_ble_client:456]: [0] [3C:1A:CC:4C:11:2A] Service UUID: 02F00000-0000-0000-0000-00000000FE00
+[22:55:20.603][V][esp32_ble_client:457]: [0] [3C:1A:CC:4C:11:2A]  start_handle: 0x12  end_handle: 0x1c
+[22:55:20.651][I][esp32_ble_client:463]: [0] [3C:1A:CC:4C:11:2A] Service discovery complete
+[22:55:20.651][I][bms:044]: подключились к батарее
+[22:55:20.651][D][ble_client:056]: All clients established, services released
+[22:55:20.651][V][esp32_ble:427]: gattc_event [esp_gatt_if: 3] - 18
+[22:55:20.651][V][esp32_ble_client:288]: [0] [3C:1A:CC:4C:11:2A] gattc_event_handler: event=18 gattc_if=3
+[22:55:20.651][D][esp32_ble_client:410]: [0] [3C:1A:CC:4C:11:2A] cfg_mtu status 0, mtu 247
+[22:55:31.113][V][switch:021]: 'esp32-10-ant_Restart' Turning ON.
+[22:55:31.117][V][switch:064]: 'esp32-10-ant_Restart' >> OFF
+[22:55:31.121][I][restart:015]: Restarting device
+[22:55:31.225][I][app:271]: Rebooting safely
+INFO Processing expected disconnect from ESPHome API for esp32-10-ant @ 192.168.0.173
+WARNING Disconnected from API
+INFO Successfully resolved esp32-10-ant @ 192.168.0.173 in 0.000s
+INFO Successfully resolved esp32-10-ant @ 192.168.0.173 in 0.000s
+INFO Successfully connected to esp32-10-ant @ 192.168.0.173 in 0.003s
+INFO Successful handshake with esp32-10-ant @ 192.168.0.173 in 0.018s
+[22:55:41.848][V][api.connection:1717]: Hello from client: 'Home Assistant 2026.8.2' | 192.168.0.6 | API Version 1.14
+[22:55:41.848][D][api.connection:2457]: Home Assistant 2026.8.2 (192.168.0.6): connected
