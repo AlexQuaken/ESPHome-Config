@@ -8,33 +8,55 @@ ble_client:
   - mac_address: 3C:1A:CC:4C:11:2A
     id: deye_batt_client
 
+# throttle 60s на сенсорах ячеек — в HA/рекордер значение попадает раз в минуту
+# (чаще нет смысла: ячейки меняются медленно). Компонент опрашивает быстро,
+# throttle пропускает не чаще одного значения в 60с.
 deye_bms:
   ble_client_id: deye_batt_client
   ble_name: "BAT25212000E3050050"
   update_interval: 5s
   cells:
     - name: "Deye batt cell 1"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 2"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 3"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 4"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 5"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 6"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 7"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 8"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 9"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 10"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 11"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 12"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 13"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 14"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 15"
+      filters: [throttle: 60s]
     - name: "Deye batt cell 16"
+      filters: [throttle: 60s]
   cell_max_voltage:
     name: "Deye batt cell max"
+    filters: [throttle: 60s]
   cell_min_voltage:
     name: "Deye batt cell min"
+    filters: [throttle: 60s]
   cell_delta_voltage:
     name: "Deye batt cell delta"
+    filters: [throttle: 60s]
   cell_max_number:
     name: "Deye batt cell max no"
   cell_min_number:
