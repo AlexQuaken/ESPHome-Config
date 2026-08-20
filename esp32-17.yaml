@@ -35,3 +35,6 @@ packages:
   ble_ira: !include packages/ble_ira.yaml
   ble_lila: !include packages/ble_lila.yaml
   ble_radar: !include packages/ble_radar.yaml
+
+safe_mode:
+  num_attempts: 50
