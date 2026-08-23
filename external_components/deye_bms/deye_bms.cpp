@@ -309,14 +309,25 @@ void DeyeBMS::send_result_() {
   ESP_LOGI(TAG, "handshake завершён, сессия готова");
 }
 
+// ВРЕМЕННО: зондирование неизвестных func-кодов (только чтения; Modbus-записи
+// 05/06/0f/10 намеренно исключены). Кадр: aa 55 01 <func> <len> crc16le(func,len) 0d 0a.
+static const char *const PROBES[] = {
+    "aa5501020000d00d0a",  // func 02: 12 байт статусов (в покое все нули)
+    "aa5501030001400d0a",  // func 03: 21 байт, назначение пока неизвестно
+};
+static const int NPROBES = 2;
+
 void DeyeBMS::send_next_poll_() {
   const char *reqs[3] = {REQ_CELLS, REQ_MAIN, REQ_INFO};
-  const char *req = reqs[this->poll_idx_ % 3];
+  const int total = 3 + NPROBES;
+  int i = this->poll_idx_ % total;
+  const char *req = (i < 3) ? reqs[i] : PROBES[i - 3];
   size_t len = strlen(req);
-  this->poll_idx_ = (this->poll_idx_ + 1) % 3;
+  this->poll_idx_ = (uint8_t) ((this->poll_idx_ + 1) % total);
   std::vector<uint8_t> enc;
   this->aes_encrypt_((const uint8_t *) req, len, enc);
   this->rx_buf_.clear();
+  if (i >= 3) ESP_LOGD(TAG, "PROBE -> %s", req);
   ESP_LOGV(TAG, "poll %s (%d ascii -> %d шифр)", req, (int) len, (int) enc.size());
   this->write_char_(enc.data(), enc.size());
 }
@@ -360,6 +371,9 @@ void DeyeBMS::try_parse_response_() {
       pt.back() == 0x0a) {
     this->parse_frame_(pt);
     this->rx_buf_.clear();
+  } else {
+    // ВРЕМЕННО: показать всё, что расшифровалось, но кадром не признано
+    ESP_LOGD(TAG, "UNPARSED %u: %s", (unsigned) pt.size(), format_hex(pt).c_str());
   }
   // иначе — ждём ещё notify (кадр не собран)
 }
@@ -373,9 +387,12 @@ static inline int16_t sle16(const std::vector<uint8_t> &d, size_t i) {
 
 void DeyeBMS::parse_frame_(const std::vector<uint8_t> &f) {
   uint8_t func = f[3];
+  // ВРЕМЕННО: сырой дамп кадра, ищем неразобранные поля (статус балансировки).
+  ESP_LOGD(TAG, "RAW func=%02x size=%u: %s", func, (unsigned) f.size(), format_hex(f).c_str());
   if (func == 0x04) {
     // aa 55 01 04 <len> maxV(BE) maxNo minV(BE) minNo diff(BE) cell1..cell16(BE)
     // данные с f[5]
+    if (f.size() < 45) return;
     size_t p = 5;
     uint16_t maxv = ((uint16_t) f[p] << 8) | f[p + 1];
     uint8_t maxno = f[p + 2];
