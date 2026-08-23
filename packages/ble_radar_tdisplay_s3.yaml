@@ -18,7 +18,7 @@ interval:
   - interval: 10s
     then:
       - lambda: |-
-          ESP_LOGI("hb", "up=%lus heap=%uKB fps=%d dev=%u mode=%d", (unsigned long)(millis()/1000), (unsigned)(esp_get_free_heap_size()/1024), id(fps_value), (unsigned)id(dev_addr).size(), id(display_mode));
+          ESP_LOGI("hb", "up=%lus heap=%uKB fps=%d render=%ums dev=%u mode=%d", (unsigned long)(millis()/1000), (unsigned)(esp_get_free_heap_size()/1024), id(fps_value), (unsigned)(id(render_us)/1000), (unsigned)id(dev_addr).size(), id(display_mode));
   - interval: 5s
     then:
       - lambda: |-
@@ -183,6 +183,10 @@ color:
     blue: 0%
 
 globals:
+  - id: render_us
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
   - id: log_lines
     type: std::vector<std::string>
     restore_value: no
@@ -389,8 +393,15 @@ display:
     spi_id: display_bus
     # rotation:270 → it.get_width()=320, get_height()=170, как и было на TFT_eSPI.
     rotation: 270
-    update_interval: 33ms
+    # В модели по умолчанию 10 МГц: кадр 320x170x16 бит по 8 линиям это ~11 мс
+    # только на шину, на 20 МГц уже ~5.4 мс. Выше не гоним: у ST7789 в режиме
+    # 8080 цикл записи по спеке 66 нс, то есть около 15 МГц, 20 и так с запасом
+    # над паспортом. Разницы в FPS между 20 и 40 МГц нет: упор в render-lambda,
+    # она сама занимает 20 мс (см. render=NNms в heartbeat-логе).
+    data_rate: 20MHz
+    update_interval: 20ms
     lambda: |-
+      uint32_t t_render0 = micros();
       id(frame_counter)++;
       uint32_t t = millis();
       int W = it.get_width();
@@ -874,3 +885,4 @@ display:
         const int footer_sep_x = (sb_x - 4 + W - 1) / 2;
         it.line(footer_sep_x, sb_y_end + 1, footer_sep_x, 168, id(c_dim));
       }
+      id(render_us) = micros() - t_render0;
