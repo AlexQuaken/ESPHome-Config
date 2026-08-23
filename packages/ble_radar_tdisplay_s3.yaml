@@ -1,18 +1,13 @@
 # BLE radar + log console для LilyGO T-Display-S3 (ST7789 320x170, i80 parallel).
-# Временный пакет — drop-in копия ble_radar.yaml с заменённым display-блоком на
-# external_component tdisplays3 (TFT_eSPI обёртка). Существует пока в core ESPHome
-# нет нативной поддержки i80 для ili9xxx (PR esphome/esphome#8228). После релиза
-# 2026.5+ — рефакторинг с выносом render-lambda в общий пакет и удаление этого
-# файла.
+# Отдельный пакет — копия ble_radar.yaml со своим display-блоком: тут дисплей на
+# 8-битной параллельной шине, а не SPI. С 23.08.2026 драйвер нативный —
+# mipi_spi + model T-DISPLAY-S3, external_component tdisplays3 и TFT_eSPI сняты.
 #
 # Подключение в device.yaml:
-#   external_components:
-#     - source: github://landonr/lilygo-tdisplays3-esphome
-#       components: [tdisplays3]
 #   packages:
 #     ble_radar: !include packages/ble_radar_tdisplay_s3.yaml
-# Никаких pin_* substitutions: у tdisplays3 пины ST7789 i80 зашиты в компоненте
-# (CS=6, DC=7, RES=5, WR=8, RD=9, D0..D7=39..48, BL=38).
+# Пины ST7789 i80: CS=6, DC=7, RES=5, WR=8, RD=9, D0..D7=39..48, BL=38.
+# CS/DC/RES и enable (9, 15) сидят в модели T-DISPLAY-S3, тут задаём только шину.
 
 interval:
   - interval: 1s
@@ -126,10 +121,16 @@ esp32_ble_tracker:
               if (id(scroll_pending_px) > 40) id(scroll_pending_px) = 40;
             }
 
-# SPI блока нет — i80 шина внутри tdisplays3 external component.
+# Octal SPI = i80: WR как clk, D0..D7 как data. Модель T-DISPLAY-S3 сама держит
+# cs/dc/reset/enable, offset 35 px, invert_colors и BGR.
+spi:
+  - id: display_bus
+    type: octal
+    clk_pin: GPIO8
+    data_pins: [GPIO39, GPIO40, GPIO41, GPIO42, GPIO45, GPIO46, GPIO47, GPIO48]
+
 # Backlight через ledc PWM на GPIO38 + light:monochromatic — даёт slider
-# яркости в HA. В display: tdisplays3 ставим backlight: false (компонент
-# не трогает GPIO38).
+# яркости в HA. Драйвер дисплея GPIO38 не трогает.
 
 output:
   - platform: ledc
@@ -308,7 +309,7 @@ logger:
   logs:
     font: ERROR
     display: ERROR
-    tdisplays3: ERROR
+    mipi_spi: ERROR
     component: ERROR
     scheduler: ERROR
     mqtt: ERROR
@@ -382,12 +383,12 @@ api:
         - lambda: 'id(display_mode) = mode;'
 
 display:
-  - platform: tdisplays3
+  - platform: mipi_spi
+    model: T-DISPLAY-S3
     id: lcd
-    # width/height не указываем — defaults 170x320 (native ST7789 portrait).
-    # rotation:270 поворачивает в render-time → it.get_width()=320, get_height()=170.
+    spi_id: display_bus
+    # rotation:270 → it.get_width()=320, get_height()=170, как и было на TFT_eSPI.
     rotation: 270
-    backlight: false  # GPIO38 управляется через ledc выше (light:monochromatic)
     update_interval: 33ms
     lambda: |-
       id(frame_counter)++;
