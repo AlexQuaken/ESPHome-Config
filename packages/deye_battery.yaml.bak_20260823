@@ -59,46 +59,31 @@ deye_bms:
     filters: [throttle: 60s]
   cell_max_number:
     name: "Deye batt cell max no"
-    filters: [throttle: 60s]
   cell_min_number:
     name: "Deye batt cell min no"
-    filters: [throttle: 60s]
   total_voltage:
     name: "Deye batt total voltage"
-    filters: [throttle_average: 60s]
   current:
     name: "Deye batt current"
-    filters: [throttle_average: 60s]
   state_of_charge:
     name: "Deye batt SOC"
-    filters: [throttle: 60s]
   state_of_health:
     name: "Deye batt SOH"
-    filters: [throttle: 300s]
   temperature_cell:
     name: "Deye batt temp cell"
-    filters: [throttle: 60s]
   temperature_mos:
     name: "Deye batt temp MOS"
-    filters: [throttle: 60s]
   temperature_env:
     name: "Deye batt temp env"
-    filters: [throttle: 60s]
   charge_current_limit:
     name: "Deye batt charge current limit"
-    filters: [throttle: 60s]
   discharge_current_limit:
     name: "Deye batt discharge current limit"
-    filters: [throttle: 60s]
   charge_voltage_limit:
     name: "Deye batt charge voltage limit"
-    filters: [throttle: 60s]
   discharge_voltage_limit:
     name: "Deye batt discharge voltage limit"
-    filters: [throttle: 60s]
   full_capacity:
     name: "Deye batt full capacity"
-    filters: [throttle: 300s]
   cycles:
     name: "Deye batt cycles"
-    filters: [throttle: 300s]
