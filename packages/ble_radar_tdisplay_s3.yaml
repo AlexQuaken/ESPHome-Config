@@ -1,4 +1,5 @@
-# BLE radar + log console для LilyGO T-Display-S3 (ST7789 320x170, i80 parallel).
+# BLE radar + log console для LilyGO T-Display-S3 (ST7789 170x320, i80 parallel).
+# Плата стоит вертикально: компоновка портретная, радар сверху, таблица маков снизу.
 # Отдельный пакет — копия ble_radar.yaml со своим display-блоком: тут дисплей на
 # 8-битной параллельной шине, а не SPI. С 23.08.2026 драйвер нативный —
 # mipi_spi + model T-DISPLAY-S3, external_component tdisplays3 и TFT_eSPI сняты.
@@ -193,7 +194,7 @@ globals:
   - id: log_max
     type: int
     restore_value: no
-    initial_value: '18'
+    initial_value: '34'
   - id: scroll_off
     type: float
     restore_value: no
@@ -391,8 +392,9 @@ display:
     model: T-DISPLAY-S3
     id: lcd
     spi_id: display_bus
-    # rotation:270 → it.get_width()=320, get_height()=170, как и было на TFT_eSPI.
-    rotation: 270
+    # Плата повернута на 90 по часовой (стоит вертикально), поэтому 270 -> 0:
+    # it.get_width()=170, get_height()=320. Если картинка вверх ногами — ставить 180.
+    rotation: 0
     # В модели по умолчанию 10 МГц: кадр 320x170x16 бит по 8 линиям это ~11 мс
     # только на шину, на 20 МГц уже ~5.4 мс. Выше не гоним: у ST7789 в режиме
     # 8080 цикл записи по спеке 66 нс, то есть около 15 МГц, 20 и так с запасом
@@ -475,8 +477,8 @@ display:
         it.printf(W, 0, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", clk);
       } else {
         // ============ BLE RADAR MODE ============
-        const int cx = 80;
-        const int cy = 85;
+        const int cx = 85;
+        const int cy = 88;
         const int max_r = 70;
 
         float sw = (float)(t % 6000) / 6000.0f * 6.28318f;
@@ -663,7 +665,7 @@ display:
           const int M = 4;
           int x_min = cx - max_r + M;
           int x_max = cx + max_r - M;
-          int y_min = M;
+          int y_min = 14;
           int y_max = cy + max_r - M;
 
           if (known) {
@@ -785,14 +787,35 @@ display:
           }
         }
 
-        int sb_x = 168;
-        it.printf(sb_x + 2, 1, id(f_console), id(c_green), "SCAN");
-        it.printf(sb_x + 56, 1, id(f_console), id(c_green), "NAME");
-        it.printf(sb_x + 119, 1, id(f_console), id(c_green), "RSSI");
+        // ---- верхняя строка статуса: часы, FPS, дата ----
+        char clk[16];
+        auto tn = id(homeassistant_time).now();
+        if (tn.is_valid()) snprintf(clk, sizeof(clk), "%02d:%02d:%02d", tn.hour, tn.minute, tn.second);
+        else snprintf(clk, sizeof(clk), "--:--:--");
+        it.printf(2, 2, id(f_console), id(c_green), "%s", clk);
+        char fps_s[16];
+        snprintf(fps_s, sizeof(fps_s), "FPS:%d", id(fps_value));
+        it.printf(70, 2, id(f_console), id(c_green), "%s", fps_s);
+        char dt[24];
+        if (tn.is_valid()) snprintf(dt, sizeof(dt), "%04d.%02d.%02d", tn.year, tn.month, tn.day_of_month);
+        else snprintf(dt, sizeof(dt), "----.--.--");
+        it.printf(W - 2, 2, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", dt);
 
-        const int sb_y_start = 14;
+        // ---- нижний блок: таблица устройств во всю ширину ----
+        const int TB_TOP = 170;
+        const int hdr_y = TB_TOP + 2;
+        const int hdr_line = TB_TOP + 12;
+        const int col1_x = 22;
+        const int col2_x = 128;
+        const int bottom_y = H - 1;
+
+        it.printf(2, hdr_y, id(f_console), id(c_green), "SCAN");
+        it.printf(66, hdr_y, id(f_console), id(c_green), "NAME");
+        it.printf(138, hdr_y, id(f_console), id(c_green), "RSSI");
+
+        const int sb_y_start = TB_TOP + 15;
         const int row_h = 10;
-        const int visible_rows = 14;
+        const int visible_rows = 11;
         const int sb_y_end = sb_y_start + visible_rows * row_h;
         int N = (int)addrs.size();
         int skip = (N > visible_rows) ? (N - visible_rows) : 0;
@@ -804,11 +827,11 @@ display:
         int render_from = skip - extra;
         if (render_from < 0) render_from = 0;
 
-        it.start_clipping(Rect(sb_x - 3, 12, W - sb_x + 3, sb_y_end - 12));
+        it.start_clipping(Rect(1, hdr_line + 1, W - 2, sb_y_end - hdr_line - 1));
         for (int i = render_from; i < N; i++) {
           size_t k = (size_t)i;
           int row_y = sb_y_start + (i - skip) * row_h + anim_y;
-          if (row_y + row_h <= 0) continue;
+          if (row_y + row_h <= hdr_line) continue;
           if (row_y > sb_y_end) continue;
           std::string nm = names[k];
           if (nm.empty()) nm = addrs[k];
@@ -817,11 +840,11 @@ display:
           snprintf(sc, sizeof(sc), "%04X", scan_id);
           int r0 = (k < rssis0.size()) ? rssis0[k] : rssis[k];
 
-          it.printf(sb_x + 1, row_y, id(f_console), id(c_green), "%s", sc);
+          it.printf(2, row_y, id(f_console), id(c_green), "%s", sc);
 
-          int name_x = sb_x + 25;
-          int name_w = 85;
-          if ((int)nm.size() <= 17) {
+          int name_x = 25;
+          int name_w = 100;
+          if ((int)nm.size() <= 20) {
             it.printf(name_x, row_y, id(f_console), id(c_green), "%s", nm.c_str());
           } else {
             std::string padded = nm + "   ";
@@ -835,54 +858,38 @@ display:
 
           char rb[12];
           snprintf(rb, sizeof(rb), "%4d dB", r0);
-          it.printf(sb_x + 113, row_y, id(f_console), id(c_green), "%s", rb);
+          it.printf(131, row_y, id(f_console), id(c_green), "%s", rb);
         }
         it.end_clipping();
 
-        const int col1_x = sb_x + 22;
-        const int col2_x = sb_x + 110;
-        const int bottom_y = 169;
-        it.line(col1_x, 0, col1_x, sb_y_end, id(c_dim));
-        it.line(col2_x, 0, col2_x, sb_y_end, id(c_dim));
-        it.line(sb_x - 4, 0, sb_x - 4, bottom_y, id(c_dim));
+        // ---- рамки ----
+        it.line(col1_x, TB_TOP, col1_x, sb_y_end, id(c_dim));
+        it.line(col2_x, TB_TOP, col2_x, sb_y_end, id(c_dim));
+        it.line(0, 0, W - 1, 0, id(c_dim));
+        it.line(0, 11, W - 1, 11, id(c_dim));
+        it.line(0, TB_TOP, W - 1, TB_TOP, id(c_dim));
+        it.line(0, hdr_line, W - 1, hdr_line, id(c_dim));
+        it.line(0, sb_y_end, W - 1, sb_y_end, id(c_dim));
+        it.line(0, bottom_y, W - 1, bottom_y, id(c_dim));
+        it.line(0, 0, 0, bottom_y, id(c_dim));
         it.line(W - 1, 0, W - 1, bottom_y, id(c_dim));
-        it.line(sb_x - 4, 0, W - 1, 0, id(c_dim));
-        it.line(sb_x - 4, 11, W - 1, 11, id(c_dim));
-        it.line(sb_x - 4, sb_y_end, W - 1, sb_y_end, id(c_dim));
-        it.line(sb_x - 4, bottom_y, W - 1, bottom_y, id(c_dim));
 
-        char clk[16];
-        auto tn = id(homeassistant_time).now();
-        if (tn.is_valid()) snprintf(clk, sizeof(clk), "%02d:%02d:%02d", tn.hour, tn.minute, tn.second);
-        else snprintf(clk, sizeof(clk), "--:--:--");
-        it.printf(0, 1, id(f_console), id(c_green), "%s", clk);
-        char fps_s[16];
-        snprintf(fps_s, sizeof(fps_s), "FPS:%d", id(fps_value));
-        int fw = (int)strlen(fps_s) * 5;
-        it.filled_rectangle(0, 11, fw + 2, 9, id(c_black));
-        it.printf(0, 11, id(f_console), id(c_green), "%s", fps_s);
-        char dt[24];
-        if (tn.is_valid()) snprintf(dt, sizeof(dt), "%04d.%02d.%02d", tn.year, tn.month, tn.day_of_month);
-        else snprintf(dt, sizeof(dt), "----.--.--");
-        it.printf(sb_x - 6, 1, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", dt);
-        char bld[8];
-        snprintf(bld, sizeof(bld), "%c%c:%c%c", __TIME__[0], __TIME__[1], __TIME__[3], __TIME__[4]);
-        it.filled_rectangle(0, 151, 27, 9, id(c_black));
-        it.printf(0, 151, id(f_console), id(c_green), "%s", bld);
-        it.printf(0, 160, id(f_console), id(c_green), "BLE RADAR");
-        char mem[16];
-        snprintf(mem, sizeof(mem), "MEM %uK", (unsigned)(esp_get_free_heap_size() / 1024));
-        it.printf(sb_x - 6, 160, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", mem);
-        char devc[24];
-        snprintf(devc, sizeof(devc), "Found: %u/min", (unsigned)id(cache_uniq60));
-        it.printf(sb_x + 1, 160, id(f_console), id(c_green), "%s", devc);
+        // ---- подвал ----
+        it.printf(2, sb_y_end + 3, id(f_console), id(c_green), "BLE RADAR");
         uint32_t up_s = t / 1000;
         unsigned d = up_s / 86400, h = (up_s % 86400) / 3600, m = (up_s % 3600) / 60, ss = up_s % 60;
         char upbuf[32];
         if (d > 0) snprintf(upbuf, sizeof(upbuf), "Up: %ud %02u:%02u", d, h, m);
         else snprintf(upbuf, sizeof(upbuf), "Up: %02u:%02u:%02u", h, m, ss);
-        it.printf(W - 2, 160, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", upbuf);
-        const int footer_sep_x = (sb_x - 4 + W - 1) / 2;
-        it.line(footer_sep_x, sb_y_end + 1, footer_sep_x, 168, id(c_dim));
+        it.printf(W - 2, sb_y_end + 3, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", upbuf);
+        char bld[8];
+        snprintf(bld, sizeof(bld), "%c%c:%c%c", __TIME__[0], __TIME__[1], __TIME__[3], __TIME__[4]);
+        it.printf(2, sb_y_end + 13, id(f_console), id(c_green), "%s", bld);
+        char devc[24];
+        snprintf(devc, sizeof(devc), "Found: %u/min", (unsigned)id(cache_uniq60));
+        it.printf(34, sb_y_end + 13, id(f_console), id(c_green), "%s", devc);
+        char mem[16];
+        snprintf(mem, sizeof(mem), "MEM %uK", (unsigned)(esp_get_free_heap_size() / 1024));
+        it.printf(W - 2, sb_y_end + 13, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", mem);
       }
       id(render_us) = micros() - t_render0;
