@@ -68,49 +68,51 @@ packages:
   ble_lila: !include packages/ble_lila.yaml
   ble_radar: !include packages/ble_radar_tdisplay_s3.yaml
 
-# Ночной режим экрана: 23:30 гасим подсветку, 07:00 зажигаем.
-# Расписание живет внутри самой ESP (time.on_time), автоматизаций в HA нет.
-# Время приходит от HA один раз при синхронизации (time platform homeassistant,
-# id homeassistant_time объявлен в packages/2common_sensors.yaml), дальше плата
-# ведет часы сама, поэтому триггер отработает и при недоступном HA.
-# !extend дописывает триггеры в компонент из пакета, второго времени не заводит.
-time:
-  - id: !extend homeassistant_time
-    on_time:
-      # Отбой
-      - seconds: 0
-        minutes: 30
-        hours: 23
-        then:
-          - light.turn_off: backlight
-      # Подъем. Яркость не задаем, берется последняя выставленная в HA
-      - seconds: 0
-        minutes: 0
-        hours: 7
-        then:
-          - light.turn_on: backlight
-    # После ребута restore_mode: RESTORE_DEFAULT_ON зажжет экран даже ночью.
-    # Один раз, на первой синхронизации времени, приводим состояние к расписанию.
-    # Дальше не вмешиваемся, иначе ручное включение ночью гасло бы само.
-    on_time_sync:
+# Яркость экрана по датчику освещенности в кабинете (zigbee, Кабинет_illuminance =
+# sensor.0x04cf8cdf3c789feb_illuminance). Темно, значит 30%, светло, значит 100%.
+# Ночного гашения по расписанию нет, экран не выключается совсем.
+#
+# Значение приходит из HA, но решение принимает сама плата: пришла новая цифра,
+# ESP пересчитала яркость. Отдельной автоматизации в HA под это нет.
+#
+# Пороги разведены (1 и 4 лк) специально. Датчик в сумерках дребезжит между 1 и 2,
+# и на одном общем пороге экран мигал бы туда-сюда при каждом обновлении.
+# Между 1 и 4 держим то, что стоит сейчас.
+#
+# Выключенную подсветку не трогаем: погасил кнопкой в HA, значит погашено,
+# яркость подхватится при следующем обновлении датчика уже после включения.
+sensor:
+  - platform: homeassistant
+    id: kabinet_lux
+    entity_id: sensor.0x04cf8cdf3c789feb_illuminance
+    internal: true
+    on_value:
       then:
         - if:
             condition:
-              lambda: 'return !id(night_schedule_checked);'
+              light.is_on: backlight
             then:
-              - lambda: 'id(night_schedule_checked) = true;'
-              - if:
-                  condition:
-                    lambda: |-
-                      auto t = id(homeassistant_time).now();
-                      if (!t.is_valid()) return false;
-                      return (t.hour == 23 && t.minute >= 30) || t.hour < 7;
-                  then:
-                    - light.turn_off: backlight
+              - lambda: |-
+                  bool dim = id(backlight_dimmed);
+                  if (x <= 1.0f) dim = true;
+                  else if (x >= 4.0f) dim = false;
+                  // Уже в нужном режиме — не перебиваем яркость, выставленную руками
+                  if (id(backlight_applied) && dim == id(backlight_dimmed)) return;
+                  id(backlight_dimmed) = dim;
+                  id(backlight_applied) = true;
+                  auto call = id(backlight).turn_on();
+                  call.set_brightness(dim ? 0.30f : 1.0f);
+                  call.set_transition_length(1000);
+                  call.perform();
+                  ESP_LOGI("backlight", "lux=%.0f -> %s", x, dim ? "30%" : "100%");
 
 globals:
-  # Флаг живет только до перезагрузки, restore_value: false
-  - id: night_schedule_checked
+  # Текущий режим яркости и признак, что он хоть раз применялся после загрузки
+  - id: backlight_dimmed
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: backlight_applied
     type: bool
     restore_value: false
     initial_value: 'false'
