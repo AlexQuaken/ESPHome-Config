@@ -67,3 +67,50 @@ packages:
   ble_ira: !include packages/ble_ira.yaml
   ble_lila: !include packages/ble_lila.yaml
   ble_radar: !include packages/ble_radar_tdisplay_s3.yaml
+
+# Ночной режим экрана: 23:30 гасим подсветку, 07:00 зажигаем.
+# Расписание живет внутри самой ESP (time.on_time), автоматизаций в HA нет.
+# Время приходит от HA один раз при синхронизации (time platform homeassistant,
+# id homeassistant_time объявлен в packages/2common_sensors.yaml), дальше плата
+# ведет часы сама, поэтому триггер отработает и при недоступном HA.
+# !extend дописывает триггеры в компонент из пакета, второго времени не заводит.
+time:
+  - id: !extend homeassistant_time
+    on_time:
+      # Отбой
+      - seconds: 0
+        minutes: 30
+        hours: 23
+        then:
+          - light.turn_off: backlight
+      # Подъем. Яркость не задаем, берется последняя выставленная в HA
+      - seconds: 0
+        minutes: 0
+        hours: 7
+        then:
+          - light.turn_on: backlight
+    # После ребута restore_mode: RESTORE_DEFAULT_ON зажжет экран даже ночью.
+    # Один раз, на первой синхронизации времени, приводим состояние к расписанию.
+    # Дальше не вмешиваемся, иначе ручное включение ночью гасло бы само.
+    on_time_sync:
+      then:
+        - if:
+            condition:
+              lambda: 'return !id(night_schedule_checked);'
+            then:
+              - lambda: 'id(night_schedule_checked) = true;'
+              - if:
+                  condition:
+                    lambda: |-
+                      auto t = id(homeassistant_time).now();
+                      if (!t.is_valid()) return false;
+                      return (t.hour == 23 && t.minute >= 30) || t.hour < 7;
+                  then:
+                    - light.turn_off: backlight
+
+globals:
+  # Флаг живет только до перезагрузки, restore_value: false
+  - id: night_schedule_checked
+    type: bool
+    restore_value: false
+    initial_value: 'false'
