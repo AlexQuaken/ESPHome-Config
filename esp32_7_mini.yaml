@@ -59,13 +59,13 @@ espidf_ble_keyboard:
 
 # Кнопки в кодировке HID: 0x28 Enter, 0x29 Escape, 0x4A Home,
 # 0x4F вправо, 0x50 влево, 0x51 вниз, 0x52 вверх.
-button:
-  - platform: espidf_ble_keyboard
-    keyboard_id: tv_kb
-    name: ${board_name} TV Power
-    id: tv_power
-    action: "power"
+# Кнопки Power тут намеренно нет. Проверено 10.09.2026: HID System Power Down
+# усыпляет телевизор намертво, после нее он не поднимается ни по BLE, ни по ИК,
+# помогает только снятие питания. Автор компонента пишет о том же и предлагает
+# будить хост через Wake-on-LAN, а на этом телевизоре магический пакет не живет.
+# Спать телевизор укладывается через ADB (KEYCODE_SLEEP), просыпается по ИК.
 
+button:
   - platform: espidf_ble_keyboard
     keyboard_id: tv_kb
     name: ${board_name} TV OK
@@ -115,6 +115,12 @@ button:
     keyboard_id: tv_kb
     name: ${board_name} TV Mute
     action: "mute"
+
+binary_sensor:
+  - platform: espidf_ble_keyboard
+    keyboard_id: tv_kb
+    type: paired
+    name: ${board_name} TV Remote Paired
 
 packages:
   device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
