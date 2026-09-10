@@ -1,4 +1,20 @@
 # За телеком в кабинете -->  В роутере в кабинете
+#
+# С 10.09.2026 эта нода работает BLE-пультом телевизора Mi TV P1 в кабинете.
+# Телевизор держит связь со спаренным BLE-пультом даже в standby, поэтому
+# кнопка Power будит его так же, как родной пульт Xiaomi.
+#
+# Зачем это вместо ИК: ИК шел через Broadlink RM mini 3 (192.168.0.50), а тот
+# регулярно отваливается от HA. 10.09 его не было с 00:20 до 07:55, и утром
+# телевизор просто некому было включить. Коды тут ни при чем, ломался канал.
+#
+# BLE-трекинг (ble_common, ble_alex, ble_ira, ble_lila) с этой ноды снят:
+# сканер и HID-сервер на одном чипе не уживаются, нода теперь peripheral.
+# Метки Alex, Ira и Lila по-прежнему видят остальные тринадцать точек.
+#
+# Компонент espidf_ble_keyboard работает на ESP-IDF через Bluedroid GATTS,
+# менять framework не потребовалось.
+
 substitutions:
   board_name: 'esp32-7-mini'
   static_ip: '192.168.0.166'
@@ -6,17 +22,106 @@ substitutions:
 
 esphome:
   name: ${board_name}
-  
+
 esp32:
   board: esp-wrover-kit
   framework:
     type: esp-idf
+    # Bluetooth раньше включался сам, потому что на ноде стоял esp32_ble_tracker.
+    # Его сняли, и сборка встала на "fatal error: esp_bt.h: No such file".
+    # Ниже обязательный набор из документации компонента: Bluedroid вместо
+    # NimBLE, GATTS и SMP для спаривания с телевизором.
+    sdkconfig_options:
+      CONFIG_BT_ENABLED: y
+      CONFIG_BT_CONTROLLER_ENABLED: y
+      CONFIG_BT_BLUEDROID_ENABLED: y
+      CONFIG_BT_NIMBLE_ENABLED: n
+      CONFIG_BT_BLE_ENABLED: y
+      CONFIG_BT_GATTS_ENABLE: y
+      CONFIG_BT_BLE_42_FEATURES_SUPPORTED: y
+      CONFIG_BT_BLE_50_FEATURES_SUPPORTED: n
+      CONFIG_BT_BLE_42_ADV_EN: y
+      CONFIG_BT_BLE_42_SCAN_EN: y
+      CONFIG_BT_BLE_SMP_ENABLE: y
+      CONFIG_BT_ACL_CONNECTIONS: "4"
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/markusg1234/ESPHome-espidf_ble_keyboard
+      ref: main
+    components: [espidf_ble_keyboard]
+
+espidf_ble_keyboard:
+  id: tv_kb
+  # Имя, под которым нода видна в списке устройств Bluetooth на телевизоре
+  device_name: "Kabinet TV Remote"
+
+# Кнопки в кодировке HID: 0x28 Enter, 0x29 Escape, 0x4A Home,
+# 0x4F вправо, 0x50 влево, 0x51 вниз, 0x52 вверх.
+button:
+  - platform: espidf_ble_keyboard
+    keyboard_id: tv_kb
+    name: ${board_name} TV Power
+    id: tv_power
+    action: "power"
+
+  - platform: espidf_ble_keyboard
+    keyboard_id: tv_kb
+    name: ${board_name} TV OK
+    action: "combo:0x00:0x28"
+
+  - platform: espidf_ble_keyboard
+    keyboard_id: tv_kb
+    name: ${board_name} TV Back
+    action: "combo:0x00:0x29"
+
+  - platform: espidf_ble_keyboard
+    keyboard_id: tv_kb
+    name: ${board_name} TV Home
+    action: "combo:0x00:0x4A"
+
+  - platform: espidf_ble_keyboard
+    keyboard_id: tv_kb
+    name: ${board_name} TV Up
+    action: "combo:0x00:0x52"
+
+  - platform: espidf_ble_keyboard
+    keyboard_id: tv_kb
+    name: ${board_name} TV Down
+    action: "combo:0x00:0x51"
+
+  - platform: espidf_ble_keyboard
+    keyboard_id: tv_kb
+    name: ${board_name} TV Left
+    action: "combo:0x00:0x50"
+
+  - platform: espidf_ble_keyboard
+    keyboard_id: tv_kb
+    name: ${board_name} TV Right
+    action: "combo:0x00:0x4F"
+
+  - platform: espidf_ble_keyboard
+    keyboard_id: tv_kb
+    name: ${board_name} TV Volume Up
+    action: "volume_up"
+
+  - platform: espidf_ble_keyboard
+    keyboard_id: tv_kb
+    name: ${board_name} TV Volume Down
+    action: "volume_down"
+
+  - platform: espidf_ble_keyboard
+    keyboard_id: tv_kb
+    name: ${board_name} TV Mute
+    action: "mute"
 
 packages:
   device_base: !include packages/1wifi_api_ota_logger_mqtt.yaml
   base_sensors: !include packages/2common_sensors.yaml
   led: !include packages/3status_led_esp32.yaml
-  ble_common: !include packages/ble_common.yaml
-  ble_alex: !include packages/ble_alex.yaml
-  ble_ira: !include packages/ble_ira.yaml
-  ble_lila: !include packages/ble_lila.yaml
+  # BLE-трекинг снят намеренно, см. шапку файла:
+  # ble_common: !include packages/ble_common.yaml
+  # ble_alex: !include packages/ble_alex.yaml
+  # ble_ira: !include packages/ble_ira.yaml
+  # ble_lila: !include packages/ble_lila.yaml
