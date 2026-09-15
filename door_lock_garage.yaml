@@ -1,0 +1,62 @@
+substitutions:
+  board_name: 'door_lock_garage'
+  static_ip: '192.168.0.175'
+  pulse_time: '1200ms'
+
+esphome:
+  name: ${board_name}
+  on_boot:
+    priority: -100
+    then:
+      - switch.turn_off: relay_open
+      - switch.turn_off: relay_close
+
+esp8266:
+  board: esp01_1m
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+
+# UART занят разговором с бортовым STC15, он и щелкает реле.
+# Логи в порт слать нельзя: STC15 поймает мусор и откроет замок.
+logger:
+  baud_rate: 0
+
+uart:
+  id: relay_uart
+  tx_pin: GPIO1
+  rx_pin: GPIO3
+  baud_rate: 115200
+
+switch:
+  - platform: template
+    id: relay_open
+    internal: true
+    optimistic: true
+    turn_on_action:  { uart.write: [0xA0, 0x01, 0x01, 0xA2] }
+    turn_off_action: { uart.write: [0xA0, 0x01, 0x00, 0xA1] }
+  - platform: template
+    id: relay_close
+    internal: true
+    optimistic: true
+    turn_on_action:  { uart.write: [0xA0, 0x02, 0x01, 0xA3] }
+    turn_off_action: { uart.write: [0xA0, 0x02, 0x00, 0xA2] }
+
+lock:
+  - platform: template
+    name: ${board_name}
+    id: garage_lock
+    optimistic: true
+    lock_action:
+      - switch.turn_off: relay_open
+      - delay: 100ms
+      - switch.turn_on: relay_close
+      - delay: ${pulse_time}
+      - switch.turn_off: relay_close
+    unlock_action:
+      - switch.turn_off: relay_close
+      - delay: 100ms
+      - switch.turn_on: relay_open
+      - delay: ${pulse_time}
+      - switch.turn_off: relay_open
