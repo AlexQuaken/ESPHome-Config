@@ -21,13 +21,13 @@ packages:
 # UART занят разговором с бортовым STC15, он и щелкает реле.
 # Логи в порт слать нельзя: STC15 поймает мусор и откроет замок.
 logger:
-  baud_rate: 0
+  baud_rate: 38400
 
 uart:
   id: relay_uart
   tx_pin: GPIO1
   rx_pin: GPIO3
-  baud_rate: 9600
+  baud_rate: 38400
   debug:
     direction: BOTH
     dummy_receiver: false
