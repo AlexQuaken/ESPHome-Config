@@ -21,19 +21,13 @@ packages:
 # UART занят разговором с бортовым STC15, он и щелкает реле.
 # Логи в порт слать нельзя: STC15 поймает мусор и откроет замок.
 logger:
-  baud_rate: 38400
+  baud_rate: 0
 
 uart:
   id: relay_uart
   tx_pin: GPIO1
   rx_pin: GPIO3
-  baud_rate: 38400
-  debug:
-    direction: BOTH
-    dummy_receiver: false
-    after:
-      delimiter: "\n"
-      timeout: 200ms
+  baud_rate: 115200
 
 switch:
   - platform: template
@@ -49,23 +43,6 @@ switch:
     turn_on_action:  { uart.write: [0xA0, 0x02, 0x01, 0xA3] }
     turn_off_action: { uart.write: [0xA0, 0x02, 0x00, 0xA2] }
 
-# Проба: на части ревизий этой платы реле висят прямо на ножках ESP-01.
-# inverted + ALWAYS_OFF держат на пинах высокий уровень в покое,
-# иначе GPIO0 в нуле уведет модуль в загрузчик при следующем старте.
-  - platform: gpio
-    name: "${board_name}_gpio0_probe"
-    id: gpio0_probe
-    pin:
-      number: GPIO0
-      inverted: true
-    restore_mode: ALWAYS_OFF
-  - platform: gpio
-    name: "${board_name}_gpio2_probe"
-    id: gpio2_probe
-    pin:
-      number: GPIO2
-      inverted: true
-    restore_mode: ALWAYS_OFF
 
 lock:
   - platform: template
