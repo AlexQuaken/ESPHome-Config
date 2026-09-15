@@ -32,7 +32,7 @@ uart:
   id: relay_uart
   tx_pin: GPIO1
   rx_pin: GPIO3
-  baud_rate: 115200
+  baud_rate: 9600
   debug:
     direction: BOTH
     dummy_receiver: false
