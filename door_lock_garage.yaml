@@ -1,7 +1,7 @@
 substitutions:
   board_name: 'door_lock_garage'
   static_ip: '192.168.0.192'
-  pulse_time: '1200ms'
+  pulse_time: '800ms'
 
 esphome:
   name: ${board_name}
@@ -51,13 +51,13 @@ lock:
     optimistic: true
     lock_action:
       - switch.turn_off: relay_open
-      - delay: 100ms
+      - delay: 250ms
       - switch.turn_on: relay_close
       - delay: ${pulse_time}
       - switch.turn_off: relay_close
     unlock_action:
       - switch.turn_off: relay_close
-      - delay: 100ms
+      - delay: 250ms
       - switch.turn_on: relay_open
       - delay: ${pulse_time}
       - switch.turn_off: relay_open
