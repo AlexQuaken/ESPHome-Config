@@ -54,6 +54,24 @@ switch:
     turn_on_action:  { uart.write: [0xA0, 0x02, 0x01, 0xA3] }
     turn_off_action: { uart.write: [0xA0, 0x02, 0x00, 0xA2] }
 
+# Проба: на части ревизий этой платы реле висят прямо на ножках ESP-01.
+# inverted + ALWAYS_OFF держат на пинах высокий уровень в покое,
+# иначе GPIO0 в нуле уведет модуль в загрузчик при следующем старте.
+  - platform: gpio
+    name: "${board_name}_gpio0_probe"
+    id: gpio0_probe
+    pin:
+      number: GPIO0
+      inverted: true
+    restore_mode: ALWAYS_OFF
+  - platform: gpio
+    name: "${board_name}_gpio2_probe"
+    id: gpio2_probe
+    pin:
+      number: GPIO2
+      inverted: true
+    restore_mode: ALWAYS_OFF
+
 lock:
   - platform: template
     name: ${board_name}
