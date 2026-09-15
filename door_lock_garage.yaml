@@ -1,6 +1,6 @@
 substitutions:
   board_name: 'door_lock_garage'
-  static_ip: '192.168.0.175'
+  static_ip: '192.168.0.192'
   pulse_time: '1200ms'
 
 esphome:
@@ -20,11 +20,6 @@ packages:
 
 # UART занят разговором с бортовым STC15, он и щелкает реле.
 # Логи в порт слать нельзя: STC15 поймает мусор и откроет замок.
-# Адрес пока по DHCP: manual_ip из общего пакета убираем точечно,
-# сам пакет трогать нельзя, он общий для всех устройств.
-wifi:
-  manual_ip: !remove
-
 logger:
   baud_rate: 0
 
