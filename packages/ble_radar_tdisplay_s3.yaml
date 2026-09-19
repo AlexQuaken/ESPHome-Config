@@ -224,10 +224,11 @@ globals:
   - id: log_lines
     type: std::vector<std::string>
     restore_value: no
+  # В ландшафте по высоте 170 px помещается 17 строк по 9 px, в портрете было 34
   - id: log_max
     type: int
     restore_value: no
-    initial_value: '34'
+    initial_value: '17'
   - id: scroll_off
     type: float
     restore_value: no
@@ -438,9 +439,10 @@ display:
     model: T-DISPLAY-S3
     id: lcd
     spi_id: display_bus
-    # Плата повернута на 90 по часовой (стоит вертикально), поэтому 270 -> 0:
-    # it.get_width()=170, get_height()=320. Если картинка вверх ногами — ставить 180.
-    rotation: 0
+    # 19.09.2026 плата в гараже поставлена горизонтально, повернута на 90 влево
+    # относительно вертикального положения, поэтому 0 -> 270:
+    # it.get_width()=320, get_height()=170. Если картинка вверх ногами — ставить 90.
+    rotation: 270
     # В модели по умолчанию 10 МГц: кадр 320x170x16 бит по 8 линиям это ~11 мс
     # только на шину, на 20 МГц уже ~5.4 мс. Выше не гоним: у ST7789 в режиме
     # 8080 цикл записи по спеке 66 нс, то есть около 15 МГц, 20 и так с запасом
@@ -471,12 +473,13 @@ display:
         // Две карточки одна над другой: часы сверху, минуты снизу. Линия по
         // середине карточки рисуется ПОСЛЕ цифр и режет их пополам — именно она
         // делает вид перекидного табло, без нее это просто крупный текст.
-        const int CARD_X = 8;
-        const int CARD_W = W - 16;
-        const int CARD_H = 128;
-        const int CARD1_Y = 16;
-        const int CARD2_Y = CARD1_Y + CARD_H + 8;
-        const int CX = W / 2;
+        // Ландшафт 320x170: часы и минуты рядом. В портрете они стояли друг над
+        // другом, и от той разметки тут не осталось ничего, кроме высоты цифр.
+        const int CARD_W = 150;
+        const int CARD_H = 118;
+        const int CARD_Y = 12;
+        const int CARD1_X = 6;
+        const int CARD2_X = CARD1_X + CARD_W + 8;
 
         // Скругление углов ступенькой: filled_rounded_rectangle в ядре 2026.8.0 нет,
         // а на карточке шириной 154 радиус в пять пикселей на глаз неотличим.
@@ -504,40 +507,42 @@ display:
         id(clk_key) = key;
         uint32_t t_draw0 = micros();
         it.fill(id(c_black));
-        card(CARD_X, CARD1_Y, CARD_W, CARD_H);
-        card(CARD_X, CARD2_Y, CARD_W, CARD_H);
+        card(CARD1_X, CARD_Y, CARD_W, CARD_H);
+        card(CARD2_X, CARD_Y, CARD_W, CARD_H);
 
+        int mid_y = CARD_Y + CARD_H / 2;
         if (tn.is_valid()) {
-          it.printf(CX, CARD1_Y + CARD_H / 2, id(f_clock), id(c_white), TextAlign::CENTER, "%02d", tn.hour);
-          it.printf(CX, CARD2_Y + CARD_H / 2, id(f_clock), id(c_white), TextAlign::CENTER, "%02d", tn.minute);
+          it.printf(CARD1_X + CARD_W / 2, mid_y, id(f_clock), id(c_white), TextAlign::CENTER, "%02d", tn.hour);
+          it.printf(CARD2_X + CARD_W / 2, mid_y, id(f_clock), id(c_white), TextAlign::CENTER, "%02d", tn.minute);
         } else {
-          it.printf(CX, CARD1_Y + CARD_H / 2, id(f_clock), id(c_white), TextAlign::CENTER, "--");
-          it.printf(CX, CARD2_Y + CARD_H / 2, id(f_clock), id(c_white), TextAlign::CENTER, "--");
+          it.printf(CARD1_X + CARD_W / 2, mid_y, id(f_clock), id(c_white), TextAlign::CENTER, "--");
+          it.printf(CARD2_X + CARD_W / 2, mid_y, id(f_clock), id(c_white), TextAlign::CENTER, "--");
         }
 
-        it.filled_rectangle(CARD_X, CARD1_Y + CARD_H / 2 - 1, CARD_W, 3, id(c_black));
-        it.filled_rectangle(CARD_X, CARD2_Y + CARD_H / 2 - 1, CARD_W, 3, id(c_black));
+        it.filled_rectangle(CARD1_X, mid_y - 1, CARD_W, 3, id(c_black));
+        it.filled_rectangle(CARD2_X, mid_y - 1, CARD_W, 3, id(c_black));
 
-        // Секунды полоской под нижней карточкой: двоеточие тут мигать негде.
-        int tr_y = CARD2_Y + CARD_H + 6;
-        it.filled_rectangle(CARD_X, tr_y, CARD_W, 2, id(c_track));
+        // Секунды полоской во всю ширину под обеими карточками
+        int tr_y = CARD_Y + CARD_H + 6;
+        int tr_w = CARD2_X + CARD_W - CARD1_X;
+        it.filled_rectangle(CARD1_X, tr_y, tr_w, 2, id(c_track));
         if (tn.is_valid()) {
-          int sw = (CARD_W * (tn.second + 1)) / 60;
-          it.filled_rectangle(CARD_X, tr_y, sw, 2, id(c_white));
+          int sw = (tr_w * (tn.second + 1)) / 60;
+          it.filled_rectangle(CARD1_X, tr_y, sw, 2, id(c_white));
         }
 
         // Подвал: дата слева, нагрузка справа. CPU это доля кадра 20 мс,
         // занятая render-лямбдой, то есть render_us / 200 в процентах.
         int fy = H - 15;
         if (tn.is_valid()) {
-          it.printf(CARD_X, fy, id(f_label), id(c_foot), TextAlign::TOP_LEFT,
+          it.printf(CARD1_X, fy, id(f_label), id(c_foot), TextAlign::TOP_LEFT,
                     "%02d.%02d.%04d", tn.day_of_month, tn.month, tn.year);
         }
         // Перерисовка ровно одна в секунду, поэтому доля процессора это просто
         // длительность отрисовки, поделенная на секунду.
         int cpu = (int)(id(clk_draw_us) / 10000);
         if (cpu > 99) cpu = 99;
-        it.printf(W - CARD_X, fy, id(f_label), id(c_foot), TextAlign::TOP_RIGHT,
+        it.printf(W - CARD1_X, fy, id(f_label), id(c_foot), TextAlign::TOP_RIGHT,
                   "%d FPS %d%%", id(fps_value), cpu);
         id(clk_draw_us) = micros() - t_draw0;
 
