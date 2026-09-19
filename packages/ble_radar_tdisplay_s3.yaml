@@ -20,14 +20,6 @@ interval:
     then:
       - lambda: |-
           ESP_LOGI("hb", "up=%lus heap=%uKB fps=%d render=%ums dev=%u mode=%d", (unsigned long)(millis()/1000), (unsigned)(esp_get_free_heap_size()/1024), id(fps_value), (unsigned)(id(render_us)/1000), (unsigned)id(dev_addr).size(), id(display_mode));
-  - interval: 5s
-    then:
-      - lambda: |-
-          if (id(display_mode) == 0 && millis() > 60000) {
-            id(display_mode) = 2;                      // после загрузочного лога показываем часы
-            id(radar_mode_sw).publish_state(false);
-            ESP_LOGI("auto", "Auto-switched to clock mode after 60s");
-          }
   # interval target-tracker удалён — вся логика swap делается в crossing-блоке
   # основного render-интервала. target_switch_at используется как "ready-to-swap"
   # timestamp, мишень всегда видна (мигает при потере цели).
@@ -215,6 +207,16 @@ color:
     red: 45%
     green: 45%
     blue: 45%
+  # Цифры табло: ярко-зеленый
+  - id: c_flip
+    red: 0%
+    green: 100%
+    blue: 15%
+  # Часы подложкой под логом: бледно-фиолетовый, чтобы не спорить с текстом
+  - id: c_ghost
+    red: 28%
+    green: 18%
+    blue: 42%
 
 globals:
   - id: render_us
@@ -330,10 +332,12 @@ globals:
   - id: cache_radar_idx
     type: std::vector<int>
     restore_value: no
+  # Часы это режим по умолчанию сразу после старта. Лог показывается только по
+  # открытию двери на 30 секунд, радар только вручную кнопкой KEY.
   - id: display_mode
     type: int
     restore_value: no
-    initial_value: '0'
+    initial_value: '2'
   - id: frame_counter
     type: uint32_t
     restore_value: no
@@ -512,11 +516,11 @@ display:
 
         int mid_y = CARD_Y + CARD_H / 2;
         if (tn.is_valid()) {
-          it.printf(CARD1_X + CARD_W / 2, mid_y, id(f_clock), id(c_white), TextAlign::CENTER, "%02d", tn.hour);
-          it.printf(CARD2_X + CARD_W / 2, mid_y, id(f_clock), id(c_white), TextAlign::CENTER, "%02d", tn.minute);
+          it.printf(CARD1_X + CARD_W / 2, mid_y, id(f_clock), id(c_flip), TextAlign::CENTER, "%02d", tn.hour);
+          it.printf(CARD2_X + CARD_W / 2, mid_y, id(f_clock), id(c_flip), TextAlign::CENTER, "%02d", tn.minute);
         } else {
-          it.printf(CARD1_X + CARD_W / 2, mid_y, id(f_clock), id(c_white), TextAlign::CENTER, "--");
-          it.printf(CARD2_X + CARD_W / 2, mid_y, id(f_clock), id(c_white), TextAlign::CENTER, "--");
+          it.printf(CARD1_X + CARD_W / 2, mid_y, id(f_clock), id(c_flip), TextAlign::CENTER, "--");
+          it.printf(CARD2_X + CARD_W / 2, mid_y, id(f_clock), id(c_flip), TextAlign::CENTER, "--");
         }
 
         it.filled_rectangle(CARD1_X, mid_y - 1, CARD_W, 3, id(c_black));
@@ -528,7 +532,7 @@ display:
         it.filled_rectangle(CARD1_X, tr_y, tr_w, 2, id(c_track));
         if (tn.is_valid()) {
           int sw = (tr_w * (tn.second + 1)) / 60;
-          it.filled_rectangle(CARD1_X, tr_y, sw, 2, id(c_white));
+          it.filled_rectangle(CARD1_X, tr_y, sw, 2, id(c_flip));
         }
 
         // Подвал: дата слева, нагрузка справа. CPU это доля кадра 20 мс,
@@ -549,6 +553,15 @@ display:
       } else if (id(display_mode) == 0) {
         // ============ LOG CONSOLE MODE ============
         it.fill(id(c_black));
+        // Часы бледно-фиолетовой подложкой под текстом лога: без карточек, только
+        // цифры, иначе заливка съест кадр (39 тысяч попиксельных вызовов).
+        {
+          auto tw = id(homeassistant_time).now();
+          if (tw.is_valid()) {
+            it.printf(W / 2 - 78, H / 2, id(f_clock), id(c_ghost), TextAlign::CENTER, "%02d", tw.hour);
+            it.printf(W / 2 + 78, H / 2, id(f_clock), id(c_ghost), TextAlign::CENTER, "%02d", tw.minute);
+          }
+        }
         const int LINE_H = 9;
         const int FRAME_MS = 16;
         const int GAP = 40;
