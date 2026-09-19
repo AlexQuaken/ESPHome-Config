@@ -10,8 +10,33 @@
 # 0 лог, 1 BLE-радар, 2 часы. После загрузочного лога плата уходит в часы.
 substitutions:
   board_name: 't-display-s3-23'
-  static_ip: '192.168.0.218'
+  static_ip: '192.168.17.218'
   number: '21'
+
+# Переезд в гараж 2, 19.09.2026. Плата уходит на точку Garage54 (сегмент
+# 192.168.17.0/24), а не на гостевую SmartHome: гостевая скрытая, и при
+# fast_connect: false из общего пакета ESPHome ее сканированием не найдет.
+# Плюс единственный клиент гостевой это шлюз-динамик 192.168.18.113, на котором
+# держится вся озвучка гаража, и трогать ту сеть незачем.
+#
+# Блок ниже перебивает значения из packages/1wifi_api_ota_logger.yaml: там
+# прописаны домашний SSID и шлюз 192.168.0.1, с которыми плата в гараже
+# ассоциировалась бы и тут же пропадала.
+#
+# Из дома плата доступна через туннель, как и оба гаражных шлюза. mDNS туда не
+# ходит, поэтому в панели ESPHome она будет числиться офлайн, а OTA давать
+# явным адресом: esphome upload --device 192.168.17.218
+wifi:
+  networks:
+    ssid: Garage54
+    password: !secret garage_wifipwd
+  manual_ip:
+    static_ip: ${static_ip}
+    gateway: 192.168.17.1
+    subnet: 255.255.255.0
+    # Первым роутер гаража: домашний DNS живет только пока стоит туннель
+    dns1: 192.168.17.1
+    dns2: 192.168.0.7
 
 esphome:
   name: ${board_name}
@@ -69,8 +94,9 @@ packages:
   ble_lila: !include packages/ble_lila.yaml
   ble_radar: !include packages/ble_radar_tdisplay_s3.yaml
 
-# Яркость экрана по датчику освещенности в кабинете (zigbee, Кабинет_illuminance =
-# sensor.0x04cf8cdf3c789feb_illuminance). Темно, значит 30%, светло, значит 100%.
+# Яркость экрана по датчику освещенности гаража 2 (sensor.garage2_illuminance).
+# Темно, значит 30%, светло, значит 100%. До переезда 19.09.2026 тут был
+# кабинетный датчик, после переезда он к этой плате отношения не имеет.
 # Ночного гашения по расписанию нет, экран не выключается совсем.
 #
 # Значение приходит из HA, но решение принимает сама плата: пришла новая цифра,
@@ -85,7 +111,7 @@ packages:
 sensor:
   - platform: homeassistant
     id: kabinet_lux
-    entity_id: sensor.0x04cf8cdf3c789feb_illuminance
+    entity_id: sensor.garage2_illuminance
     internal: true
     on_value:
       then:
