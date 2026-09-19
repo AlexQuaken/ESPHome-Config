@@ -7,7 +7,11 @@
 # через ESP-IDF toolchain, и TFT_eSPI под ним не компилируется.
 #
 # Кнопки на плате: BOOT=GPIO0, KEY=GPIO14 — KEY листает режимы по кругу:
-# 0 лог, 1 BLE-радар, 2 часы. После загрузочного лога плата уходит в часы.
+# 0 лог, 1 BLE-радар, 2 часы.
+#
+# Часы это режим по умолчанию и постоянный. Лог сам показывается на 30 секунд
+# при открытии двери гаража, с часами бледно-фиолетовой подложкой, и возвращается
+# в часы. Радар автоматически не показывается вовсе, только кнопкой.
 substitutions:
   board_name: 't-display-s3-23'
   static_ip: '192.168.17.218'
@@ -84,6 +88,36 @@ binary_sensor:
             // 0 лог -> 1 радар -> 2 часы -> снова лог
             id(display_mode) = (id(display_mode) + 1) % 3;
             id(radar_mode_sw).publish_state(id(display_mode) == 1);
+
+  # Дверь гаража приезжает из HA. Решение принимает сама плата, отдельной
+  # автоматизации в HA под это нет: меньше звеньев, которые могут отвалиться.
+  - platform: homeassistant
+    id: garage2_door_remote
+    entity_id: binary_sensor.garage2_door
+    internal: true
+    on_press:
+      then:
+        - script.execute: show_log_burst
+
+script:
+  # Открылась дверь: показываем лог на 30 секунд и возвращаемся в часы.
+  # mode: restart — если дверь открыли снова, окно начинается заново, а не
+  # копится вторым прогоном поверх первого.
+  - id: show_log_burst
+    mode: restart
+    then:
+      - lambda: |-
+          auto t = id(homeassistant_time).now();
+          char b[48];
+          if (t.is_valid())
+            snprintf(b, sizeof(b), "%02d:%02d:%02d DOOR OPEN", t.hour, t.minute, t.second);
+          else
+            snprintf(b, sizeof(b), "DOOR OPEN");
+          id(log_lines).push_back(std::string(b));
+          id(display_mode) = 0;
+          id(radar_mode_sw).publish_state(false);
+      - delay: 30s
+      - lambda: 'id(display_mode) = 2;'
 
 packages:
   device_base: !include packages/1wifi_api_ota_logger.yaml
