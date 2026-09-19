@@ -24,9 +24,9 @@ interval:
     then:
       - lambda: |-
           if (id(display_mode) == 0 && millis() > 60000) {
-            id(display_mode) = 1;
-            id(radar_mode_sw).publish_state(true);
-            ESP_LOGI("auto", "Auto-switched to radar mode after 60s");
+            id(display_mode) = 2;                      // после загрузочного лога показываем часы
+            id(radar_mode_sw).publish_state(false);
+            ESP_LOGI("auto", "Auto-switched to clock mode after 60s");
           }
   # interval target-tracker удалён — вся логика swap делается в crossing-блоке
   # основного render-интервала. target_switch_at используется как "ready-to-swap"
@@ -152,7 +152,10 @@ switch:
     name: ${board_name} Radar Mode
     id: radar_mode_sw
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
+    # DISABLED, а не RESTORE_DEFAULT_OFF: восстановление подтягивало сохраненное
+    # "включено" и выставляло режим 1 прямо на старте, из-за чего автопереход
+    # в часы (он срабатывает только из режима 0) не случался никогда.
+    restore_mode: DISABLED
     turn_on_action:
       - lambda: 'id(display_mode) = 1;'
     turn_off_action:
@@ -164,6 +167,19 @@ font:
     size: 9
     bpp: 1
     glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
+
+  # Крупные цифры для режима часов. bpp 4 обязателен: на единице края цифры
+  # такого размера получаются рваными. Глифов всего 11, поэтому лишнего веса нет.
+  - file: "fonts/ArchivoBlack-Regular.ttf"
+    id: f_clock
+    size: 110
+    bpp: 4
+    glyphs: '0123456789-'
+  - file: "fonts/ArchivoBlack-Regular.ttf"
+    id: f_label
+    size: 13
+    bpp: 4
+    glyphs: '0123456789.:% FPS'
 
 color:
   - id: c_green
@@ -182,6 +198,23 @@ color:
     red: 0%
     green: 0%
     blue: 0%
+  # Палитра режима часов: белые цифры на почти черной карточке
+  - id: c_white
+    red: 100%
+    green: 100%
+    blue: 100%
+  - id: c_card
+    red: 9%
+    green: 9%
+    blue: 9%
+  - id: c_track
+    red: 25%
+    green: 25%
+    blue: 25%
+  - id: c_foot
+    red: 45%
+    green: 45%
+    blue: 45%
 
 globals:
   - id: render_us
@@ -308,6 +341,19 @@ globals:
     type: int
     restore_value: no
     initial_value: '0'
+  # Ключ текущего кадра часов (час/минута/секунда) и длительность его отрисовки
+  - id: clk_key
+    type: uint32_t
+    restore_value: no
+    initial_value: '0xFFFFFFFF'
+  - id: clk_draw_us
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: last_mode
+    type: int
+    restore_value: no
+    initial_value: '-1'
 
 logger:
   level: DEBUG
@@ -402,6 +448,10 @@ display:
     # она сама занимает 20 мс (см. render=NNms в heartbeat-логе).
     data_rate: 20MHz
     update_interval: 20ms
+    # Автоочистка выключена намеренно: в режиме часов кадр перерисовывается только
+    # когда сменилась секунда, а в остальные кадры буфер должен пережить обновление.
+    # Ценой этого каждая ветка обязана сама залить фон, иначе останется прошлый кадр.
+    auto_clear_enabled: false
     lambda: |-
       uint32_t t_render0 = micros();
       id(frame_counter)++;
@@ -409,8 +459,91 @@ display:
       int W = it.get_width();
       int H = it.get_height();
 
-      if (id(display_mode) == 0) {
+      // Смена режима обнуляет ключ часов, иначе после возврата из радара
+      // кадр не перерисуется и на экране останется чужая картинка.
+      if (id(display_mode) != id(last_mode)) {
+        id(last_mode) = id(display_mode);
+        id(clk_key) = 0xFFFFFFFFu;
+      }
+
+      if (id(display_mode) == 2) {
+        // ============ FLIP CLOCK MODE ============
+        // Две карточки одна над другой: часы сверху, минуты снизу. Линия по
+        // середине карточки рисуется ПОСЛЕ цифр и режет их пополам — именно она
+        // делает вид перекидного табло, без нее это просто крупный текст.
+        const int CARD_X = 8;
+        const int CARD_W = W - 16;
+        const int CARD_H = 128;
+        const int CARD1_Y = 16;
+        const int CARD2_Y = CARD1_Y + CARD_H + 8;
+        const int CX = W / 2;
+
+        // Скругление углов ступенькой: filled_rounded_rectangle в ядре 2026.8.0 нет,
+        // а на карточке шириной 154 радиус в пять пикселей на глаз неотличим.
+        auto card = [&](int x, int y, int w, int h) {
+          it.filled_rectangle(x, y, w, h, id(c_card));
+          for (int i = 0; i < 5; i++) {
+            int d = 5 - i;
+            it.horizontal_line(x, y + i, d, id(c_black));
+            it.horizontal_line(x + w - d, y + i, d, id(c_black));
+            it.horizontal_line(x, y + h - 1 - i, d, id(c_black));
+            it.horizontal_line(x + w - d, y + h - 1 - i, d, id(c_black));
+          }
+        };
+
+        auto tn = id(homeassistant_time).now();
+        // Две сплошные карточки это 39 тысяч попиксельных вызовов, 57 мс на кадр.
+        // Раз в секунду это ничто, пятьдесят раз в секунду это вся загрузка платы.
+        uint32_t key = tn.is_valid()
+            ? (uint32_t)(tn.hour * 10000 + tn.minute * 100 + tn.second)
+            : 0xFFFFFFFEu;
+        if (key == id(clk_key)) {
+          id(render_us) = micros() - t_render0;
+          return;
+        }
+        id(clk_key) = key;
+        uint32_t t_draw0 = micros();
+        it.fill(id(c_black));
+        card(CARD_X, CARD1_Y, CARD_W, CARD_H);
+        card(CARD_X, CARD2_Y, CARD_W, CARD_H);
+
+        if (tn.is_valid()) {
+          it.printf(CX, CARD1_Y + CARD_H / 2, id(f_clock), id(c_white), TextAlign::CENTER, "%02d", tn.hour);
+          it.printf(CX, CARD2_Y + CARD_H / 2, id(f_clock), id(c_white), TextAlign::CENTER, "%02d", tn.minute);
+        } else {
+          it.printf(CX, CARD1_Y + CARD_H / 2, id(f_clock), id(c_white), TextAlign::CENTER, "--");
+          it.printf(CX, CARD2_Y + CARD_H / 2, id(f_clock), id(c_white), TextAlign::CENTER, "--");
+        }
+
+        it.filled_rectangle(CARD_X, CARD1_Y + CARD_H / 2 - 1, CARD_W, 3, id(c_black));
+        it.filled_rectangle(CARD_X, CARD2_Y + CARD_H / 2 - 1, CARD_W, 3, id(c_black));
+
+        // Секунды полоской под нижней карточкой: двоеточие тут мигать негде.
+        int tr_y = CARD2_Y + CARD_H + 6;
+        it.filled_rectangle(CARD_X, tr_y, CARD_W, 2, id(c_track));
+        if (tn.is_valid()) {
+          int sw = (CARD_W * (tn.second + 1)) / 60;
+          it.filled_rectangle(CARD_X, tr_y, sw, 2, id(c_white));
+        }
+
+        // Подвал: дата слева, нагрузка справа. CPU это доля кадра 20 мс,
+        // занятая render-лямбдой, то есть render_us / 200 в процентах.
+        int fy = H - 15;
+        if (tn.is_valid()) {
+          it.printf(CARD_X, fy, id(f_label), id(c_foot), TextAlign::TOP_LEFT,
+                    "%02d.%02d.%04d", tn.day_of_month, tn.month, tn.year);
+        }
+        // Перерисовка ровно одна в секунду, поэтому доля процессора это просто
+        // длительность отрисовки, поделенная на секунду.
+        int cpu = (int)(id(clk_draw_us) / 10000);
+        if (cpu > 99) cpu = 99;
+        it.printf(W - CARD_X, fy, id(f_label), id(c_foot), TextAlign::TOP_RIGHT,
+                  "%d FPS %d%%", id(fps_value), cpu);
+        id(clk_draw_us) = micros() - t_draw0;
+
+      } else if (id(display_mode) == 0) {
         // ============ LOG CONSOLE MODE ============
+        it.fill(id(c_black));
         const int LINE_H = 9;
         const int FRAME_MS = 16;
         const int GAP = 40;
@@ -477,6 +610,7 @@ display:
         it.printf(W, 0, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", clk);
       } else {
         // ============ BLE RADAR MODE ============
+        it.fill(id(c_black));
         const int cx = 85;
         const int cy = 88;
         const int max_r = 70;
