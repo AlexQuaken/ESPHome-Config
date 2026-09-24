@@ -68,7 +68,7 @@ api:
         - lambda: |-
             auto &v = id(log_lines);
             std::string s = line;
-            if (s.size() > 94) s = s.substr(0, 94);
+            if (s.size() > 78) s = s.substr(0, 78);
             v.push_back(s);
             while ((int)v.size() > id(log_max)) v.erase(v.begin());
         - component.update: lcd
@@ -318,10 +318,11 @@ button:
     name: ${board_name} Safe Mode (OTA)
 
 font:
-  # X11 misc-fixed 5x7 (растровый BDF, заглавные 6 px). Строка 8 px:
-  # 96 знаков x 34 строки на 480x272. Еще мельче есть fonts/4x6.bdf
-  - file: "fonts/5x7.bdf"
+  # Atari Portfolio 6x8 из пака int10h (выбран по превью из семи шрифтов 5-6x8).
+  # В пиксель попадает только при size: 8. Строка 8 px: 80 знаков x 34 строки
+  - file: "fonts/Px437_Portfolio_6x8.ttf"
     id: f_console
+    size: 8
     bpp: 1
     glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
 
@@ -464,7 +465,7 @@ display:
       if (id(display_mode) == 0) {
         // ===== LOG CONSOLE =====
         const int LINE_H = 8;
-        const int CHAR_W = 5;
+        const int CHAR_W = 6;
         const int FRAME_MS = 16;
         const int GAP = 50;
         const int CLOCK_GAP = 6;
@@ -530,7 +531,7 @@ display:
       } else {
         // ===== BLE RADAR =====
         // Круг в левом квадрате 272x272, справа таблица 208 px.
-        // max_r 132: подписи в углах шрифтом 5x7 до круга не достают (проверено
+        // max_r 132: подписи в углах шрифтом 6x8 до круга не достают (проверено
         // по дальним углам строк часов, даты, аптайма и памяти).
         const int cx = 136;
         const int cy = 136;
@@ -638,8 +639,8 @@ display:
             int rssi_val = (i < rssis.size()) ? rssis[i] : -99;
             char rssi_s[12];
             snprintf(rssi_s, sizeof(rssi_s), "R:%d", rssi_val);
-            int name_w = (int)strlen(label) * 5;
-            int rssi_w = (int)strlen(rssi_s) * 5;
+            int name_w = (int)strlen(label) * 6;
+            int rssi_w = (int)strlen(rssi_s) * 6;
             int max_w = (name_w > rssi_w) ? name_w : rssi_w;
             int lx = (dx > cx) ? dx + dot_r + 6 : dx - dot_r - 6 - max_w;
             int ly = dy - 8;
@@ -649,18 +650,18 @@ display:
         }
 
         // ===== Sidebar (x=272..479) =====
-        // SCAN[272..300] | NAME[300..452] | RSSI[452..479], 27 строк по 9 px
+        // SCAN[272..302] | NAME[302..450] | RSSI[450..479], 27 строк по 9 px
         const int sb_x = 272;
-        const int CW = 5;
+        const int CW = 6;
         const int row_h = 9;
         const int sb_y_start = 12;
         const int visible_rows = 27;
         const int sb_y_end = sb_y_start + visible_rows * row_h;  // 255
-        const int col1_x = sb_x + 28;   // 300
-        const int col2_x = sb_x + 180;  // 452
-        const int scan_cell_l = sb_x;       const int scan_cell_w = col1_x - sb_x;       // 28
-        const int name_cell_l = col1_x;     const int name_cell_w = col2_x - col1_x;     // 152
-        const int rssi_cell_l = col2_x;     const int rssi_cell_w = W - col2_x;          // 28
+        const int col1_x = sb_x + 30;   // 302
+        const int col2_x = sb_x + 178;  // 450
+        const int scan_cell_l = sb_x;       const int scan_cell_w = col1_x - sb_x;       // 30
+        const int name_cell_l = col1_x;     const int name_cell_w = col2_x - col1_x;     // 148
+        const int rssi_cell_l = col2_x;     const int rssi_cell_w = W - col2_x;          // 30
 
         const int hdr_w = 4 * CW;
         it.printf(scan_cell_l + (scan_cell_w - hdr_w) / 2, 2, id(f_console), id(c_green), "SCAN");
@@ -685,7 +686,7 @@ display:
           int scan_w = 4 * CW;
           it.printf(scan_cell_l + (scan_cell_w - scan_w) / 2, row_y, id(f_console), id(c_green), "%s", sc);
 
-          // NAME: 29 знаков влезает, длиннее идет бегущей строкой
+          // NAME: 23 знака влезает, длиннее идет бегущей строкой
           int name_x = name_cell_l + 4;
           int name_max_chars = (name_cell_w - 8) / CW;
           if ((int)nm.size() <= name_max_chars) {
@@ -700,7 +701,7 @@ display:
             it.end_clipping();
           }
 
-          // RSSI без " dB", в 28 px влезает только число
+          // RSSI без " dB", в 30 px влезает только число
           char rb[8];
           snprintf(rb, sizeof(rb), "%d", r0);
           int rssi_w = (int)strlen(rb) * CW;
