@@ -1,6 +1,6 @@
 # Guition JC4827W543C: дашборд гаража в стиле exceltable.com, шаблон 002
 # «KPI дашборд с ярким дизайном» (темные панели, неоновая обводка, градиент
-# оранжевый -> малиновый). Пока на тестовых данных, близких к реальным.
+# оранжевый -> малиновый). Живые данные гаража из HA.
 #
 # Это вторая прошивка для той же платы, что и esp32-s3-disp.yaml (лог-консоль
 # и BLE-радар). Имя и адрес те же, чтобы запись в HA не менялась. Какая стоит
@@ -12,7 +12,15 @@
 # Радар и график с заливкой рисуются лямбдой на холстах (скрипт draw_charts):
 # штатное lvgl.canvas.draw_polygon в LVGL 9 рисует только контур.
 #
-# Что где и откуда потом возьмутся данные (домашний гараж):
+# Откуда данные. Текущие значения плата берет сама (sensor/text_sensor/
+# binary_sensor platform homeassistant) и раз в 2 секунды обновляет экран
+# скриптом refresh, меняя только то, что изменилось. Историю (24 часа мощности
+# и 12 месяцев энергии) считает HA из долгосрочной статистики и отдает
+# действием set_history: автоматизация garage_dash_push_history в
+# HomeAssistant/automations/misc/garage_dash.yaml, раз в 10 минут и при
+# подключении платы.
+#
+# Что где:
 #   синяя плашка   мощность гаража сейчас    sensor.schetchik_garazh_power
 #   СЕГОДНЯ        розетки / свет / зарядка  sensor.garage_*_daily
 #   ЗАРЯДКА АВТО   сессия ночной зарядки     sensor.garage_*_charge_session
@@ -20,10 +28,10 @@
 #   фишки          ворота, охрана, свет, движение
 #   СЕНТЯБРЬ       гараж за месяц            sensor.garage_*_monthly
 #   кольцевая      доля линий за месяц       sensor.garage_*_monthly
-#   СЕТЬ (радар)   напряжение, частота, cos, ток, нагрев, утечка (ATORCH)
+#   СЕТЬ (радар)   напряжение, частота, cos, ток (ATORCH), нагрев розетки, плата счетчика
 #   КЛИМАТ         температура, влажность, давление, нагрев розетки, батарейки
-#   столбики       гараж по месяцам          статистика sensor.schetchik_garazh_energy
-#   график         мощность за сутки         история sensor.schetchik_garazh_power
+#   столбики       гараж по месяцам          статистика sensor.schetchik_garazh_energy, change
+#   график         мощность за сутки         статистика sensor.schetchik_garazh_power, mean
 substitutions:
   board_name: 'esp32-s3-disp'
   static_ip: '192.168.0.221'
@@ -37,6 +45,7 @@ esphome:
       then:
         - delay: 500ms
         - script.execute: draw_charts
+        - script.execute: refresh
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -68,6 +77,22 @@ wifi:
 captive_portal:
 
 api:
+  actions:
+    # История от HA: power 24 часовых средних, кВт; months 12 месяцев, кВт·ч;
+    # first_hour местный час первого часового ведра.
+    - action: set_history
+      variables:
+        power: float[]
+        months: float[]
+        first_hour: int
+      then:
+        - lambda: |-
+            id(g_power) = power;
+            id(g_months) = months;
+            id(g_first_hour) = first_hour;
+            ESP_LOGI("dash", "history: %u hours, %u months", (unsigned) power.size(), (unsigned) months.size());
+        - script.execute: draw_charts
+        - script.execute: refresh
 
 ota:
   platform: esphome
@@ -130,6 +155,75 @@ touchscreen:
       number: GPIO3
       ignore_strapping_warning: true
     reset_pin: GPIO38
+
+globals:
+  - id: g_power
+    type: std::vector<float>
+    restore_value: no
+  - id: g_months
+    type: std::vector<float>
+    restore_value: no
+  - id: g_first_hour
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: g_radar
+    type: std::vector<float>
+    restore_value: no
+    initial_value: 'std::vector<float>(6, 0.0f)'
+  - id: g_tick
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+time:
+  - platform: homeassistant
+    id: ha_time
+
+sensor:
+  - {platform: homeassistant, internal: true, id: ha_p_now, entity_id: sensor.schetchik_garazh_power}
+  - {platform: homeassistant, internal: true, id: ha_volt, entity_id: sensor.schetchik_garazh_voltage}
+  - {platform: homeassistant, internal: true, id: ha_freq, entity_id: sensor.schetchik_garazh_frequency}
+  - {platform: homeassistant, internal: true, id: ha_pf, entity_id: sensor.schetchik_garazh_power_factor}
+  - {platform: homeassistant, internal: true, id: ha_cur, entity_id: sensor.schetchik_garazh_current}
+  - {platform: homeassistant, internal: true, id: ha_cpu_t, entity_id: sensor.schetchik_garazh_cpu_temperature}
+  - {platform: homeassistant, internal: true, id: ha_sock_t, entity_id: sensor.rozetki_garazh_temperature}
+  - {platform: homeassistant, internal: true, id: ha_p_sock, entity_id: sensor.rozetki_garazh_power}
+  - {platform: homeassistant, internal: true, id: ha_p_chg, entity_id: sensor.zariadka_avto_power}
+  - {platform: homeassistant, internal: true, id: ha_d_sock, entity_id: sensor.garage_sockets_daily}
+  - {platform: homeassistant, internal: true, id: ha_d_light, entity_id: sensor.garage_light_daily}
+  - {platform: homeassistant, internal: true, id: ha_d_chg, entity_id: sensor.garage_charger_daily}
+  - {platform: homeassistant, internal: true, id: ha_m_sock, entity_id: sensor.garage_sockets_monthly}
+  - {platform: homeassistant, internal: true, id: ha_m_light, entity_id: sensor.garage_light_monthly}
+  - {platform: homeassistant, internal: true, id: ha_m_chg, entity_id: sensor.garage_charger_monthly}
+  - {platform: homeassistant, internal: true, id: ha_s_sock, entity_id: sensor.garage_sockets_charge_session}
+  - {platform: homeassistant, internal: true, id: ha_s_chg, entity_id: sensor.garage_charger_charge_session}
+  - {platform: homeassistant, internal: true, id: ha_temp, entity_id: sensor.garage_air_temperature}
+  - {platform: homeassistant, internal: true, id: ha_hum, entity_id: sensor.garage_humidity}
+  - {platform: homeassistant, internal: true, id: ha_press, entity_id: sensor.garage_pressure}
+  - {platform: homeassistant, internal: true, id: ha_bat1, entity_id: sensor.garage_climate_battery}
+  - {platform: homeassistant, internal: true, id: ha_bat2, entity_id: sensor.garage_gate_battery}
+  - {platform: homeassistant, internal: true, id: ha_bat3, entity_id: sensor.garage_motion_battery}
+
+text_sensor:
+  - {platform: homeassistant, internal: true, id: ha_alarm, entity_id: alarm_control_panel.shliuz_4_alarm}
+  - {platform: homeassistant, internal: true, id: ha_light, entity_id: switch.svet_garazh}
+  - {platform: homeassistant, internal: true, id: ha_line, entity_id: input_select.garage_charge_line}
+  - {platform: homeassistant, internal: true, id: ha_chg_on, entity_id: input_boolean.garage_charge_enabled}
+  - {platform: homeassistant, internal: true, id: ha_chg_start, entity_id: input_datetime.garage_charge_start}
+  - {platform: homeassistant, internal: true, id: ha_chg_end, entity_id: input_datetime.garage_charge_end}
+
+binary_sensor:
+  - {platform: homeassistant, internal: true, id: ha_gate, entity_id: binary_sensor.garage_gate}
+  - {platform: homeassistant, internal: true, id: ha_motion, entity_id: binary_sensor.garage_motion_any}
+  # по нему HA понимает, что плата вышла на связь, и сразу шлет историю
+  - platform: status
+    name: Status
+
+interval:
+  - interval: 2s
+    then:
+      - script.execute: refresh
 
 font:
   # Пиксельные шрифты из пака int10h (PxPlus = с кириллицей), bpp 1 без
@@ -195,7 +289,7 @@ script:
             lv_layer_t l; lv_canvas_init_layer(cv, &l);
             const float cx = 62, cy = 44, R = 28;
             const int N = 6;
-            const float v[N] = {0.95f, 0.98f, 0.48f, 0.62f, 0.45f, 0.12f};   // тест: U, f, cos, I, нагрев, утечка
+            const auto &v = id(g_radar);   // 0..1: U, f, cos, I, нагрев розетки, плата счетчика
             float ax[N], ay[N];
             for (int i = 0; i < N; i++) {
               float a = -M_PI / 2 + i * 2 * M_PI / N;
@@ -231,25 +325,195 @@ script:
             lv_obj_t *cv = (lv_obj_t *) id(area_cv);
             lv_canvas_fill_bg(cv, lv_color_hex(0x0c1230), LV_OPA_COVER);
             lv_layer_t l; lv_canvas_init_layer(cv, &l);
-            const int N = 13;   // 0..24 часа через 2, ночью зарядка авто 23-07
-            const float v[N] = {2.17f, 2.17f, 2.17f, 2.12f, 0.06f, 0.15f, 0.40f, 0.10f, 0.12f, 0.45f, 0.70f, 0.30f, 2.17f};  // тест, кВт
-            const float x0 = 4, dx = 18, bot = 58, top = 6, vmax = 2.5f;
+            const auto &v = id(g_power);   // кВт, 24 часовых средних от HA
+            const int N = v.size();
+            const float x0 = 4, bot = 58, top = 6;
+            const float dx = N > 1 ? 216.0f / (N - 1) : 0;
+            float vmax = 0.5f;
+            for (float x : v) vmax = std::max(vmax, x * 1.15f);
             for (int g = 1; g <= 4; g++) {
               float y = bot - (bot - top) * g / 5;
               line(&l, 0, y, 224, y, 0x26325f, 1, LV_OPA_60);
             }
-            float px[N], py[N];
+            std::vector<float> px(N), py(N);
             for (int i = 0; i < N; i++) { px[i] = x0 + i * dx; py[i] = bot - (bot - top) * v[i] / vmax; }
             for (int i = 0; i + 1 < N; i++) {
               tri(&l, px[i], py[i], px[i + 1], py[i + 1], px[i], bot, 0x9b6bff, LV_OPA_90, 0x2a1a70, LV_OPA_50);
               tri(&l, px[i + 1], py[i + 1], px[i + 1], bot, px[i], bot, 0x9b6bff, LV_OPA_90, 0x2a1a70, LV_OPA_50);
             }
             for (int i = 0; i + 1 < N; i++) line(&l, px[i], py[i], px[i + 1], py[i + 1], 0xc9b8ff, 2, LV_OPA_COVER);
-            for (int k : {0, 6, 10}) {
-              line(&l, px[k], py[k], px[k], bot, 0xc9b8ff, 1, LV_OPA_50);
-              dot(&l, px[k], py[k], 3, 0x8a5cff);
+            // подписи: максимум и последний час; на подложке, чтобы сетку не было видно под текстом
+            lv_obj_t *lab[2] = {(lv_obj_t *) id(l_amax), (lv_obj_t *) id(l_anow)};
+            int imax = 0;
+            for (int i = 1; i < N; i++) if (v[i] > v[imax]) imax = i;
+            int idx[2] = {imax, N - 1};
+            for (int k = 0; k < 2; k++) {
+              if (N < 2 || (k == 0 && imax == N - 1)) { lv_label_set_text(lab[k], ""); continue; }
+              int i = idx[k];
+              line(&l, px[i], py[i], px[i], bot, 0xc9b8ff, 1, LV_OPA_50);
+              dot(&l, px[i], py[i], 3, 0x8a5cff);
+              char b[16];
+              snprintf(b, sizeof b, v[i] >= 1 ? "%.2f" : "%.0f", v[i] >= 1 ? v[i] : v[i] * 1000);
+              lv_label_set_text(lab[k], b);
+              int lx = 6 + (int) px[i] - 14, ly = 20 + (int) py[i] - 13;
+              lx = std::max(0, std::min(lx, 236 - 30));
+              ly = std::max(16, ly);
+              lv_obj_set_pos(lab[k], lx, ly);
+            }
+            // часы под графиком: каждые 4 часа от первого ведра и конец последнего
+            lv_obj_t *hl[7] = {(lv_obj_t *) id(h0), (lv_obj_t *) id(h1), (lv_obj_t *) id(h2), (lv_obj_t *) id(h3),
+                               (lv_obj_t *) id(h4), (lv_obj_t *) id(h5), (lv_obj_t *) id(h6)};
+            for (int k = 0; k < 7; k++) {
+              int i = k < 6 ? k * 4 : N - 1;
+              if (N < 2 || i >= N) { lv_label_set_text(hl[k], ""); continue; }
+              char b[8];
+              snprintf(b, sizeof b, "%d", (id(g_first_hour) + i + (k == 6 ? 1 : 0)) % 24);
+              lv_label_set_text(hl[k], b);
+              lv_obj_set_x(hl[k], 6 + (int) px[i] - 10);
             }
             lv_canvas_finish_layer(cv, &l);
+          }
+
+  # Раскладывает текущие значения по виджетам. Текст и значения ставятся только
+  # при изменении, иначе LVGL перерисовывал бы панели каждые 2 секунды.
+  - id: refresh
+    then:
+      - lambda: |-
+          auto set = [](lv_obj_t *o, const char *t) {
+            if (strcmp(lv_label_get_text(o), t) != 0) lv_label_set_text(o, t);
+          };
+          auto num = [&](lv_obj_t *o, const char *f, float v) {
+            char b[32];
+            if (std::isnan(v)) snprintf(b, sizeof b, "--"); else snprintf(b, sizeof b, f, v);
+            set(o, b);
+          };
+          auto bar = [](lv_obj_t *o, int32_t lo, int32_t hi, float v) {
+            int32_t x = std::isnan(v) ? lo : (int32_t) lroundf(v);
+            if (x < lo) x = lo;
+            if (x > hi) x = hi;
+            if (lv_bar_get_min_value(o) != lo || lv_bar_get_max_value(o) != hi) lv_bar_set_range(o, lo, hi);
+            if (lv_bar_get_value(o) != x) lv_bar_set_value(o, x, LV_ANIM_OFF);
+          };
+          auto chip = [](lv_obj_t *o, bool on, uint32_t c) {
+            lv_color_t bg = lv_color_hex(on ? c : 0x18224a);
+            lv_color_t fg = lv_color_hex(on ? 0xffffff : 0x8ea2d8);
+            if (!lv_color_eq(lv_obj_get_style_bg_color(o, LV_PART_MAIN), bg)) {
+              lv_obj_set_style_bg_color(o, bg, LV_PART_MAIN);
+              lv_obj_set_style_text_color(o, fg, LV_PART_MAIN);
+            }
+          };
+          auto z = [](float v) { return std::isnan(v) ? 0.0f : v; };
+
+          // ---- мощность сейчас
+          float p = id(ha_p_now).state;
+          if (!std::isnan(p) && p >= 1000) { num(((lv_obj_t *) id(l_pnow)), "%.2f", p / 1000); set(((lv_obj_t *) id(l_punit)), "кВт"); }
+          else { num(((lv_obj_t *) id(l_pnow)), "%.0f", p); set(((lv_obj_t *) id(l_punit)), "Вт"); }
+          bool on_sockets = id(ha_line).state == "Розетки гаража";
+          float p_line = on_sockets ? z(id(ha_p_sock).state) : z(id(ha_p_chg).state);
+          bool charging = p_line > 300;
+          set(((lv_obj_t *) id(l_psub)), charging ? "заряжается авто" : "потребление сейчас");
+
+          // ---- сегодня
+          float ds = id(ha_d_sock).state, dl = id(ha_d_light).state, dc = id(ha_d_chg).state;
+          num(((lv_obj_t *) id(l_d_sock)), "%.1f", ds);
+          num(((lv_obj_t *) id(l_d_light)), "%.1f", dl);
+          num(((lv_obj_t *) id(l_d_chg)), "%.1f", dc);
+          num(((lv_obj_t *) id(l_d_all)), "%.1f", z(ds) + z(dl) + z(dc));
+
+          // ---- зарядка авто: сессия выбранной линии и окно
+          float sess = on_sockets ? id(ha_s_sock).state : id(ha_s_chg).state;
+          char b[40];
+          if (std::isnan(sess)) snprintf(b, sizeof b, "-- кВт·ч"); else snprintf(b, sizeof b, "%.1f кВт·ч", sess);
+          set(((lv_obj_t *) id(l_sess)), b);
+          int sh = atoi(id(ha_chg_start).state.c_str()), sm = 0, eh = atoi(id(ha_chg_end).state.c_str()), em = 0;
+          sscanf(id(ha_chg_start).state.c_str(), "%d:%d", &sh, &sm);
+          sscanf(id(ha_chg_end).state.c_str(), "%d:%d", &eh, &em);
+          snprintf(b, sizeof b, "%02d-%02d", sh, eh);
+          set(((lv_obj_t *) id(l_win)), b);
+          int pct = 0;
+          auto now = id(ha_time).now();
+          if (now.is_valid() && id(ha_chg_on).state == "on") {
+            int s0 = sh * 60 + sm, e0 = eh * 60 + em, n0 = now.hour * 60 + now.minute;
+            int len = (e0 - s0 + 1440) % 1440, pos = (n0 - s0 + 1440) % 1440;
+            if (len > 0 && pos < len) pct = pos * 100 / len;
+          }
+          bar(((lv_obj_t *) id(b_win)), 0, 100, pct);
+          snprintf(b, sizeof b, id(ha_chg_on).state == "on" ? "%d%%" : "выкл", pct);
+          set(((lv_obj_t *) id(l_winpct)), b);
+
+          // ---- фишки
+          chip(((lv_obj_t *) id(c_gate)), id(ha_gate).has_state() && id(ha_gate).state, 0xff7a1a);
+          const std::string &al = id(ha_alarm).state;
+          bool armed = al.rfind("armed", 0) == 0, trig = al == "triggered";
+          chip(((lv_obj_t *) id(c_alarm)), armed || trig, trig ? 0xff2d55 : 0x1e6bff);
+          chip(((lv_obj_t *) id(c_light)), id(ha_light).state == "on", 0xd99a00);
+          chip(((lv_obj_t *) id(c_motion)), id(ha_motion).has_state() && id(ha_motion).state, 0xb45cff);
+
+          // ---- месяц и кольцевая
+          static const char *MON[12] = {"ЯНВАРЬ", "ФЕВРАЛЬ", "МАРТ", "АПРЕЛЬ", "МАЙ", "ИЮНЬ",
+                                        "ИЮЛЬ", "АВГУСТ", "СЕНТЯБРЬ", "ОКТЯБРЬ", "НОЯБРЬ", "ДЕКАБРЬ"};
+          if (now.is_valid()) set(((lv_obj_t *) id(l_month)), MON[now.month - 1]);
+          float ms = z(id(ha_m_sock).state), ml = z(id(ha_m_light).state), mc = z(id(ha_m_chg).state);
+          float mt = ms + ml + mc;
+          snprintf(b, sizeof b, "%.1f кВт·ч", mt); set(((lv_obj_t *) id(l_mtot)), b);
+          num(((lv_obj_t *) id(l_dtot)), mt >= 100 ? "%.0f" : "%.1f", mt);
+          float fr[3] = {mt > 0 ? ms / mt : 0, mt > 0 ? ml / mt : 0, mt > 0 ? mc / mt : 0};
+          lv_obj_t *arcs[3] = {((lv_obj_t *) id(a_sock)), ((lv_obj_t *) id(a_light)), ((lv_obj_t *) id(a_chg))};
+          lv_obj_t *pcts[3] = {((lv_obj_t *) id(l_pc_sock)), ((lv_obj_t *) id(l_pc_light)), ((lv_obj_t *) id(l_pc_chg))};
+          float a0 = 0;
+          for (int i = 0; i < 3; i++) {
+            float span = fr[i] * 360;
+            int st = (int) lroundf(a0), en = (int) lroundf(a0 + span) - (span > 6 ? 3 : 0);
+            if (span < 1) { st = 0; en = 0; }
+            if (lv_arc_get_bg_angle_start(arcs[i]) != st || lv_arc_get_bg_angle_end(arcs[i]) != en)
+              lv_arc_set_bg_angles(arcs[i], st, en);
+            a0 += span;
+            snprintf(b, sizeof b, "%.0f%%", fr[i] * 100); set(pcts[i], b);
+          }
+
+          // ---- сеть: радар раз в 10 секунд, подпись напряжения сразу
+          float U = id(ha_volt).state, F = id(ha_freq).state, PF = id(ha_pf).state, I = id(ha_cur).state;
+          snprintf(b, sizeof b, std::isnan(U) ? "-- В" : "%.0f В", U); set(((lv_obj_t *) id(l_volt)), b);
+          auto cl = [](float v) { return std::isnan(v) ? 0.0f : std::min(1.0f, std::max(0.05f, v)); };
+          std::vector<float> r = {cl((U - 200) / 50), cl((F - 49) / 2), cl(PF / 100), cl(I / 16),
+                                  cl(id(ha_sock_t).state / 60), cl(id(ha_cpu_t).state / 60)};
+          if (++id(g_tick) % 5 == 0 && r != id(g_radar)) {
+            id(g_radar) = r;
+            id(draw_charts).execute();
+          }
+
+          // ---- климат
+          float t = id(ha_temp).state, h = id(ha_hum).state, pr = id(ha_press).state, st = id(ha_sock_t).state;
+          num(((lv_obj_t *) id(l_temp)), "%.1f°", t);  bar(((lv_obj_t *) id(b_temp)), 0, 100, (t + 5) * 2);
+          num(((lv_obj_t *) id(l_hum)), "%.0f%%", h);  bar(((lv_obj_t *) id(b_hum)), 0, 100, h);
+          num(((lv_obj_t *) id(l_press)), "%.0f гПа", pr); bar(((lv_obj_t *) id(b_press)), 0, 100, pr - 950);
+          num(((lv_obj_t *) id(l_sockt)), "%.0f°", st); bar(((lv_obj_t *) id(b_sockt)), 0, 100, st * 100 / 60);
+          float bm = NAN;
+          for (float v : {id(ha_bat1).state, id(ha_bat2).state, id(ha_bat3).state})
+            if (!std::isnan(v) && (std::isnan(bm) || v < bm)) bm = v;
+          num(((lv_obj_t *) id(l_bat)), "%.0f%%", bm); bar(((lv_obj_t *) id(b_bat)), 0, 100, bm);
+
+          // ---- столбики по месяцам
+          lv_obj_t *mb[12] = {((lv_obj_t *) id(m1)), ((lv_obj_t *) id(m2)), ((lv_obj_t *) id(m3)), ((lv_obj_t *) id(m4)), ((lv_obj_t *) id(m5)), ((lv_obj_t *) id(m6)), ((lv_obj_t *) id(m7)), ((lv_obj_t *) id(m8)), ((lv_obj_t *) id(m9)), ((lv_obj_t *) id(m10)), ((lv_obj_t *) id(m11)), ((lv_obj_t *) id(m12))};
+          lv_obj_t *mc_[12] = {((lv_obj_t *) id(k1)), ((lv_obj_t *) id(k2)), ((lv_obj_t *) id(k3)), ((lv_obj_t *) id(k4)), ((lv_obj_t *) id(k5)), ((lv_obj_t *) id(k6)), ((lv_obj_t *) id(k7)), ((lv_obj_t *) id(k8)), ((lv_obj_t *) id(k9)), ((lv_obj_t *) id(k10)), ((lv_obj_t *) id(k11)), ((lv_obj_t *) id(k12))};
+          auto &M = id(g_months);
+          float mmax = 10;
+          for (float v : M) mmax = std::max(mmax, v * 1.1f);
+          int cur = now.is_valid() ? now.month - 1 : -1;
+          for (int i = 0; i < 12; i++) {
+            float v = i < (int) M.size() ? M[i] : 0;
+            bar(mb[i], 0, (int32_t) (mmax * 10), v * 10);
+            chip(mc_[i], i == cur, 0x1e6bff);
+          }
+          // подписи над текущим и двумя предыдущими месяцами, если есть данные
+          lv_obj_t *mv[3] = {((lv_obj_t *) id(mv0)), ((lv_obj_t *) id(mv1)), ((lv_obj_t *) id(mv2))};
+          for (int k = 0; k < 3; k++) {
+            int i = cur - 2 + k;
+            float v = (i >= 0 && i < (int) M.size()) ? M[i] : 0;
+            if (i < 0 || v <= 0) { set(mv[k], ""); continue; }
+            snprintf(b, sizeof b, v >= 10 ? "%.0f" : "%.1f", v); set(mv[k], b);
+            int hpx = (int) (58 * v / mmax);
+            lv_obj_set_pos(mv[k], 12 + i * 18 - 5, 18 + 58 - hpx - 10);
           }
 
 lvgl:
@@ -294,6 +558,13 @@ lvgl:
       shadow_opa: 70%
     - id: dim
       text_color: 0x8ea2d8
+    # подложка подписей на графике: закрывает линии сетки под текстом
+    - id: plate
+      bg_opa: COVER
+      bg_color: 0x0c1230
+      radius: 2
+      pad_top: 1
+      pad_bottom: 1
     - id: chip
       bg_opa: COVER
       bg_color: 0x18224a
@@ -331,9 +602,9 @@ lvgl:
             shadow_opa: 70%
             widgets:
               - label: {x: 8, y: 5, text: "ГАРАЖ СЕЙЧАС", text_font: fs}
-              - label: {x: 7, y: 15, text: "2.17", text_font: fx}
-              - label: {x: 76, y: 32, text: "кВт", text_font: fm}
-              - label: {x: 8, y: 52, text: "заряжается авто", text_font: fs, text_color: 0xcfe0ff}
+              - label: {id: l_pnow, x: 7, y: 15, text: "--", text_font: fx}
+              - label: {id: l_punit, x: 76, y: 32, text: "Вт", text_font: fm}
+              - label: {id: l_psub, x: 8, y: 52, text: "", text_font: fs, text_color: 0xcfe0ff}
 
         - obj:
             x: 120
@@ -344,14 +615,14 @@ lvgl:
             widgets:
               - label: {x: 0, y: 4, width: 120, text: "СЕГОДНЯ, кВт·ч", text_font: fs, text_align: CENTER, text_color: 0xaab8f0}
               - label: {x: 10, y: 17, text: "Розетки", text_font: fs, styles: [dim]}
-              - label: {x: 70, y: 17, width: 40, text: "12.4", text_font: fs, text_align: RIGHT}
+              - label: {id: l_d_sock, x: 70, y: 17, width: 40, text: "--", text_font: fs, text_align: RIGHT}
               - label: {x: 10, y: 28, text: "Свет", text_font: fs, styles: [dim]}
-              - label: {x: 70, y: 28, width: 40, text: "0.3", text_font: fs, text_align: RIGHT}
+              - label: {id: l_d_light, x: 70, y: 28, width: 40, text: "--", text_font: fs, text_align: RIGHT}
               - label: {x: 10, y: 39, text: "Зарядка", text_font: fs, styles: [dim]}
-              - label: {x: 70, y: 39, width: 40, text: "0.0", text_font: fs, text_align: RIGHT}
+              - label: {id: l_d_chg, x: 70, y: 39, width: 40, text: "--", text_font: fs, text_align: RIGHT}
               - obj: {x: 10, y: 49, width: 100, height: 1, bg_opa: COVER, bg_color: 0x27366e}
               - label: {x: 10, y: 52, text: "ВСЕГО", text_font: fs}
-              - label: {x: 70, y: 52, width: 40, text: "12.7", text_font: fs, text_align: RIGHT}
+              - label: {id: l_d_all, x: 70, y: 52, width: 40, text: "--", text_font: fs, text_align: RIGHT}
 
         - obj:
             x: 244
@@ -361,7 +632,7 @@ lvgl:
             styles: [panel, glow_violet]
             widgets:
               - label: {x: 0, y: 5, width: 116, text: "ЗАРЯДКА АВТО", text_font: fs, text_align: CENTER, text_color: 0xaab8f0}
-              - label: {x: 0, y: 17, width: 116, text: "16.7 кВт·ч", text_font: fb, text_align: CENTER}
+              - label: {id: l_sess, x: 0, y: 17, width: 116, text: "--", text_font: fb, text_align: CENTER}
 
         - obj:
             x: 244
@@ -371,15 +642,16 @@ lvgl:
             styles: [panel]
             radius: 8
             widgets:
-              - label: {x: 6, y: 6, text: "23-07", text_font: fs, styles: [dim]}
+              - label: {id: l_win, x: 6, y: 6, text: "--", text_font: fs, styles: [dim]}
               - bar:
+                  id: b_win
                   x: 40
                   y: 6
                   width: 74
                   height: 8
                   min_value: 0
                   max_value: 100
-                  value: 64
+                  value: 0
                   bg_opa: COVER
                   bg_color: 0x1a2350
                   radius: 4
@@ -388,7 +660,7 @@ lvgl:
                     bg_grad_color: 0xe040fb
                     bg_grad_dir: HOR
                     radius: 4
-              - label: {x: 40, y: 6, width: 74, text: "64%", text_font: fs, text_align: CENTER}
+              - label: {id: l_winpct, x: 40, y: 6, width: 74, text: "", text_font: fs, text_align: CENTER}
 
         - obj:
             x: 368
@@ -397,12 +669,12 @@ lvgl:
             height: 64
             styles: [panel]
             widgets:
-              - label: {x: 5, y: 5, width: 47, height: 12, text: "ВОРОТА", text_font: fs, pad_top: 2, styles: [chip]}
-              - label: {x: 56, y: 5, width: 47, height: 12, text: "ОХРАНА", text_font: fs, pad_top: 2, styles: [chip_on]}
-              - label: {x: 5, y: 20, width: 47, height: 12, text: "СВЕТ", text_font: fs, pad_top: 2, styles: [chip]}
-              - label: {x: 56, y: 20, width: 47, height: 12, text: "ДВИЖ.", text_font: fs, pad_top: 2, styles: [chip]}
-              - label: {x: 0, y: 36, width: 108, text: "СЕНТЯБРЬ", text_font: fm, text_align: CENTER}
-              - label: {x: 0, y: 52, width: 102, text: "34.2 кВт·ч", text_font: fs, text_align: RIGHT, styles: [dim]}
+              - label: {id: c_gate, x: 5, y: 5, width: 47, height: 12, text: "ВОРОТА", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: c_alarm, x: 56, y: 5, width: 47, height: 12, text: "ОХРАНА", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: c_light, x: 5, y: 20, width: 47, height: 12, text: "СВЕТ", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: c_motion, x: 56, y: 20, width: 47, height: 12, text: "ДВИЖ.", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: l_month, x: 0, y: 36, width: 108, text: "", text_font: fm, text_align: CENTER}
+              - label: {id: l_mtot, x: 0, y: 52, width: 102, text: "--", text_font: fs, text_align: RIGHT, styles: [dim]}
 
         # ================= ряд 2 =================
         - obj:
@@ -414,13 +686,14 @@ lvgl:
             widgets:
               # кольцевая из трех дуг, 0 градусов сверху (rotation 270)
               - arc: &seg
+                  id: a_sock
                   x: 6
                   y: 14
                   width: 64
                   height: 64
                   rotation: 270
                   start_angle: 0
-                  end_angle: 311
+                  end_angle: 0
                   adjustable: false
                   clickable: false
                   arc_width: 9
@@ -433,24 +706,26 @@ lvgl:
                     pad_all: 0
               - arc:
                   <<: *seg
-                  start_angle: 314
-                  end_angle: 350
+                  id: a_light
+                  start_angle: 0
+                  end_angle: 0
                   arc_color: 0xe040fb
               - arc:
                   <<: *seg
-                  start_angle: 353
-                  end_angle: 358
+                  id: a_chg
+                  start_angle: 0
+                  end_angle: 0
                   arc_color: 0x3f8cff
-              - label: {x: 6, y: 35, width: 64, text: "19.0", text_font: fb, text_align: CENTER}
+              - label: {id: l_dtot, x: 6, y: 35, width: 64, text: "--", text_font: fb, text_align: CENTER}
               - label: {x: 6, y: 51, width: 64, text: "кВт·ч", text_font: fs, text_align: CENTER, styles: [dim]}
               - obj: {x: 76, y: 14, width: 7, height: 7, bg_opa: COVER, bg_color: 0xff9a3c, radius: 2}
-              - label: {x: 86, y: 14, text: "87%", text_font: fs}
+              - label: {id: l_pc_sock, x: 86, y: 14, text: "", text_font: fs}
               - label: {x: 76, y: 24, text: "Розетки", text_font: fs, styles: [dim]}
               - obj: {x: 76, y: 38, width: 7, height: 7, bg_opa: COVER, bg_color: 0xe040fb, radius: 2}
-              - label: {x: 86, y: 38, text: "11%", text_font: fs}
+              - label: {id: l_pc_light, x: 86, y: 38, text: "", text_font: fs}
               - label: {x: 76, y: 48, text: "Свет", text_font: fs, styles: [dim]}
               - obj: {x: 76, y: 62, width: 7, height: 7, bg_opa: COVER, bg_color: 0x3f8cff, radius: 2}
-              - label: {x: 86, y: 62, text: "2%", text_font: fs}
+              - label: {id: l_pc_chg, x: 86, y: 62, text: "", text_font: fs}
               - label: {x: 76, y: 72, text: "Зарядка", text_font: fs, styles: [dim]}
 
         - obj:
@@ -473,10 +748,10 @@ lvgl:
               - label: {x: 91, y: 26, text: "Частота", text_font: fs, styles: [dim]}
               - label: {x: 91, y: 58, text: "Косинус", text_font: fs, styles: [dim]}
               - label: {x: 34, y: 80, width: 60, text: "Ток", text_font: fs, text_align: CENTER, styles: [dim]}
-              - label: {x: 0, y: 58, width: 37, text: "Утечка", text_font: fs, text_align: RIGHT, styles: [dim]}
+              - label: {x: 0, y: 58, width: 37, text: "Плата", text_font: fs, text_align: RIGHT, styles: [dim]}
               - label: {x: 0, y: 26, width: 37, text: "Нагрев", text_font: fs, text_align: RIGHT, styles: [dim]}
               - label: {x: 118, y: 5, width: 40, text: "СЕТЬ", text_font: fs, text_align: RIGHT, text_color: 0xaab8f0}
-              - label: {x: 110, y: 72, width: 48, text: "232 В", text_font: fb, text_align: RIGHT}
+              - label: {id: l_volt, x: 110, y: 72, width: 48, text: "--", text_font: fb, text_align: RIGHT}
 
         - obj:
             x: 304
@@ -487,15 +762,16 @@ lvgl:
             widgets:
               - label: {x: 0, y: 4, width: 164, text: "КЛИМАТ", text_font: fs, text_align: RIGHT, text_color: 0xaab8f0}
               - label: {x: 8, y: 14, text: "Температура", text_font: fs}
-              - label: {x: 110, y: 14, width: 54, text: "15.4°", text_font: fs, text_align: RIGHT}
+              - label: {id: l_temp, x: 110, y: 14, width: 54, text: "--", text_font: fs, text_align: RIGHT}
               - bar: &hbar
+                  id: b_temp
                   x: 8
                   y: 24
                   width: 156
                   height: 3
                   min_value: 0
                   max_value: 100
-                  value: 45
+                  value: 0
                   bg_opa: COVER
                   bg_color: 0x1a2350
                   radius: 2
@@ -505,17 +781,17 @@ lvgl:
                     bg_grad_dir: HOR
                     radius: 2
               - label: {x: 8, y: 29, text: "Влажность", text_font: fs}
-              - label: {x: 110, y: 29, width: 54, text: "67%", text_font: fs, text_align: RIGHT}
-              - bar: {<<: *hbar, y: 39, value: 67}
+              - label: {id: l_hum, x: 110, y: 29, width: 54, text: "--", text_font: fs, text_align: RIGHT}
+              - bar: {<<: *hbar, id: b_hum, y: 39}
               - label: {x: 8, y: 44, text: "Давление", text_font: fs}
-              - label: {x: 110, y: 44, width: 54, text: "987 гПа", text_font: fs, text_align: RIGHT}
-              - bar: {<<: *hbar, y: 54, value: 55}
+              - label: {id: l_press, x: 110, y: 44, width: 54, text: "--", text_font: fs, text_align: RIGHT}
+              - bar: {<<: *hbar, id: b_press, y: 54}
               - label: {x: 8, y: 59, text: "Нагрев розетки", text_font: fs}
-              - label: {x: 110, y: 59, width: 54, text: "27°", text_font: fs, text_align: RIGHT}
-              - bar: {<<: *hbar, y: 69, value: 45}
+              - label: {id: l_sockt, x: 110, y: 59, width: 54, text: "--", text_font: fs, text_align: RIGHT}
+              - bar: {<<: *hbar, id: b_sockt, y: 69}
               - label: {x: 8, y: 74, text: "Батарейки мин.", text_font: fs}
-              - label: {x: 110, y: 74, width: 54, text: "33%", text_font: fs, text_align: RIGHT}
-              - bar: {<<: *hbar, y: 84, value: 33}
+              - label: {id: l_bat, x: 110, y: 74, width: 54, text: "--", text_font: fs, text_align: RIGHT}
+              - bar: {<<: *hbar, id: b_bat, y: 84}
 
         # ================= ряд 3 =================
         - obj:
@@ -527,13 +803,14 @@ lvgl:
             widgets:
               - label: {x: 8, y: 5, text: "ГАРАЖ ПО МЕСЯЦАМ, кВт·ч", text_font: fs, styles: [dim]}
               - bar: &vbar
+                  id: m1
                   x: 12
                   y: 18
                   width: 10
                   height: 58
                   min_value: 0
-                  max_value: 60
-                  value: 58
+                  max_value: 100
+                  value: 0
                   bg_opa: COVER
                   bg_color: 0x151d42
                   radius: 3
@@ -542,32 +819,32 @@ lvgl:
                     bg_grad_color: 0xff9a3c
                     bg_grad_dir: VER
                     radius: 3
-              - bar: {<<: *vbar, x: 30, value: 51}
-              - bar: {<<: *vbar, x: 48, value: 44}
-              - bar: {<<: *vbar, x: 66, value: 33}
-              - bar: {<<: *vbar, x: 84, value: 27}
-              - bar: {<<: *vbar, x: 102, value: 22}
-              - bar: {<<: *vbar, x: 120, value: 19}
-              - bar: {<<: *vbar, x: 138, value: 23}
-              - bar: {<<: *vbar, x: 156, value: 34}
-              - bar: {<<: *vbar, x: 174, value: 41}
-              - bar: {<<: *vbar, x: 192, value: 49}
-              - bar: {<<: *vbar, x: 210, value: 56}
-              - label: {x: 115, y: 48, width: 20, text: "19", text_font: fs, text_align: CENTER}
-              - label: {x: 133, y: 44, width: 20, text: "23", text_font: fs, text_align: CENTER}
-              - label: {x: 151, y: 34, width: 20, text: "34", text_font: fs, text_align: CENTER}
-              - label: {x: 10, y: 82, width: 14, height: 11, text: "Я", text_font: fs, pad_top: 2, styles: [chip]}
-              - label: {x: 28, y: 82, width: 14, height: 11, text: "Ф", text_font: fs, pad_top: 2, styles: [chip]}
-              - label: {x: 46, y: 82, width: 14, height: 11, text: "М", text_font: fs, pad_top: 2, styles: [chip]}
-              - label: {x: 64, y: 82, width: 14, height: 11, text: "А", text_font: fs, pad_top: 2, styles: [chip]}
-              - label: {x: 82, y: 82, width: 14, height: 11, text: "М", text_font: fs, pad_top: 2, styles: [chip]}
-              - label: {x: 100, y: 82, width: 14, height: 11, text: "И", text_font: fs, pad_top: 2, styles: [chip]}
-              - label: {x: 118, y: 82, width: 14, height: 11, text: "И", text_font: fs, pad_top: 2, styles: [chip_on]}
-              - label: {x: 136, y: 82, width: 14, height: 11, text: "А", text_font: fs, pad_top: 2, styles: [chip_on]}
-              - label: {x: 154, y: 82, width: 14, height: 11, text: "С", text_font: fs, pad_top: 2, styles: [chip_on]}
-              - label: {x: 172, y: 82, width: 14, height: 11, text: "О", text_font: fs, pad_top: 2, styles: [chip]}
-              - label: {x: 190, y: 82, width: 14, height: 11, text: "Н", text_font: fs, pad_top: 2, styles: [chip]}
-              - label: {x: 208, y: 82, width: 14, height: 11, text: "Д", text_font: fs, pad_top: 2, styles: [chip]}
+              - bar: {<<: *vbar, id: m2, x: 30}
+              - bar: {<<: *vbar, id: m3, x: 48}
+              - bar: {<<: *vbar, id: m4, x: 66}
+              - bar: {<<: *vbar, id: m5, x: 84}
+              - bar: {<<: *vbar, id: m6, x: 102}
+              - bar: {<<: *vbar, id: m7, x: 120}
+              - bar: {<<: *vbar, id: m8, x: 138}
+              - bar: {<<: *vbar, id: m9, x: 156}
+              - bar: {<<: *vbar, id: m10, x: 174}
+              - bar: {<<: *vbar, id: m11, x: 192}
+              - bar: {<<: *vbar, id: m12, x: 210}
+              - label: {id: mv0, x: 0, y: 0, width: 20, text: "", text_font: fs, text_align: CENTER}
+              - label: {id: mv1, x: 0, y: 0, width: 20, text: "", text_font: fs, text_align: CENTER}
+              - label: {id: mv2, x: 0, y: 0, width: 20, text: "", text_font: fs, text_align: CENTER}
+              - label: {id: k1, x: 10, y: 82, width: 14, height: 11, text: "Я", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k2, x: 28, y: 82, width: 14, height: 11, text: "Ф", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k3, x: 46, y: 82, width: 14, height: 11, text: "М", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k4, x: 64, y: 82, width: 14, height: 11, text: "А", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k5, x: 82, y: 82, width: 14, height: 11, text: "М", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k6, x: 100, y: 82, width: 14, height: 11, text: "И", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k7, x: 118, y: 82, width: 14, height: 11, text: "И", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k8, x: 136, y: 82, width: 14, height: 11, text: "А", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k9, x: 154, y: 82, width: 14, height: 11, text: "С", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k10, x: 172, y: 82, width: 14, height: 11, text: "О", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k11, x: 190, y: 82, width: 14, height: 11, text: "Н", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k12, x: 208, y: 82, width: 14, height: 11, text: "Д", text_font: fs, pad_top: 2, styles: [chip]}
 
         - obj:
             x: 240
@@ -588,13 +865,12 @@ lvgl:
                   y: 20
                   width: 224
                   height: 60
-              - label: {x: 12, y: 20, width: 30, text: "2.17", text_font: fs, text_align: CENTER}
-              - label: {x: 103, y: 57, width: 30, text: "0.40", text_font: fs, text_align: CENTER}
-              - label: {x: 175, y: 51, width: 30, text: "0.70", text_font: fs, text_align: CENTER}
-              - label: {x: 0, y: 85, width: 20, text: "0", text_font: fs, text_align: CENTER, styles: [dim]}
-              - label: {x: 36, y: 85, width: 20, text: "4", text_font: fs, text_align: CENTER, styles: [dim]}
-              - label: {x: 72, y: 85, width: 20, text: "8", text_font: fs, text_align: CENTER, styles: [dim]}
-              - label: {x: 108, y: 85, width: 20, text: "12", text_font: fs, text_align: CENTER, styles: [dim]}
-              - label: {x: 144, y: 85, width: 20, text: "16", text_font: fs, text_align: CENTER, styles: [dim]}
-              - label: {x: 180, y: 85, width: 20, text: "20", text_font: fs, text_align: CENTER, styles: [dim]}
-              - label: {x: 212, y: 85, width: 20, text: "24", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {id: l_amax, x: 0, y: 20, width: 28, text: "", text_font: fs, text_align: CENTER, styles: [plate]}
+              - label: {id: l_anow, x: 0, y: 20, width: 28, text: "", text_font: fs, text_align: CENTER, styles: [plate]}
+              - label: {id: h0, x: 0, y: 85, width: 20, text: "", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {id: h1, x: 0, y: 85, width: 20, text: "", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {id: h2, x: 0, y: 85, width: 20, text: "", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {id: h3, x: 0, y: 85, width: 20, text: "", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {id: h4, x: 0, y: 85, width: 20, text: "", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {id: h5, x: 0, y: 85, width: 20, text: "", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {id: h6, x: 0, y: 85, width: 20, text: "", text_font: fs, text_align: CENTER, styles: [dim]}
