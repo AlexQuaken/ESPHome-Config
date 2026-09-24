@@ -1,4 +1,4 @@
-# Guition JC4827W543C: гараж в виде ретро-терминала (янтарный текст на черном,
+# Guition JC4827W543C: гараж в виде ретро-терминала (ядовито-зеленый текст на черном,
 # полосы из блоков, журнал событий). Вариант 6 из макетов
 # C:\Users\Alex\Downloads\garage-dash-variants, выбран 24.09.2026.
 #
@@ -14,9 +14,10 @@
 substitutions:
   board_name: 'esp32-s3-disp'
   static_ip: '192.168.0.221'
-  amber: '0xffb000'
-  amber_dim: '0xa06e00'
-  amber_dark: '0x5a3c00'
+  # ядовито-зеленый, с 25.09.2026 (до этого был янтарь 0xffb000)
+  fg: '0x39ff14'
+  fg_dim: '0x1c9a0a'
+  fg_dark: '0x0e4a05'
 
 esphome:
   name: ${board_name}
@@ -334,17 +335,17 @@ lvgl:
       scrollbar_mode: "OFF"
       scrollable: false
     label:
-      text_color: ${amber}
+      text_color: ${fg}
   style_definitions:
     - id: dim
-      text_color: ${amber_dim}
+      text_color: ${fg_dim}
   pages:
     - id: term
       bg_opa: COVER
-      bg_color: 0x060400
+      bg_color: 0x020802
       scrollable: false
       widgets:
-        - obj: {x: 2, y: 2, width: 476, height: 268, radius: 4, border_width: 1, border_color: 0x5a3c00, scrollable: false}
+        - obj: {x: 2, y: 2, width: 476, height: 268, radius: 4, border_width: 1, border_color: 0x0e4a05, scrollable: false}
         - label: {x: 10, y: 8, text: "GARAGE.EXE  v1.0"}
         - label: {id: l_clock, x: 250, y: 8, width: 220, text: "", text_align: RIGHT}
         - label: {x: 10, y: 24, text: "════════════════════════════════════════════════════════════════════════════", text_font: fs, styles: [dim]}
