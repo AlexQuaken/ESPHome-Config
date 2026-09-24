@@ -24,6 +24,15 @@ esphome:
         - lambda: |-
             id(log_lines).push_back("${board_name} booted");
             id(log_lines).push_back("Guition JC4827W543 480x272");
+            id(lcd).set_invert_colors(false);
+        # На холодном старте (после снятия питания) NV3041A не принимает
+        # INVOFF и MADCTL, которые драйвер шлет один раз в конце setup():
+        # фон белый, текст розовый, картинка перевернута на 180. При сбросе
+        # без снятия питания панель помнит регистры, и этого не видно.
+        # set_invert_colors заново шлет и инверсию, и MADCTL, второй раз
+        # через 2 секунды для надежности.
+        - delay: 2s
+        - lambda: 'id(lcd).set_invert_colors(false);'
 
 esp32:
   board: esp32-s3-devkitc-1
