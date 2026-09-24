@@ -83,18 +83,27 @@ captive_portal:
 api:
   actions:
     # История от HA: power 24 часовых средних, кВт; months 12 месяцев, кВт·ч;
-    # first_hour местный час первого часового ведра.
+    # days 30 дней, кВт·ч, последний это сегодня; first_hour местный час
+    # первого часового ведра; first_dow день недели первого дня (0 = пн);
+    # first_day число месяца первого дня.
     - action: set_history
       variables:
         power: float[]
         months: float[]
+        days: float[]
         first_hour: int
+        first_dow: int
+        first_day: int
       then:
         - lambda: |-
             id(g_power) = power;
             id(g_months) = months;
+            id(g_days) = days;
             id(g_first_hour) = first_hour;
-            ESP_LOGI("dash", "history: %u hours, %u months", (unsigned) power.size(), (unsigned) months.size());
+            id(g_first_dow) = first_dow;
+            id(g_first_day) = first_day;
+            ESP_LOGI("dash", "history: %u hours, %u months, %u days", (unsigned) power.size(),
+                     (unsigned) months.size(), (unsigned) days.size());
         - script.execute: draw_charts
         - script.execute: refresh
 
@@ -171,6 +180,22 @@ globals:
     type: int
     restore_value: no
     initial_value: '0'
+  - id: g_days
+    type: std::vector<float>
+    restore_value: no
+  - id: g_first_dow
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: g_first_day
+    type: int
+    restore_value: no
+    initial_value: '1'
+  # вид графика: 0 сутки по часам, 1 неделя по дням, 2 месяц по дням
+  - id: g_view
+    type: int
+    restore_value: yes
+    initial_value: '1'
   - id: g_radar
     type: std::vector<float>
     restore_value: no
@@ -327,16 +352,24 @@ script:
             lv_canvas_finish_layer(cv, &l);
           }
 
-          // ---------- мощность гаража за сутки, холст 224x60 ----------
+          // ---------- график, холст 224x60: сутки по часам / неделя / месяц по дням ----------
           {
             lv_obj_t *cv = (lv_obj_t *) id(area_cv);
             lv_canvas_fill_bg(cv, lv_color_hex(0x0c1230), LV_OPA_COVER);
             lv_layer_t l; lv_canvas_init_layer(cv, &l);
-            const auto &v = id(g_power);   // кВт, 24 часовых средних от HA
+            const int view = id(g_view);
+            std::vector<float> v;
+            if (view == 0) v = id(g_power);
+            else {
+              const auto &d = id(g_days);
+              int n = view == 1 ? 7 : 30;
+              int from = std::max(0, (int) d.size() - n);
+              v.assign(d.begin() + from, d.end());
+            }
             const int N = v.size();
-            const float x0 = 4, bot = 58, top = 6;
+            const float x0 = 4, bot = 58, top = 8;
             const float dx = N > 1 ? 216.0f / (N - 1) : 0;
-            float vmax = 0.5f;
+            float vmax = view == 0 ? 0.5f : 1.0f;
             for (float x : v) vmax = std::max(vmax, x * 1.15f);
             for (int g = 1; g <= 4; g++) {
               float y = bot - (bot - top) * g / 5;
@@ -349,7 +382,8 @@ script:
               tri(&l, px[i + 1], py[i + 1], px[i + 1], bot, px[i], bot, 0x9b6bff, LV_OPA_90, 0x2a1a70, LV_OPA_50);
             }
             for (int i = 0; i + 1 < N; i++) line(&l, px[i], py[i], px[i + 1], py[i + 1], 0xc9b8ff, 2, LV_OPA_COVER);
-            // подписи: максимум и последний час; на подложке, чтобы сетку не было видно под текстом
+            if (view == 1) for (int i = 0; i < N; i++) dot(&l, px[i], py[i], 2, 0x8a5cff);
+            // подписи: максимум и последняя точка, на подложке поверх сетки
             lv_obj_t *lab[2] = {(lv_obj_t *) id(l_amax), (lv_obj_t *) id(l_anow)};
             int imax = 0;
             for (int i = 1; i < N; i++) if (v[i] > v[imax]) imax = i;
@@ -360,23 +394,47 @@ script:
               line(&l, px[i], py[i], px[i], bot, 0xc9b8ff, 1, LV_OPA_50);
               dot(&l, px[i], py[i], 3, 0x8a5cff);
               char b[16];
-              snprintf(b, sizeof b, v[i] >= 1 ? "%.2f" : "%.0f", v[i] >= 1 ? v[i] : v[i] * 1000);
+              if (view == 0) snprintf(b, sizeof b, v[i] >= 1 ? "%.2f" : "%.0f", v[i] >= 1 ? v[i] : v[i] * 1000);
+              else snprintf(b, sizeof b, v[i] >= 10 ? "%.0f" : "%.1f", v[i]);
               lv_label_set_text(lab[k], b);
               int lx = 6 + (int) px[i] - 14, ly = 20 + (int) py[i] - 13;
               lx = std::max(0, std::min(lx, 236 - 30));
               ly = std::max(16, ly);
               lv_obj_set_pos(lab[k], lx, ly);
             }
-            // часы под графиком: каждые 4 часа от первого ведра и конец последнего
+            // подписи под графиком: 7 мест
+            static const char *DOW[7] = {"Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"};
             lv_obj_t *hl[7] = {(lv_obj_t *) id(h0), (lv_obj_t *) id(h1), (lv_obj_t *) id(h2), (lv_obj_t *) id(h3),
                                (lv_obj_t *) id(h4), (lv_obj_t *) id(h5), (lv_obj_t *) id(h6)};
+            const int dn = id(g_days).size();
             for (int k = 0; k < 7; k++) {
-              int i = k < 6 ? k * 4 : N - 1;
-              if (N < 2 || i >= N) { lv_label_set_text(hl[k], ""); continue; }
-              char b[8];
-              snprintf(b, sizeof b, "%d", (id(g_first_hour) + i + (k == 6 ? 1 : 0)) % 24);
+              int i;
+              char b[8] = "";
+              if (view == 0) {
+                i = k < 6 ? k * 4 : N - 1;
+                if (N >= 2 && i < N) snprintf(b, sizeof b, "%d", (id(g_first_hour) + i + (k == 6 ? 1 : 0)) % 24);
+              } else if (view == 1) {
+                i = k;
+                int day = dn - N + i;   // индекс дня в g_days
+                if (i < N) snprintf(b, sizeof b, "%s", DOW[((id(g_first_dow) + day) % 7 + 7) % 7]);
+              } else {
+                i = k < 6 ? k * 5 : N - 1;
+                if (N >= 2 && i < N) {
+                  // число месяца: от первого дня g_days вперед, с переходом через 28-31
+                  int day = dn - N + i;
+                  ESPTime t = id(ha_time).now();
+                  int num = 0;
+                  if (t.is_valid()) {
+                    time_t ts = t.timestamp - (time_t) (dn - 1 - day) * 86400;
+                    struct tm tmv;
+                    localtime_r(&ts, &tmv);
+                    num = tmv.tm_mday;
+                  }
+                  snprintf(b, sizeof b, "%d", num);
+                }
+              }
               lv_label_set_text(hl[k], b);
-              lv_obj_set_x(hl[k], 6 + (int) px[i] - 10);
+              if (b[0] && i < N) lv_obj_set_x(hl[k], 6 + (int) px[i] - 10);
             }
             lv_canvas_finish_layer(cv, &l);
           }
@@ -415,10 +473,11 @@ script:
           float p = id(ha_p_now).state;
           if (!std::isnan(p) && p >= 1000) { num(((lv_obj_t *) id(l_pnow)), "%.2f", p / 1000); set(((lv_obj_t *) id(l_punit)), "кВт"); }
           else { num(((lv_obj_t *) id(l_pnow)), "%.0f", p); set(((lv_obj_t *) id(l_punit)), "Вт"); }
+          lv_obj_align_to(((lv_obj_t *) id(l_punit)), ((lv_obj_t *) id(l_pnow)), LV_ALIGN_OUT_RIGHT_BOTTOM, 4, -5);
           bool on_sockets = id(ha_line).state == "Розетки гаража";
           float p_line = on_sockets ? z(id(ha_p_sock).state) : z(id(ha_p_chg).state);
           bool charging = p_line > 300;
-          set(((lv_obj_t *) id(l_psub)), charging ? "заряжается авто" : "потребление сейчас");
+          set(((lv_obj_t *) id(l_psub)), charging ? "заряжается авто" : "потребление");
 
           // ---- сегодня
           float ds = id(ha_d_sock).state, dl = id(ha_d_light).state, dc = id(ha_d_chg).state;
@@ -462,8 +521,13 @@ script:
           if (now.is_valid()) set(((lv_obj_t *) id(l_month)), MON[now.month - 1]);
           float ms = z(id(ha_m_sock).state), ml = z(id(ha_m_light).state), mc = z(id(ha_m_chg).state);
           float mt = ms + ml + mc;
-          snprintf(b, sizeof b, "%.1f кВт·ч", mt); set(((lv_obj_t *) id(l_mtot)), b);
-          num(((lv_obj_t *) id(l_dtot)), mt >= 100 ? "%.0f" : "%.1f", mt);
+          // итог месяца со счетчика ATORCH (он с 10.09.2026), учет по линиям моложе
+          // (с 22.09.2026) и дает только доли в кольцевой
+          const auto &MM = id(g_months);
+          float matorch = (now.is_valid() && (int) MM.size() >= now.month) ? MM[now.month - 1] : 0;
+          float mshow = matorch > 0 ? matorch : mt;
+          snprintf(b, sizeof b, "%.1f кВт·ч", mshow); set(((lv_obj_t *) id(l_mtot)), b);
+          num(((lv_obj_t *) id(l_dtot)), mshow >= 100 ? "%.0f" : "%.1f", mshow);
           float fr[3] = {mt > 0 ? ms / mt : 0, mt > 0 ? ml / mt : 0, mt > 0 ? mc / mt : 0};
           lv_obj_t *arcs[3] = {((lv_obj_t *) id(a_sock)), ((lv_obj_t *) id(a_light)), ((lv_obj_t *) id(a_chg))};
           lv_obj_t *pcts[3] = {((lv_obj_t *) id(l_pc_sock)), ((lv_obj_t *) id(l_pc_light)), ((lv_obj_t *) id(l_pc_chg))};
@@ -499,6 +563,13 @@ script:
           for (float v : {id(ha_bat1).state, id(ha_bat2).state, id(ha_bat3).state})
             if (!std::isnan(v) && (std::isnan(bm) || v < bm)) bm = v;
           num(((lv_obj_t *) id(l_bat)), "%.0f%%", bm); bar(((lv_obj_t *) id(b_bat)), 0, 100, bm);
+
+          // ---- вкладки графика
+          int view = id(g_view);
+          set(((lv_obj_t *) id(l_atitle)), view == 0 ? "МОЩНОСТЬ, кВт" : "ЭНЕРГИЯ, кВт·ч");
+          chip(((lv_obj_t *) id(t_day)), view == 0, 0x1e6bff);
+          chip(((lv_obj_t *) id(t_week)), view == 1, 0x1e6bff);
+          chip(((lv_obj_t *) id(t_month)), view == 2, 0x1e6bff);
 
           // ---- столбики по месяцам
           lv_obj_t *mb[12] = {((lv_obj_t *) id(m1)), ((lv_obj_t *) id(m2)), ((lv_obj_t *) id(m3)), ((lv_obj_t *) id(m4)), ((lv_obj_t *) id(m5)), ((lv_obj_t *) id(m6)), ((lv_obj_t *) id(m7)), ((lv_obj_t *) id(m8)), ((lv_obj_t *) id(m9)), ((lv_obj_t *) id(m10)), ((lv_obj_t *) id(m11)), ((lv_obj_t *) id(m12))};
@@ -600,6 +671,8 @@ lvgl:
             width: 112
             height: 64
             styles: [panel]
+            scrollbar_mode: "OFF"
+            scrollable: false
             bg_color: 0x2f86ff
             bg_grad_color: 0x1238b8
             bg_grad_dir: HOR
@@ -620,6 +693,8 @@ lvgl:
             width: 120
             height: 64
             styles: [panel]
+            scrollbar_mode: "OFF"
+            scrollable: false
             widgets:
               - label: {x: 0, y: 4, width: 120, text: "СЕГОДНЯ, кВт·ч", text_font: fs, text_align: CENTER, text_color: 0xaab8f0}
               - label: {x: 10, y: 17, text: "Розетки", text_font: fs, styles: [dim]}
@@ -638,6 +713,8 @@ lvgl:
             width: 120
             height: 40
             styles: [panel, glow_violet]
+            scrollbar_mode: "OFF"
+            scrollable: false
             widgets:
               - label: {x: 0, y: 5, width: 116, text: "ЗАРЯДКА АВТО", text_font: fs, text_align: CENTER, text_color: 0xaab8f0}
               - label: {id: l_sess, x: 0, y: 17, width: 116, text: "--", text_font: fb, text_align: CENTER}
@@ -648,6 +725,8 @@ lvgl:
             width: 120
             height: 20
             styles: [panel]
+            scrollbar_mode: "OFF"
+            scrollable: false
             radius: 8
             widgets:
               - label: {id: l_win, x: 6, y: 6, text: "--", text_font: fs, styles: [dim]}
@@ -676,6 +755,8 @@ lvgl:
             width: 108
             height: 64
             styles: [panel]
+            scrollbar_mode: "OFF"
+            scrollable: false
             widgets:
               - label: {id: c_gate, x: 5, y: 5, width: 47, height: 12, text: "ВОРОТА", text_font: fs, pad_top: 2, styles: [chip]}
               - label: {id: c_alarm, x: 56, y: 5, width: 47, height: 12, text: "ОХРАНА", text_font: fs, pad_top: 2, styles: [chip]}
@@ -691,6 +772,8 @@ lvgl:
             width: 128
             height: 92
             styles: [panel]
+            scrollbar_mode: "OFF"
+            scrollable: false
             widgets:
               # кольцевая из трех дуг, 0 градусов сверху (rotation 270)
               - arc: &seg
@@ -742,6 +825,8 @@ lvgl:
             width: 164
             height: 92
             styles: [panel, glow_violet]
+            scrollbar_mode: "OFF"
+            scrollable: false
             bg_color: 0x0d1433
             bg_grad_dir: NONE
             widgets:
@@ -767,6 +852,8 @@ lvgl:
             width: 172
             height: 92
             styles: [panel]
+            scrollbar_mode: "OFF"
+            scrollable: false
             widgets:
               - label: {x: 0, y: 4, width: 164, text: "КЛИМАТ", text_font: fs, text_align: RIGHT, text_color: 0xaab8f0}
               - label: {x: 8, y: 14, text: "Температура", text_font: fs}
@@ -808,6 +895,8 @@ lvgl:
             width: 232
             height: 100
             styles: [panel]
+            scrollbar_mode: "OFF"
+            scrollable: false
             widgets:
               - label: {x: 8, y: 5, text: "ГАРАЖ ПО МЕСЯЦАМ, кВт·ч", text_font: fs, styles: [dim]}
               - bar: &vbar
@@ -860,13 +949,63 @@ lvgl:
             width: 236
             height: 100
             styles: [panel, glow_blue]
+            scrollbar_mode: "OFF"
+            scrollable: false
             bg_color: 0x0c1230
             bg_grad_dir: NONE
             widgets:
-              - label: {x: 8, y: 5, text: "МОЩНОСТЬ, кВт", text_font: fs, text_color: 0xaab8f0}
-              - label: {x: 90, y: 3, width: 40, height: 12, text: "СУТКИ", text_font: fs, pad_top: 2, styles: [chip_on]}
-              - label: {x: 133, y: 3, width: 44, height: 12, text: "НЕДЕЛЯ", text_font: fs, pad_top: 2, styles: [chip]}
-              - label: {x: 180, y: 3, width: 44, height: 12, text: "МЕСЯЦ", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: l_atitle, x: 8, y: 5, text: "", text_font: fs, text_color: 0xaab8f0}
+              - label:
+                  id: t_day
+                  x: 96
+                  y: 3
+                  width: 38
+                  height: 12
+                  text: "СУТКИ"
+                  text_font: fs
+                  pad_top: 2
+                  clickable: true
+                  styles: [chip]
+                  on_click:
+                    - lambda: |-
+                        id(g_view) = 0;
+                        ESP_LOGI("dash", "tap: view 0");
+                    - script.execute: draw_charts
+                    - script.execute: refresh
+              - label:
+                  id: t_week
+                  x: 137
+                  y: 3
+                  width: 44
+                  height: 12
+                  text: "НЕДЕЛЯ"
+                  text_font: fs
+                  pad_top: 2
+                  clickable: true
+                  styles: [chip]
+                  on_click:
+                    - lambda: |-
+                        id(g_view) = 1;
+                        ESP_LOGI("dash", "tap: view 1");
+                    - script.execute: draw_charts
+                    - script.execute: refresh
+              - label:
+                  id: t_month
+                  x: 184
+                  y: 3
+                  width: 42
+                  height: 12
+                  text: "МЕСЯЦ"
+                  text_font: fs
+                  pad_top: 2
+                  clickable: true
+                  styles: [chip]
+                  on_click:
+                    - lambda: |-
+                        id(g_view) = 2;
+                        ESP_LOGI("dash", "tap: view 2");
+                    - script.execute: draw_charts
+                    - script.execute: refresh
               - canvas:
                   id: area_cv
                   x: 6
