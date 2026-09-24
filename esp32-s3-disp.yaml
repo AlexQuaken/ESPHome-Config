@@ -68,7 +68,7 @@ api:
         - lambda: |-
             auto &v = id(log_lines);
             std::string s = line;
-            if (s.size() > 52) s = s.substr(0, 52);
+            if (s.size() > 60) s = s.substr(0, 60);
             v.push_back(s);
             while ((int)v.size() > id(log_max)) v.erase(v.begin());
         - component.update: lcd
@@ -119,7 +119,7 @@ logger:
           if (clean.empty()) return;
           uint32_t now = millis();
           auto &v = id(log_lines);
-          const int LINE_H = 16;
+          const int LINE_H = 9;
           const int FRAME_MS = 16;
           if (id(has_pending)) {
             if (id(scroll_off) > 0 && id(scroll_off) < LINE_H && (int)v.size() > id(log_max)) {
@@ -314,9 +314,11 @@ button:
     name: ${board_name} Safe Mode (OTA)
 
 font:
-  - file: "fonts/Px437_IBM_VGA_9x16.ttf"
+  # IBM PC BIOS 8x8 из пака int10h, в пиксель попадает только при size: 8.
+  # Строка 9 px (8 знак + 1 зазор): 60 знаков x 30 строк на 480x272
+  - file: "fonts/Px437_IBM_BIOS.ttf"
     id: f_console
-    size: 16
+    size: 8
     bpp: 1
     glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
 
@@ -345,7 +347,7 @@ globals:
   - id: log_max
     type: int
     restore_value: no
-    initial_value: '16'
+    initial_value: '29'
   - id: scroll_off
     type: float
     restore_value: no
@@ -434,22 +436,30 @@ display:
     model: JC4827W543
     spi_id: quad_spi
     rotation: 0
+    # В модели invert_colors: true, на этой партии панели с ним фон белый,
+    # а зеленый текст розовый (двойная инверсия), поэтому выключено
+    invert_colors: false
+    # Паспортные 20 МГц модели дают кадр ~26 мс, NV3041A держит 40
+    data_rate: 40MHz
+    # Буфер чистим сами через it.fill() в начале лямбды
+    auto_clear_enabled: false
     update_interval: 33ms
     lambda: |-
       id(frame_counter)++;
       uint32_t t = millis();
       int W = it.get_width();
       int H = it.get_height();
-      // Полная очистка каждый кадр через filled_rectangle (надежнее it.fill — покрывает все edge пиксели)
-      it.filled_rectangle(0, 0, W, H, id(c_black));
+      // it.fill чистит буфер одним куском. filled_rectangle на весь экран
+      // идет попиксельно (130 тысяч вызовов) и на S3 съедал больше половины кадра
+      it.fill(id(c_black));
 
       if (id(display_mode) == 0) {
         // ===== LOG CONSOLE =====
-        const int LINE_H = 16;
-        const int CHAR_W = 9;
+        const int LINE_H = 9;
+        const int CHAR_W = 8;
         const int FRAME_MS = 16;
         const int GAP = 80;
-        const int CLOCK_GAP = 16;
+        const int CLOCK_GAP = 8;
         auto &v = id(log_lines);
         if ((int)v.size() > id(log_max)) {
           uint32_t elapsed = t - id(scroll_start_ms);
@@ -512,13 +522,14 @@ display:
       } else {
         // ===== BLE RADAR =====
         // Круг в левом квадрате 272x272, справа таблица 208 px.
-        // max_r взят 120, а не 132: иначе часы и дата в углах наезжают на круг.
+        // max_r 130: подписи в углах шрифтом 8x8 до круга не достают (проверено
+        // по дальним углам строк часов, даты, аптайма и памяти).
         const int cx = 136;
         const int cy = 136;
-        const int max_r = 120;
+        const int max_r = 130;
         // Дистанция точки по RSSI: -40 дБм у центра (D_MIN), -100 у края (D_MAX)
-        const int D_MIN = 16;
-        const int D_MAX = 117;
+        const int D_MIN = 18;
+        const int D_MAX = 127;
 
         it.line(cx - max_r, cy, cx + max_r, cy, id(c_dim));
         it.line(cx, cy - max_r, cx, cy + max_r, id(c_dim));
@@ -543,9 +554,9 @@ display:
         int sy0 = cy + (int)(sinf(sw) * (float)max_r);
         it.line(cx, cy, sx0, sy0, Color(140, 255, 140));
 
-        it.circle(cx, cy, 30, id(c_dim));
-        it.circle(cx, cy, 60, id(c_dim));
-        it.circle(cx, cy, 90, id(c_dim));
+        it.circle(cx, cy, 32, id(c_dim));
+        it.circle(cx, cy, 65, id(c_dim));
+        it.circle(cx, cy, 97, id(c_dim));
         it.circle(cx, cy, max_r, id(c_green));
 
         auto &addrs = id(dev_addr);
@@ -619,34 +630,34 @@ display:
             int rssi_val = (i < rssis.size()) ? rssis[i] : -99;
             char rssi_s[12];
             snprintf(rssi_s, sizeof(rssi_s), "R:%d", rssi_val);
-            int name_w = (int)strlen(label) * 9;
-            int rssi_w = (int)strlen(rssi_s) * 9;
+            int name_w = (int)strlen(label) * 8;
+            int rssi_w = (int)strlen(rssi_s) * 8;
             int max_w = (name_w > rssi_w) ? name_w : rssi_w;
             int lx = (dx > cx) ? dx + dot_r + 6 : dx - dot_r - 6 - max_w;
-            int ly = dy - 8;
+            int ly = dy - 9;
             it.printf(lx, ly, id(f_console), Color(0, intensity, 0), "%s", label);
-            it.printf(lx, ly + 16, id(f_console), Color(0, intensity, 0), "%s", rssi_s);
+            it.printf(lx, ly + 9, id(f_console), Color(0, intensity, 0), "%s", rssi_s);
           }
         }
 
         // ===== Sidebar (x=272..479) =====
-        // SCAN[272..316] | NAME[316..436] | RSSI[436..479], 14 строк по 16 px
+        // SCAN[272..312] | NAME[312..440] | RSSI[440..479], 24 строки по 10 px
         const int sb_x = 272;
-        const int CW = 9;
-        const int row_h = 16;
-        const int sb_y_start = 22;
-        const int visible_rows = 14;
-        const int sb_y_end = sb_y_start + visible_rows * row_h;  // 246
-        const int col1_x = sb_x + 44;   // 316
-        const int col2_x = sb_x + 164;  // 436
-        const int scan_cell_l = sb_x;       const int scan_cell_w = col1_x - sb_x;       // 44
-        const int name_cell_l = col1_x;     const int name_cell_w = col2_x - col1_x;     // 120
-        const int rssi_cell_l = col2_x;     const int rssi_cell_w = W - col2_x;          // 44
+        const int CW = 8;
+        const int row_h = 10;
+        const int sb_y_start = 15;
+        const int visible_rows = 24;
+        const int sb_y_end = sb_y_start + visible_rows * row_h;  // 255
+        const int col1_x = sb_x + 40;   // 312
+        const int col2_x = sb_x + 168;  // 440
+        const int scan_cell_l = sb_x;       const int scan_cell_w = col1_x - sb_x;       // 40
+        const int name_cell_l = col1_x;     const int name_cell_w = col2_x - col1_x;     // 128
+        const int rssi_cell_l = col2_x;     const int rssi_cell_w = W - col2_x;          // 40
 
         const int hdr_w = 4 * CW;
-        it.printf(scan_cell_l + (scan_cell_w - hdr_w) / 2, 3, id(f_console), id(c_green), "SCAN");
-        it.printf(name_cell_l + (name_cell_w - hdr_w) / 2, 3, id(f_console), id(c_green), "NAME");
-        it.printf(rssi_cell_l + (rssi_cell_w - hdr_w) / 2, 3, id(f_console), id(c_green), "RSSI");
+        it.printf(scan_cell_l + (scan_cell_w - hdr_w) / 2, 4, id(f_console), id(c_green), "SCAN");
+        it.printf(name_cell_l + (name_cell_w - hdr_w) / 2, 4, id(f_console), id(c_green), "NAME");
+        it.printf(rssi_cell_l + (rssi_cell_w - hdr_w) / 2, 4, id(f_console), id(c_green), "RSSI");
 
         int N = (int)addrs.size();
         int skip = (N > visible_rows) ? (N - visible_rows) : 0;
@@ -666,8 +677,8 @@ display:
           int scan_w = 4 * CW;
           it.printf(scan_cell_l + (scan_cell_w - scan_w) / 2, row_y, id(f_console), id(c_green), "%s", sc);
 
-          // NAME: 12 знаков влезает, длиннее идет бегущей строкой
-          int name_x = name_cell_l + 6;
+          // NAME: 15 знаков влезает, длиннее идет бегущей строкой
+          int name_x = name_cell_l + 4;
           int name_max_chars = (name_cell_w - 8) / CW;
           if ((int)nm.size() <= name_max_chars) {
             it.printf(name_x, row_y, id(f_console), id(c_green), "%s", nm.c_str());
@@ -705,27 +716,27 @@ display:
         auto tn = id(homeassistant_time).now();
         if (tn.is_valid()) snprintf(clk, sizeof(clk), "%02d:%02d:%02d", tn.hour, tn.minute, tn.second);
         else snprintf(clk, sizeof(clk), "--:--:--");
-        it.printf(4, 2, id(f_console), id(c_green), "%s", clk);
+        it.printf(4, 3, id(f_console), id(c_green), "%s", clk);
         char fps_s[16];
         snprintf(fps_s, sizeof(fps_s), "FPS:%d", id(fps_value));
-        it.printf(4, 18, id(f_console), id(c_green), "%s", fps_s);
+        it.printf(4, 12, id(f_console), id(c_green), "%s", fps_s);
 
         char dt[24];
         if (tn.is_valid()) snprintf(dt, sizeof(dt), "%04d.%02d.%02d", tn.year, tn.month, tn.day_of_month);
         else snprintf(dt, sizeof(dt), "----.--.--");
-        it.printf(sb_x - 8, 2, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", dt);
+        it.printf(sb_x - 8, 3, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", dt);
 
         uint32_t up_s = t / 1000;
         unsigned d = up_s / 86400, h = (up_s % 86400) / 3600, m = (up_s % 3600) / 60, ss = up_s % 60;
         char upbuf[32];
         if (d > 0) snprintf(upbuf, sizeof(upbuf), "Up %ud %02u:%02u", d, h, m);
         else snprintf(upbuf, sizeof(upbuf), "Up %02u:%02u:%02u", h, m, ss);
-        it.printf(4, H - 17, id(f_console), id(c_green), "%s", upbuf);
+        it.printf(4, H - 10, id(f_console), id(c_green), "%s", upbuf);
         char mem[16];
         snprintf(mem, sizeof(mem), "MEM %uK", (unsigned)(esp_get_free_heap_size() / 1024));
-        it.printf(sb_x - 8, H - 17, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", mem);
+        it.printf(sb_x - 8, H - 10, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", mem);
 
         char devc[24];
         snprintf(devc, sizeof(devc), "Found: %u/min", (unsigned)id(cache_uniq60));
-        it.printf(sb_x + (W - sb_x) / 2, sb_y_end + 5, id(f_console), id(c_green), TextAlign::TOP_CENTER, "%s", devc);
+        it.printf(sb_x + (W - sb_x) / 2, sb_y_end + 6, id(f_console), id(c_green), TextAlign::TOP_CENTER, "%s", devc);
       }
