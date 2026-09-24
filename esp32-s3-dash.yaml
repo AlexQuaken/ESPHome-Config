@@ -40,9 +40,13 @@ esphome:
   name: ${board_name}
   # копии столбиков через <<: *vbar переопределяют x и value, так и задумано
   merge_warnings: false
+  # скриншот экрана по HTTP :8080/screen.bmp, см. комментарий в файле
+  includes:
+    - dash_snapshot.h
   on_boot:
     - priority: -100
       then:
+        - lambda: 'dash_snap::start(id(lvgl_comp).get_disp());'
         - delay: 500ms
         - script.execute: draw_charts
         - script.execute: refresh
@@ -224,6 +228,9 @@ interval:
   - interval: 2s
     then:
       - script.execute: refresh
+  - interval: 100ms
+    then:
+      - lambda: 'dash_snap::loop(id(lvgl_comp).get_disp());'
 
 font:
   # Пиксельные шрифты из пака int10h (PxPlus = с кириллицей), bpp 1 без
@@ -517,6 +524,7 @@ script:
           }
 
 lvgl:
+  id: lvgl_comp
   displays: [lcd]
   rotation: 180
   touchscreens: [ts]
