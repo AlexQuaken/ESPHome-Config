@@ -1,26 +1,29 @@
-# Guition JC4827W543C: дашборд в стиле exceltable.com, шаблон 002
+# Guition JC4827W543C: дашборд гаража в стиле exceltable.com, шаблон 002
 # «KPI дашборд с ярким дизайном» (темные панели, неоновая обводка, градиент
-# оранжевый -> малиновый). Пока на тестовых данных, чтобы посмотреть вид.
+# оранжевый -> малиновый). Пока на тестовых данных, близких к реальным.
 #
 # Это вторая прошивка для той же платы, что и esp32-s3-disp.yaml (лог-консоль
 # и BLE-радар). Имя и адрес те же, чтобы запись в HA не менялась. Какая стоит
 # на плате, решает то, какой файл залит последним. Сборка у обоих общая
 # (.esphome/build/esp32-s3-disp), при переключении пересобирается целиком.
 #
-# Экран на LVGL: сглаживание, скругления, градиенты и свечение через тень.
+# Экран на LVGL: скругления, градиенты и свечение через тень. Шрифты
+# растровые, без сглаживания (bpp 1), каждый в родном размере или ровно x2.
 # Радар и график с заливкой рисуются лямбдой на холстах (скрипт draw_charts):
 # штатное lvgl.canvas.draw_polygon в LVGL 9 рисует только контур.
 #
-# Тестовые данные и что они будут показывать потом:
-#   синяя плашка      заряд батареи Deye
-#   ЭНЕРГИЯ СЕГОДНЯ   солнце / сеть / дом, кВт·ч
-#   АВТОНОМНОСТЬ      доля потребления без сети
-#   месяц             выбор года и итог за месяц
-#   кольцевая         откуда энергия: солнце, сеть, АКБ
-#   КЛИМАТ            радар температур по комнатам
-#   ТОП ПОТРЕБИТЕЛЕЙ  розетки с учетом энергии
-#   столбики          потребление по месяцам
-#   график            мощность солнца за день
+# Что где и откуда потом возьмутся данные (домашний гараж):
+#   синяя плашка   мощность гаража сейчас    sensor.schetchik_garazh_power
+#   СЕГОДНЯ        розетки / свет / зарядка  sensor.garage_*_daily
+#   ЗАРЯДКА АВТО   сессия ночной зарядки     sensor.garage_*_charge_session
+#   полоса 23-07   ход окна зарядки          input_datetime.garage_charge_*
+#   фишки          ворота, охрана, свет, движение
+#   СЕНТЯБРЬ       гараж за месяц            sensor.garage_*_monthly
+#   кольцевая      доля линий за месяц       sensor.garage_*_monthly
+#   СЕТЬ (радар)   напряжение, частота, cos, ток, нагрев, утечка (ATORCH)
+#   КЛИМАТ         температура, влажность, давление, нагрев розетки, батарейки
+#   столбики       гараж по месяцам          статистика sensor.schetchik_garazh_energy
+#   график         мощность за сутки         история sensor.schetchik_garazh_power
 substitutions:
   board_name: 'esp32-s3-disp'
   static_ip: '192.168.0.221'
@@ -129,45 +132,27 @@ touchscreen:
     reset_pin: GPIO38
 
 font:
-  - file:
-      type: gfonts
-      family: Roboto Condensed
-      weight: 400
-    id: f10
-    size: 10
-    bpp: 4
+  # Пиксельные шрифты из пака int10h (PxPlus = с кириллицей), bpp 1 без
+  # сглаживания. Попадают в пиксель только в родном размере или кратном ему.
+  - file: "fonts/PxPlus_HP_100LX_6x8.ttf"
+    id: fs
+    size: 8
+    bpp: 1
     glyphs: &glyphs " !%()+,-./0123456789:;°·ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюя"
-  - file:
-      type: gfonts
-      family: Roboto Condensed
-      weight: 400
-    id: f12
-    size: 12
-    bpp: 4
-    glyphs: *glyphs
-  - file:
-      type: gfonts
-      family: Roboto Condensed
-      weight: 700
-    id: f14
+  - file: "fonts/PxPlus_IBM_VGA_8x14.ttf"
+    id: fm
     size: 14
-    bpp: 4
+    bpp: 1
     glyphs: *glyphs
-  - file:
-      type: gfonts
-      family: Roboto Condensed
-      weight: 700
-    id: f22
-    size: 22
-    bpp: 4
-    glyphs: " %.0123456789°"
-  - file:
-      type: gfonts
-      family: Roboto Condensed
-      weight: 700
-    id: f30
-    size: 30
-    bpp: 4
+  - file: "fonts/PxPlus_IBM_VGA_8x16.ttf"
+    id: fb
+    size: 16
+    bpp: 1
+    glyphs: *glyphs
+  - file: "fonts/PxPlus_IBM_VGA_8x16.ttf"
+    id: fx
+    size: 32
+    bpp: 1
     glyphs: " %.0123456789"
 
 script:
@@ -203,14 +188,14 @@ script:
             lv_draw_rect(l, &d, &a);
           };
 
-          // ---------- радар климата, холст 160x88, центр (62,44), r=28 ----------
+          // ---------- радар сети, холст 160x88, центр (62,44), r=28 ----------
           {
             lv_obj_t *cv = (lv_obj_t *) id(radar_cv);
             lv_canvas_fill_bg(cv, lv_color_hex(0x0d1433), LV_OPA_COVER);
             lv_layer_t l; lv_canvas_init_layer(cv, &l);
             const float cx = 62, cy = 44, R = 28;
             const int N = 6;
-            const float v[N] = {0.80f, 0.55f, 0.90f, 0.70f, 0.62f, 0.85f};   // тест
+            const float v[N] = {0.95f, 0.98f, 0.48f, 0.62f, 0.45f, 0.12f};   // тест: U, f, cos, I, нагрев, утечка
             float ax[N], ay[N];
             for (int i = 0; i < N; i++) {
               float a = -M_PI / 2 + i * 2 * M_PI / N;
@@ -241,14 +226,14 @@ script:
             lv_canvas_finish_layer(cv, &l);
           }
 
-          // ---------- график мощности солнца, холст 224x60 ----------
+          // ---------- мощность гаража за сутки, холст 224x60 ----------
           {
             lv_obj_t *cv = (lv_obj_t *) id(area_cv);
             lv_canvas_fill_bg(cv, lv_color_hex(0x0c1230), LV_OPA_COVER);
             lv_layer_t l; lv_canvas_init_layer(cv, &l);
-            const int N = 13;   // 6..18 часов
-            const float v[N] = {0.1f, 0.4f, 1.2f, 2.3f, 3.4f, 4.2f, 4.8f, 4.6f, 4.1f, 3.2f, 2.0f, 0.9f, 0.2f};  // тест, кВт
-            const float x0 = 4, dx = 18, bot = 58, top = 6, vmax = 5.0f;
+            const int N = 13;   // 0..24 часа через 2, ночью зарядка авто 23-07
+            const float v[N] = {2.17f, 2.17f, 2.17f, 2.12f, 0.06f, 0.15f, 0.40f, 0.10f, 0.12f, 0.45f, 0.70f, 0.30f, 2.17f};  // тест, кВт
+            const float x0 = 4, dx = 18, bot = 58, top = 6, vmax = 2.5f;
             for (int g = 1; g <= 4; g++) {
               float y = bot - (bot - top) * g / 5;
               line(&l, 0, y, 224, y, 0x26325f, 1, LV_OPA_60);
@@ -260,7 +245,7 @@ script:
               tri(&l, px[i + 1], py[i + 1], px[i + 1], bot, px[i], bot, 0x9b6bff, LV_OPA_90, 0x2a1a70, LV_OPA_50);
             }
             for (int i = 0; i + 1 < N; i++) line(&l, px[i], py[i], px[i + 1], py[i + 1], 0xc9b8ff, 2, LV_OPA_COVER);
-            for (int k : {5, 6, 7}) {
+            for (int k : {0, 6, 10}) {
               line(&l, px[k], py[k], px[k], bot, 0xc9b8ff, 1, LV_OPA_50);
               dot(&l, px[k], py[k], 3, 0x8a5cff);
             }
@@ -272,7 +257,7 @@ lvgl:
   rotation: 180
   touchscreens: [ts]
   buffer_size: 25%
-  default_font: f12
+  default_font: fs
   theme:
     obj:
       pad_all: 0
@@ -345,10 +330,10 @@ lvgl:
             shadow_width: 14
             shadow_opa: 70%
             widgets:
-              - label: {x: 8, y: 5, text: "Батарея", text_font: f12}
-              - label: {x: 60, y: 5, width: 46, text: "+1.8 кВт", text_font: f12, text_align: RIGHT}
-              - label: {x: 8, y: 17, text: "92%", text_font: f30}
-              - label: {x: 8, y: 48, text: "Deye, заряд", text_font: f10, text_color: 0xcfe0ff}
+              - label: {x: 8, y: 5, text: "ГАРАЖ СЕЙЧАС", text_font: fs}
+              - label: {x: 7, y: 15, text: "2.17", text_font: fx}
+              - label: {x: 76, y: 32, text: "кВт", text_font: fm}
+              - label: {x: 8, y: 52, text: "заряжается авто", text_font: fs, text_color: 0xcfe0ff}
 
         - obj:
             x: 120
@@ -357,15 +342,16 @@ lvgl:
             height: 64
             styles: [panel]
             widgets:
-              - label: {x: 0, y: 3, width: 120, text: "ЭНЕРГИЯ СЕГОДНЯ", text_font: f12, text_align: CENTER, text_color: 0xaab8f0}
-              - label: {x: 10, y: 18, text: "Солнце", text_font: f10, styles: [dim]}
-              - label: {x: 60, y: 18, width: 50, text: "21.7", text_font: f10, text_align: RIGHT}
-              - label: {x: 10, y: 29, text: "Сеть", text_font: f10, styles: [dim]}
-              - label: {x: 60, y: 29, width: 50, text: "8.0", text_font: f10, text_align: RIGHT}
-              - label: {x: 10, y: 40, text: "Дом", text_font: f10, styles: [dim]}
-              - label: {x: 60, y: 40, width: 50, text: "19.3", text_font: f10, text_align: RIGHT}
-              - label: {x: 10, y: 50, text: "ВСЕГО, кВт·ч", text_font: f10}
-              - label: {x: 60, y: 50, width: 50, text: "29.0", text_font: f10, text_align: RIGHT}
+              - label: {x: 0, y: 4, width: 120, text: "СЕГОДНЯ, кВт·ч", text_font: fs, text_align: CENTER, text_color: 0xaab8f0}
+              - label: {x: 10, y: 17, text: "Розетки", text_font: fs, styles: [dim]}
+              - label: {x: 70, y: 17, width: 40, text: "12.4", text_font: fs, text_align: RIGHT}
+              - label: {x: 10, y: 28, text: "Свет", text_font: fs, styles: [dim]}
+              - label: {x: 70, y: 28, width: 40, text: "0.3", text_font: fs, text_align: RIGHT}
+              - label: {x: 10, y: 39, text: "Зарядка", text_font: fs, styles: [dim]}
+              - label: {x: 70, y: 39, width: 40, text: "0.0", text_font: fs, text_align: RIGHT}
+              - obj: {x: 10, y: 49, width: 100, height: 1, bg_opa: COVER, bg_color: 0x27366e}
+              - label: {x: 10, y: 52, text: "ВСЕГО", text_font: fs}
+              - label: {x: 70, y: 52, width: 40, text: "12.7", text_font: fs, text_align: RIGHT}
 
         - obj:
             x: 244
@@ -374,8 +360,8 @@ lvgl:
             height: 40
             styles: [panel, glow_violet]
             widgets:
-              - label: {x: 0, y: 3, width: 116, text: "АВТОНОМНОСТЬ", text_font: f12, text_align: CENTER, text_color: 0xaab8f0}
-              - label: {x: 0, y: 14, width: 116, text: "89%", text_font: f22, text_align: CENTER}
+              - label: {x: 0, y: 5, width: 116, text: "ЗАРЯДКА АВТО", text_font: fs, text_align: CENTER, text_color: 0xaab8f0}
+              - label: {x: 0, y: 17, width: 116, text: "16.7 кВт·ч", text_font: fb, text_align: CENTER}
 
         - obj:
             x: 244
@@ -385,15 +371,15 @@ lvgl:
             styles: [panel]
             radius: 8
             widgets:
-              - label: {x: 6, y: 4, text: "План", text_font: f10, styles: [dim]}
+              - label: {x: 6, y: 6, text: "23-07", text_font: fs, styles: [dim]}
               - bar:
-                  x: 32
+                  x: 40
                   y: 6
-                  width: 82
+                  width: 74
                   height: 8
                   min_value: 0
                   max_value: 100
-                  value: 92
+                  value: 64
                   bg_opa: COVER
                   bg_color: 0x1a2350
                   radius: 4
@@ -402,7 +388,7 @@ lvgl:
                     bg_grad_color: 0xe040fb
                     bg_grad_dir: HOR
                     radius: 4
-              - label: {x: 32, y: 4, width: 82, text: "92%", text_font: f10, text_align: CENTER}
+              - label: {x: 40, y: 6, width: 74, text: "64%", text_font: fs, text_align: CENTER}
 
         - obj:
             x: 368
@@ -411,11 +397,12 @@ lvgl:
             height: 64
             styles: [panel]
             widgets:
-              - label: {x: 5, y: 5, width: 30, height: 13, text: "2025", text_font: f10, styles: [chip]}
-              - label: {x: 39, y: 5, width: 30, height: 13, text: "2026", text_font: f10, styles: [chip_on]}
-              - label: {x: 73, y: 5, width: 30, height: 13, text: "2027", text_font: f10, styles: [chip]}
-              - label: {x: 0, y: 23, width: 108, text: "СЕНТЯБРЬ", text_font: f14, text_align: CENTER}
-              - label: {x: 0, y: 44, width: 100, text: "за месяц 387 кВт·ч", text_font: f10, text_align: RIGHT, styles: [dim]}
+              - label: {x: 5, y: 5, width: 47, height: 12, text: "ВОРОТА", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {x: 56, y: 5, width: 47, height: 12, text: "ОХРАНА", text_font: fs, pad_top: 2, styles: [chip_on]}
+              - label: {x: 5, y: 20, width: 47, height: 12, text: "СВЕТ", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {x: 56, y: 20, width: 47, height: 12, text: "ДВИЖ.", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {x: 0, y: 36, width: 108, text: "СЕНТЯБРЬ", text_font: fm, text_align: CENTER}
+              - label: {x: 0, y: 52, width: 102, text: "34.2 кВт·ч", text_font: fs, text_align: RIGHT, styles: [dim]}
 
         # ================= ряд 2 =================
         - obj:
@@ -425,18 +412,15 @@ lvgl:
             height: 92
             styles: [panel]
             widgets:
-              - label: {x: 5, y: 22, text: "Солнце", text_font: f10, styles: [dim]}
-              - label: {x: 5, y: 41, text: "Сеть", text_font: f10, styles: [dim]}
-              - label: {x: 5, y: 60, text: "АКБ", text_font: f10, styles: [dim]}
               # кольцевая из трех дуг, 0 градусов сверху (rotation 270)
               - arc: &seg
-                  x: 34
+                  x: 6
                   y: 14
                   width: 64
                   height: 64
                   rotation: 270
                   start_angle: 0
-                  end_angle: 207
+                  end_angle: 311
                   adjustable: false
                   clickable: false
                   arc_width: 9
@@ -449,22 +433,25 @@ lvgl:
                     pad_all: 0
               - arc:
                   <<: *seg
-                  start_angle: 210
-                  end_angle: 286
+                  start_angle: 314
+                  end_angle: 350
                   arc_color: 0xe040fb
               - arc:
                   <<: *seg
-                  start_angle: 289
-                  end_angle: 357
+                  start_angle: 353
+                  end_angle: 358
                   arc_color: 0x3f8cff
-              - label: {x: 34, y: 34, width: 64, text: "29.0", text_font: f14, text_align: CENTER}
-              - label: {x: 34, y: 50, width: 64, text: "кВт·ч", text_font: f10, text_align: CENTER, styles: [dim]}
-              - obj: {x: 101, y: 24, width: 7, height: 7, bg_opa: COVER, bg_color: 0xff9a3c, radius: 2}
-              - label: {x: 110, y: 21, text: "58%", text_font: f10}
-              - obj: {x: 101, y: 43, width: 7, height: 7, bg_opa: COVER, bg_color: 0xe040fb, radius: 2}
-              - label: {x: 110, y: 40, text: "22%", text_font: f10}
-              - obj: {x: 101, y: 62, width: 7, height: 7, bg_opa: COVER, bg_color: 0x3f8cff, radius: 2}
-              - label: {x: 110, y: 59, text: "20%", text_font: f10}
+              - label: {x: 6, y: 35, width: 64, text: "19.0", text_font: fb, text_align: CENTER}
+              - label: {x: 6, y: 51, width: 64, text: "кВт·ч", text_font: fs, text_align: CENTER, styles: [dim]}
+              - obj: {x: 76, y: 14, width: 7, height: 7, bg_opa: COVER, bg_color: 0xff9a3c, radius: 2}
+              - label: {x: 86, y: 14, text: "87%", text_font: fs}
+              - label: {x: 76, y: 24, text: "Розетки", text_font: fs, styles: [dim]}
+              - obj: {x: 76, y: 38, width: 7, height: 7, bg_opa: COVER, bg_color: 0xe040fb, radius: 2}
+              - label: {x: 86, y: 38, text: "11%", text_font: fs}
+              - label: {x: 76, y: 48, text: "Свет", text_font: fs, styles: [dim]}
+              - obj: {x: 76, y: 62, width: 7, height: 7, bg_opa: COVER, bg_color: 0x3f8cff, radius: 2}
+              - label: {x: 86, y: 62, text: "2%", text_font: fs}
+              - label: {x: 76, y: 72, text: "Зарядка", text_font: fs, styles: [dim]}
 
         - obj:
             x: 136
@@ -482,14 +469,14 @@ lvgl:
                   width: 160
                   height: 88
               # подписи осей: центр радара в координатах панели (64,46), r=28
-              - label: {x: 44, y: 3, width: 40, text: "Зал", text_font: f10, text_align: CENTER, styles: [dim]}
-              - label: {x: 90, y: 24, text: "Кухня", text_font: f10, styles: [dim]}
-              - label: {x: 90, y: 57, text: "Спальня", text_font: f10, styles: [dim]}
-              - label: {x: 44, y: 78, width: 40, text: "Детская", text_font: f10, text_align: CENTER, styles: [dim]}
-              - label: {x: 0, y: 57, width: 37, text: "Ванная", text_font: f10, text_align: RIGHT, styles: [dim]}
-              - label: {x: 0, y: 24, width: 37, text: "Кабинет", text_font: f10, text_align: RIGHT, styles: [dim]}
-              - label: {x: 118, y: 4, width: 40, text: "КЛИМАТ", text_font: f10, text_align: RIGHT, text_color: 0xaab8f0}
-              - label: {x: 118, y: 66, width: 40, text: "22.4°", text_font: f14, text_align: RIGHT}
+              - label: {x: 34, y: 4, width: 60, text: "Напряж.", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {x: 91, y: 26, text: "Частота", text_font: fs, styles: [dim]}
+              - label: {x: 91, y: 58, text: "Косинус", text_font: fs, styles: [dim]}
+              - label: {x: 34, y: 80, width: 60, text: "Ток", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {x: 0, y: 58, width: 37, text: "Утечка", text_font: fs, text_align: RIGHT, styles: [dim]}
+              - label: {x: 0, y: 26, width: 37, text: "Нагрев", text_font: fs, text_align: RIGHT, styles: [dim]}
+              - label: {x: 118, y: 5, width: 40, text: "СЕТЬ", text_font: fs, text_align: RIGHT, text_color: 0xaab8f0}
+              - label: {x: 110, y: 72, width: 48, text: "232 В", text_font: fb, text_align: RIGHT}
 
         - obj:
             x: 304
@@ -498,17 +485,17 @@ lvgl:
             height: 92
             styles: [panel]
             widgets:
-              - label: {x: 0, y: 2, width: 164, text: "ТОП ПОТРЕБИТЕЛЕЙ", text_font: f10, text_align: RIGHT, text_color: 0xaab8f0}
-              - label: {x: 8, y: 14, text: "Бойлер", text_font: f10}
-              - label: {x: 120, y: 14, width: 44, text: "2.84", text_font: f10, text_align: RIGHT}
+              - label: {x: 0, y: 4, width: 164, text: "КЛИМАТ", text_font: fs, text_align: RIGHT, text_color: 0xaab8f0}
+              - label: {x: 8, y: 14, text: "Температура", text_font: fs}
+              - label: {x: 110, y: 14, width: 54, text: "15.4°", text_font: fs, text_align: RIGHT}
               - bar: &hbar
                   x: 8
-                  y: 26
+                  y: 24
                   width: 156
                   height: 3
                   min_value: 0
-                  max_value: 300
-                  value: 284
+                  max_value: 100
+                  value: 45
                   bg_opa: COVER
                   bg_color: 0x1a2350
                   radius: 2
@@ -517,18 +504,18 @@ lvgl:
                     bg_grad_color: 0xe040fb
                     bg_grad_dir: HOR
                     radius: 2
-              - label: {x: 8, y: 29, text: "Кондиционер", text_font: f10}
-              - label: {x: 120, y: 29, width: 44, text: "2.26", text_font: f10, text_align: RIGHT}
-              - bar: {<<: *hbar, y: 41, value: 226}
-              - label: {x: 8, y: 44, text: "Холодильник", text_font: f10}
-              - label: {x: 120, y: 44, width: 44, text: "1.97", text_font: f10, text_align: RIGHT}
-              - bar: {<<: *hbar, y: 56, value: 197}
-              - label: {x: 8, y: 59, text: "Стиральная машина", text_font: f10}
-              - label: {x: 120, y: 59, width: 44, text: "1.81", text_font: f10, text_align: RIGHT}
-              - bar: {<<: *hbar, y: 71, value: 181}
-              - label: {x: 8, y: 74, text: "Компьютер", text_font: f10}
-              - label: {x: 120, y: 74, width: 44, text: "1.70", text_font: f10, text_align: RIGHT}
-              - bar: {<<: *hbar, y: 86, value: 170}
+              - label: {x: 8, y: 29, text: "Влажность", text_font: fs}
+              - label: {x: 110, y: 29, width: 54, text: "67%", text_font: fs, text_align: RIGHT}
+              - bar: {<<: *hbar, y: 39, value: 67}
+              - label: {x: 8, y: 44, text: "Давление", text_font: fs}
+              - label: {x: 110, y: 44, width: 54, text: "987 гПа", text_font: fs, text_align: RIGHT}
+              - bar: {<<: *hbar, y: 54, value: 55}
+              - label: {x: 8, y: 59, text: "Нагрев розетки", text_font: fs}
+              - label: {x: 110, y: 59, width: 54, text: "27°", text_font: fs, text_align: RIGHT}
+              - bar: {<<: *hbar, y: 69, value: 45}
+              - label: {x: 8, y: 74, text: "Батарейки мин.", text_font: fs}
+              - label: {x: 110, y: 74, width: 54, text: "33%", text_font: fs, text_align: RIGHT}
+              - bar: {<<: *hbar, y: 84, value: 33}
 
         # ================= ряд 3 =================
         - obj:
@@ -538,15 +525,15 @@ lvgl:
             height: 100
             styles: [panel]
             widgets:
-              - label: {x: 8, y: 3, text: "Потребление по месяцам, кВт·ч", text_font: f10, styles: [dim]}
+              - label: {x: 8, y: 5, text: "ГАРАЖ ПО МЕСЯЦАМ, кВт·ч", text_font: fs, styles: [dim]}
               - bar: &vbar
                   x: 12
                   y: 18
                   width: 10
                   height: 58
                   min_value: 0
-                  max_value: 360
-                  value: 310
+                  max_value: 60
+                  value: 58
                   bg_opa: COVER
                   bg_color: 0x151d42
                   radius: 3
@@ -555,32 +542,32 @@ lvgl:
                     bg_grad_color: 0xff9a3c
                     bg_grad_dir: VER
                     radius: 3
-              - bar: {<<: *vbar, x: 30, value: 280}
-              - bar: {<<: *vbar, x: 48, value: 250}
-              - bar: {<<: *vbar, x: 66, value: 200}
-              - bar: {<<: *vbar, x: 84, value: 190}
-              - bar: {<<: *vbar, x: 102, value: 260}
-              - bar: {<<: *vbar, x: 120, value: 340}
-              - bar: {<<: *vbar, x: 138, value: 330}
-              - bar: {<<: *vbar, x: 156, value: 240}
-              - bar: {<<: *vbar, x: 174, value: 210}
-              - bar: {<<: *vbar, x: 192, value: 270}
-              - bar: {<<: *vbar, x: 210, value: 320}
-              - label: {x: 97, y: 22, width: 20, text: "260", text_font: f10, text_align: CENTER}
-              - label: {x: 115, y: 9, width: 20, text: "340", text_font: f10, text_align: CENTER}
-              - label: {x: 133, y: 11, width: 20, text: "330", text_font: f10, text_align: CENTER}
-              - label: {x: 10, y: 81, width: 14, height: 12, text: "Я", text_font: f10, styles: [chip]}
-              - label: {x: 28, y: 81, width: 14, height: 12, text: "Ф", text_font: f10, styles: [chip]}
-              - label: {x: 46, y: 81, width: 14, height: 12, text: "М", text_font: f10, styles: [chip]}
-              - label: {x: 64, y: 81, width: 14, height: 12, text: "А", text_font: f10, styles: [chip]}
-              - label: {x: 82, y: 81, width: 14, height: 12, text: "М", text_font: f10, styles: [chip]}
-              - label: {x: 100, y: 81, width: 14, height: 12, text: "И", text_font: f10, styles: [chip_on]}
-              - label: {x: 118, y: 81, width: 14, height: 12, text: "И", text_font: f10, styles: [chip_on]}
-              - label: {x: 136, y: 81, width: 14, height: 12, text: "А", text_font: f10, styles: [chip_on]}
-              - label: {x: 154, y: 81, width: 14, height: 12, text: "С", text_font: f10, styles: [chip]}
-              - label: {x: 172, y: 81, width: 14, height: 12, text: "О", text_font: f10, styles: [chip]}
-              - label: {x: 190, y: 81, width: 14, height: 12, text: "Н", text_font: f10, styles: [chip]}
-              - label: {x: 208, y: 81, width: 14, height: 12, text: "Д", text_font: f10, styles: [chip]}
+              - bar: {<<: *vbar, x: 30, value: 51}
+              - bar: {<<: *vbar, x: 48, value: 44}
+              - bar: {<<: *vbar, x: 66, value: 33}
+              - bar: {<<: *vbar, x: 84, value: 27}
+              - bar: {<<: *vbar, x: 102, value: 22}
+              - bar: {<<: *vbar, x: 120, value: 19}
+              - bar: {<<: *vbar, x: 138, value: 23}
+              - bar: {<<: *vbar, x: 156, value: 34}
+              - bar: {<<: *vbar, x: 174, value: 41}
+              - bar: {<<: *vbar, x: 192, value: 49}
+              - bar: {<<: *vbar, x: 210, value: 56}
+              - label: {x: 115, y: 48, width: 20, text: "19", text_font: fs, text_align: CENTER}
+              - label: {x: 133, y: 44, width: 20, text: "23", text_font: fs, text_align: CENTER}
+              - label: {x: 151, y: 34, width: 20, text: "34", text_font: fs, text_align: CENTER}
+              - label: {x: 10, y: 82, width: 14, height: 11, text: "Я", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {x: 28, y: 82, width: 14, height: 11, text: "Ф", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {x: 46, y: 82, width: 14, height: 11, text: "М", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {x: 64, y: 82, width: 14, height: 11, text: "А", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {x: 82, y: 82, width: 14, height: 11, text: "М", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {x: 100, y: 82, width: 14, height: 11, text: "И", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {x: 118, y: 82, width: 14, height: 11, text: "И", text_font: fs, pad_top: 2, styles: [chip_on]}
+              - label: {x: 136, y: 82, width: 14, height: 11, text: "А", text_font: fs, pad_top: 2, styles: [chip_on]}
+              - label: {x: 154, y: 82, width: 14, height: 11, text: "С", text_font: fs, pad_top: 2, styles: [chip_on]}
+              - label: {x: 172, y: 82, width: 14, height: 11, text: "О", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {x: 190, y: 82, width: 14, height: 11, text: "Н", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {x: 208, y: 82, width: 14, height: 11, text: "Д", text_font: fs, pad_top: 2, styles: [chip]}
 
         - obj:
             x: 240
@@ -591,24 +578,23 @@ lvgl:
             bg_color: 0x0c1230
             bg_grad_dir: NONE
             widgets:
-              - label: {x: 8, y: 4, text: "Солнце, кВт", text_font: f10, text_color: 0xaab8f0}
-              - label: {x: 66, y: 3, width: 44, height: 13, text: "Сегодня", text_font: f10, styles: [chip_on]}
-              - label: {x: 113, y: 3, width: 40, height: 13, text: "Вчера", text_font: f10, styles: [chip]}
-              - label: {x: 156, y: 3, width: 40, height: 13, text: "Неделя", text_font: f10, styles: [chip]}
-              - label: {x: 196, y: 2, width: 34, text: "4.8", text_font: f14, text_align: RIGHT}
+              - label: {x: 8, y: 5, text: "МОЩНОСТЬ, кВт", text_font: fs, text_color: 0xaab8f0}
+              - label: {x: 90, y: 3, width: 40, height: 12, text: "СУТКИ", text_font: fs, pad_top: 2, styles: [chip_on]}
+              - label: {x: 133, y: 3, width: 44, height: 12, text: "НЕДЕЛЯ", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {x: 180, y: 3, width: 44, height: 12, text: "МЕСЯЦ", text_font: fs, pad_top: 2, styles: [chip]}
               - canvas:
                   id: area_cv
                   x: 6
                   y: 20
                   width: 224
                   height: 60
-              - label: {x: 90, y: 24, width: 20, text: "4.2", text_font: f10, text_align: CENTER}
-              - label: {x: 108, y: 18, width: 20, text: "4.8", text_font: f10, text_align: CENTER}
-              - label: {x: 126, y: 20, width: 20, text: "4.6", text_font: f10, text_align: CENTER}
-              - label: {x: 0, y: 83, width: 20, text: "6", text_font: f10, text_align: CENTER, styles: [dim]}
-              - label: {x: 36, y: 83, width: 20, text: "8", text_font: f10, text_align: CENTER, styles: [dim]}
-              - label: {x: 72, y: 83, width: 20, text: "10", text_font: f10, text_align: CENTER, styles: [dim]}
-              - label: {x: 108, y: 83, width: 20, text: "12", text_font: f10, text_align: CENTER, styles: [dim]}
-              - label: {x: 144, y: 83, width: 20, text: "14", text_font: f10, text_align: CENTER, styles: [dim]}
-              - label: {x: 180, y: 83, width: 20, text: "16", text_font: f10, text_align: CENTER, styles: [dim]}
-              - label: {x: 212, y: 83, width: 20, text: "18", text_font: f10, text_align: CENTER, styles: [dim]}
+              - label: {x: 12, y: 20, width: 30, text: "2.17", text_font: fs, text_align: CENTER}
+              - label: {x: 103, y: 57, width: 30, text: "0.40", text_font: fs, text_align: CENTER}
+              - label: {x: 175, y: 51, width: 30, text: "0.70", text_font: fs, text_align: CENTER}
+              - label: {x: 0, y: 85, width: 20, text: "0", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {x: 36, y: 85, width: 20, text: "4", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {x: 72, y: 85, width: 20, text: "8", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {x: 108, y: 85, width: 20, text: "12", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {x: 144, y: 85, width: 20, text: "16", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {x: 180, y: 85, width: 20, text: "20", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {x: 212, y: 85, width: 20, text: "24", text_font: fs, text_align: CENTER, styles: [dim]}
