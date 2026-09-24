@@ -1,0 +1,396 @@
+# Guition JC4827W543C: гараж в виде ретро-терминала (янтарный текст на черном,
+# полосы из блоков, журнал событий). Вариант 6 из макетов
+# C:\Users\Alex\Downloads\garage-dash-variants, выбран 24.09.2026.
+#
+# Третья прошивка для той же платы, рядом с esp32-s3-disp.yaml (лог-консоль и
+# BLE-радар) и esp32-s3-dash.yaml (неоновый дашборд). Имя и адрес те же, стоит
+# та, что залита последней. При переходе на неоновый дашборд включить обратно
+# автоматизацию HA garage_dash_push_history, эта прошивка история не принимает.
+#
+# Данные: sensor/text_sensor/binary_sensor platform homeassistant, скрипт
+# refresh раз в 2 секунды. Журнал плата ведет сама по смене состояний ворот,
+# движения, света, охраны и зарядки, последние 6 строк хранятся во флеше.
+# Скриншот экрана: http://192.168.0.221:8080/screen.bmp (dash_snapshot.h).
+substitutions:
+  board_name: 'esp32-s3-disp'
+  static_ip: '192.168.0.221'
+  amber: '0xffb000'
+  amber_dim: '0xa06e00'
+  amber_dark: '0x5a3c00'
+
+esphome:
+  name: ${board_name}
+  includes:
+    - dash_snapshot.h
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: 'dash_snap::start(id(lvgl_comp).get_disp());'
+        - script.execute: refresh
+        # первые состояния после загрузки это не события, журнал не пишем
+        - delay: 15s
+        - lambda: 'id(g_log_armed) = true;'
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 4MB
+  cpu_frequency: 240MHz
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+wifi:
+  ssid: !secret wifi
+  password: !secret wifipwd
+  fast_connect: true
+  reboot_timeout: 3min
+  manual_ip:
+    static_ip: ${static_ip}
+    gateway: 192.168.0.1
+    subnet: 255.255.255.0
+    dns1: 192.168.0.7
+    dns2: 192.168.0.1
+  ap:
+    ssid: ${board_name}_Fallback
+    password: !secret wifipwd
+
+captive_portal:
+
+api:
+
+ota:
+  platform: esphome
+  password: !secret wifipwd
+
+logger:
+  level: INFO
+
+# Перезагрузка в первые 15 секунд после OTA откатывает на прошлую прошивку
+safe_mode:
+  boot_is_good_after: 15s
+
+button:
+  - platform: safe_mode
+    name: ${board_name} Safe Mode (OTA)
+
+output:
+  - platform: ledc
+    pin: GPIO1
+    id: backlight_pwm
+    frequency: 5000Hz
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: ${board_name} Backlight
+    id: backlight
+    restore_mode: RESTORE_DEFAULT_ON
+
+i2c:
+  id: i2c_bus
+  sda: GPIO8
+  scl: GPIO4
+  frequency: 400kHz
+
+spi:
+  id: quad_spi
+  type: quad
+  clk_pin: GPIO47
+  data_pins: [GPIO21, GPIO48, GPIO40, GPIO39]
+
+display:
+  # INVON, шина не выше паспортных 32 МГц, поворот на 180 в блоке lvgl
+  - platform: mipi_spi
+    id: lcd
+    model: JC4827W543
+    spi_id: quad_spi
+    invert_colors: true
+    data_rate: 26.67MHz
+    auto_clear_enabled: false
+    update_interval: never
+
+touchscreen:
+  - platform: gt911
+    id: ts
+    i2c_id: i2c_bus
+    interrupt_pin:
+      number: GPIO3
+      ignore_strapping_warning: true
+    reset_pin: GPIO38
+    # GT911 отдает координаты как видит глаз, LVGL (rotation: 180) разворачивает
+    # их еще раз, поэтому зеркало по обеим осям
+    transform:
+      mirror_x: true
+      mirror_y: true
+
+globals:
+  # журнал: 6 строк по 3 поля (время, что, состояние), новая первой; во флеше
+  - id: g_log
+    type: std::array<std::array<char, 72>, 6>
+    restore_value: yes
+  - id: g_log_armed
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: g_charging
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: g_cursor
+    type: bool
+    restore_value: no
+    initial_value: 'true'
+
+time:
+  - platform: homeassistant
+    id: ha_time
+
+sensor:
+  - {platform: homeassistant, internal: true, id: ha_p_now, entity_id: sensor.schetchik_garazh_power}
+  - {platform: homeassistant, internal: true, id: ha_volt, entity_id: sensor.schetchik_garazh_voltage}
+  - {platform: homeassistant, internal: true, id: ha_freq, entity_id: sensor.schetchik_garazh_frequency}
+  - {platform: homeassistant, internal: true, id: ha_d_sock, entity_id: sensor.garage_sockets_daily}
+  - {platform: homeassistant, internal: true, id: ha_d_light, entity_id: sensor.garage_light_daily}
+  - {platform: homeassistant, internal: true, id: ha_d_chg, entity_id: sensor.garage_charger_daily}
+  - {platform: homeassistant, internal: true, id: ha_temp, entity_id: sensor.garage_air_temperature}
+  - {platform: homeassistant, internal: true, id: ha_hum, entity_id: sensor.garage_humidity}
+  - platform: homeassistant
+    internal: true
+    id: ha_p_sock
+    entity_id: sensor.rozetki_garazh_power
+    on_value:
+      - script.execute: check_charge
+  - platform: homeassistant
+    internal: true
+    id: ha_p_chg
+    entity_id: sensor.zariadka_avto_power
+    on_value:
+      - script.execute: check_charge
+
+text_sensor:
+  - {platform: homeassistant, internal: true, id: ha_line, entity_id: input_select.garage_charge_line}
+  - platform: homeassistant
+    internal: true
+    id: ha_light
+    entity_id: switch.svet_garazh
+    on_value:
+      - lambda: |-
+          if (x == "on") id(log_event).execute("СВЕТ", "вкл");
+          else if (x == "off") id(log_event).execute("СВЕТ", "выкл");
+  - platform: homeassistant
+    internal: true
+    id: ha_alarm
+    entity_id: alarm_control_panel.shliuz_4_alarm
+    on_value:
+      - lambda: |-
+          const char *s = x.rfind("armed", 0) == 0 ? "под охраной" : x == "disarmed" ? "снята" :
+                          x == "arming" ? "ставится" : x == "pending" ? "ожидание" :
+                          x == "triggered" ? "ТРЕВОГА" : nullptr;
+          if (s) id(log_event).execute("ОХРАНА", s);
+
+binary_sensor:
+  - platform: homeassistant
+    internal: true
+    id: ha_gate
+    entity_id: binary_sensor.garage_gate
+    on_state:
+      - lambda: 'id(log_event).execute("ВОРОТА", x ? "открыты" : "закрыты");'
+  - platform: homeassistant
+    internal: true
+    id: ha_motion
+    entity_id: binary_sensor.garage_motion_any
+    on_state:
+      - lambda: 'id(log_event).execute("ДВИЖЕНИЕ", x ? "есть" : "нет");'
+  - platform: status
+    name: Status
+
+interval:
+  - interval: 2s
+    then:
+      - script.execute: refresh
+  - interval: 500ms
+    then:
+      - lambda: |-
+          id(g_cursor) = !id(g_cursor);
+          lv_obj_set_style_text_opa((lv_obj_t *) id(l_cursor), id(g_cursor) ? LV_OPA_COVER : LV_OPA_TRANSP, LV_PART_MAIN);
+  - interval: 100ms
+    then:
+      - lambda: 'dash_snap::loop(id(lvgl_comp).get_disp());'
+
+font:
+  # PxPlus (int10h, с кириллицей и псевдографикой), bpp 1 без сглаживания
+  - file: "fonts/PxPlus_HP_100LX_6x8.ttf"
+    id: fs
+    size: 8
+    bpp: 1
+    glyphs: &glyphs " !%()+,-./0123456789:;°·ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюя═█░▒"
+  - file: "fonts/PxPlus_IBM_VGA_8x14.ttf"
+    id: fm
+    size: 14
+    bpp: 1
+    glyphs: *glyphs
+
+script:
+  # Строка журнала: время, что, состояние. До g_log_armed (15 с после
+  # загрузки) не пишет: это первые состояния, а не события.
+  - id: log_event
+    mode: queued
+    parameters:
+      what: string
+      state: string
+    then:
+      - lambda: |-
+          if (!id(g_log_armed)) return;
+          auto &L = id(g_log);
+          for (int i = 5; i > 0; i--) L[i] = L[i - 1];
+          auto t = id(ha_time).now();
+          char ts[16];
+          if (t.is_valid()) snprintf(ts, sizeof ts, "%02d.%02d %02d:%02d", t.day_of_month, t.month, t.hour, t.minute);
+          else snprintf(ts, sizeof ts, "--.-- --:--");
+          snprintf(L[0].data(), L[0].size(), "%s|%s|%s", ts, what.c_str(), state.c_str());
+          id(g_log) = L;   // запись во флеш
+          id(refresh).execute();
+
+  # Зарядка по мощности выбранной линии, с гистерезисом 300/100 Вт
+  - id: check_charge
+    then:
+      - lambda: |-
+          bool sockets = id(ha_line).state == "Розетки гаража";
+          float p = sockets ? id(ha_p_sock).state : id(ha_p_chg).state;
+          if (std::isnan(p)) return;
+          if (!id(g_charging) && p > 300) { id(g_charging) = true; id(log_event).execute("ЗАРЯДКА", "старт"); }
+          else if (id(g_charging) && p < 100) { id(g_charging) = false; id(log_event).execute("ЗАРЯДКА", "стоп"); }
+
+  - id: refresh
+    then:
+      - lambda: |-
+          auto set = [](lv_obj_t *o, const char *t) {
+            if (strcmp(lv_label_get_text(o), t) != 0) lv_label_set_text(o, t);
+          };
+          auto blocks = [](float f, int n) {
+            if (std::isnan(f)) f = 0;
+            int k = (int) lroundf(std::max(0.0f, std::min(1.0f, f)) * n);
+            std::string s;
+            for (int i = 0; i < n; i++) s += i < k ? "█" : "░";
+            return s;
+          };
+          char b[48];
+          auto t = id(ha_time).now();
+          if (t.is_valid()) {
+            snprintf(b, sizeof b, "%02d.%02d.%04d %02d:%02d", t.day_of_month, t.month, t.year, t.hour, t.minute);
+            set((lv_obj_t *) id(l_clock), b);
+          }
+          float p = id(ha_p_now).state, ds = id(ha_d_sock).state, dl = id(ha_d_light).state, dc = id(ha_d_chg).state;
+          float te = id(ha_temp).state, hu = id(ha_hum).state, U = id(ha_volt).state, F = id(ha_freq).state;
+          struct Row { lv_obj_t *val, *bar; const char *fmt; float v, show, frac; };
+          Row rows[8] = {
+            {(lv_obj_t *) id(v0), (lv_obj_t *) id(b0), p >= 1000 ? "%.2f кВт" : "%.0f Вт", p, p >= 1000 ? p / 1000 : p, p / 3500},
+            {(lv_obj_t *) id(v1), (lv_obj_t *) id(b1), "%.2f кВт·ч", ds, ds, ds / 5},
+            {(lv_obj_t *) id(v2), (lv_obj_t *) id(b2), "%.2f кВт·ч", dl, dl, dl / 1},
+            {(lv_obj_t *) id(v3), (lv_obj_t *) id(b3), "%.2f кВт·ч", dc, dc, dc / 20},
+            {(lv_obj_t *) id(v4), (lv_obj_t *) id(b4), "%.1f °C", te, te, (te + 5) / 50},
+            {(lv_obj_t *) id(v5), (lv_obj_t *) id(b5), "%.0f %%", hu, hu, hu / 100},
+            {(lv_obj_t *) id(v6), (lv_obj_t *) id(b6), "%.0f В", U, U, (U - 200) / 50},
+            {(lv_obj_t *) id(v7), (lv_obj_t *) id(b7), "%.2f Гц", F, F, (F - 49) / 2},
+          };
+          for (auto &r : rows) {
+            if (std::isnan(r.v)) snprintf(b, sizeof b, "--"); else snprintf(b, sizeof b, r.fmt, r.show);
+            set(r.val, b);
+            set(r.bar, blocks(r.frac, 28).c_str());
+          }
+          // журнал: поля через '|'
+          lv_obj_t *lt[6] = {(lv_obj_t *) id(e0t), (lv_obj_t *) id(e1t), (lv_obj_t *) id(e2t), (lv_obj_t *) id(e3t), (lv_obj_t *) id(e4t), (lv_obj_t *) id(e5t)};
+          lv_obj_t *lw[6] = {(lv_obj_t *) id(e0w), (lv_obj_t *) id(e1w), (lv_obj_t *) id(e2w), (lv_obj_t *) id(e3w), (lv_obj_t *) id(e4w), (lv_obj_t *) id(e5w)};
+          lv_obj_t *ls[6] = {(lv_obj_t *) id(e0s), (lv_obj_t *) id(e1s), (lv_obj_t *) id(e2s), (lv_obj_t *) id(e3s), (lv_obj_t *) id(e4s), (lv_obj_t *) id(e5s)};
+          const auto &L = id(g_log);
+          for (int i = 0; i < 6; i++) {
+            std::string line(L[i].data(), strnlen(L[i].data(), L[i].size()));
+            size_t a = line.find('|'), c = a == std::string::npos ? a : line.find('|', a + 1);
+            if (c == std::string::npos) { set(lt[i], ""); set(lw[i], ""); set(ls[i], ""); continue; }
+            set(lt[i], line.substr(0, a).c_str());
+            set(lw[i], line.substr(a + 1, c - a - 1).c_str());
+            set(ls[i], line.substr(c + 1).c_str());
+          }
+
+lvgl:
+  id: lvgl_comp
+  displays: [lcd]
+  touchscreens: [ts]
+  rotation: 180
+  buffer_size: 25%
+  default_font: fm
+  theme:
+    obj:
+      pad_all: 0
+      border_width: 0
+      radius: 0
+      bg_opa: TRANSP
+      scrollbar_mode: "OFF"
+      scrollable: false
+    label:
+      text_color: ${amber}
+  style_definitions:
+    - id: dim
+      text_color: ${amber_dim}
+  pages:
+    - id: term
+      bg_opa: COVER
+      bg_color: 0x060400
+      scrollable: false
+      widgets:
+        - obj: {x: 2, y: 2, width: 476, height: 268, radius: 4, border_width: 1, border_color: 0x5a3c00, scrollable: false}
+        - label: {x: 10, y: 8, text: "GARAGE.EXE  v1.0"}
+        - label: {id: l_clock, x: 250, y: 8, width: 220, text: "", text_align: RIGHT}
+        - label: {x: 10, y: 24, text: "════════════════════════════════════════════════════════════════════════════", text_font: fs, styles: [dim]}
+
+        - label: {x: 10, y: 36, text: "МОЩНОСТЬ....", styles: [dim]}
+        - label: {x: 10, y: 51, text: "РОЗЕТКИ.....", styles: [dim]}
+        - label: {x: 10, y: 66, text: "СВЕТ........", styles: [dim]}
+        - label: {x: 10, y: 81, text: "ЗАРЯДКА.....", styles: [dim]}
+        - label: {x: 10, y: 96, text: "ТЕМПЕРАТУРА.", styles: [dim]}
+        - label: {x: 10, y: 111, text: "ВЛАЖНОСТЬ...", styles: [dim]}
+        - label: {x: 10, y: 126, text: "НАПРЯЖЕНИЕ..", styles: [dim]}
+        - label: {x: 10, y: 141, text: "ЧАСТОТА.....", styles: [dim]}
+        - label: {id: v0, x: 106, y: 36, width: 104, text: "", text_align: RIGHT}
+        - label: {id: v1, x: 106, y: 51, width: 104, text: "", text_align: RIGHT}
+        - label: {id: v2, x: 106, y: 66, width: 104, text: "", text_align: RIGHT}
+        - label: {id: v3, x: 106, y: 81, width: 104, text: "", text_align: RIGHT}
+        - label: {id: v4, x: 106, y: 96, width: 104, text: "", text_align: RIGHT}
+        - label: {id: v5, x: 106, y: 111, width: 104, text: "", text_align: RIGHT}
+        - label: {id: v6, x: 106, y: 126, width: 104, text: "", text_align: RIGHT}
+        - label: {id: v7, x: 106, y: 141, width: 104, text: "", text_align: RIGHT}
+        - label: {id: b0, x: 226, y: 36, text: ""}
+        - label: {id: b1, x: 226, y: 51, text: ""}
+        - label: {id: b2, x: 226, y: 66, text: ""}
+        - label: {id: b3, x: 226, y: 81, text: ""}
+        - label: {id: b4, x: 226, y: 96, text: ""}
+        - label: {id: b5, x: 226, y: 111, text: ""}
+        - label: {id: b6, x: 226, y: 126, text: ""}
+        - label: {id: b7, x: 226, y: 141, text: ""}
+
+        - label: {x: 10, y: 158, text: "════════════════════════════════════════════════════════════════════════════", text_font: fs, styles: [dim]}
+        - label: {x: 10, y: 168, text: "ЖУРНАЛ"}
+        # журнал: время / что / состояние, новая строка ярче
+        - label: {id: e0t, x: 10, y: 184, text: ""}
+        - label: {id: e0w, x: 114, y: 184, text: ""}
+        - label: {id: e0s, x: 202, y: 184, text: ""}
+        - label: {id: e1t, x: 10, y: 197, text: "", styles: [dim]}
+        - label: {id: e1w, x: 114, y: 197, text: "", styles: [dim]}
+        - label: {id: e1s, x: 202, y: 197, text: "", styles: [dim]}
+        - label: {id: e2t, x: 10, y: 210, text: "", styles: [dim]}
+        - label: {id: e2w, x: 114, y: 210, text: "", styles: [dim]}
+        - label: {id: e2s, x: 202, y: 210, text: "", styles: [dim]}
+        - label: {id: e3t, x: 10, y: 223, text: "", styles: [dim]}
+        - label: {id: e3w, x: 114, y: 223, text: "", styles: [dim]}
+        - label: {id: e3s, x: 202, y: 223, text: "", styles: [dim]}
+        - label: {id: e4t, x: 10, y: 236, text: "", styles: [dim]}
+        - label: {id: e4w, x: 114, y: 236, text: "", styles: [dim]}
+        - label: {id: e4s, x: 202, y: 236, text: "", styles: [dim]}
+        - label: {id: e5t, x: 10, y: 249, text: "", styles: [dim]}
+        - label: {id: e5w, x: 114, y: 249, text: "", styles: [dim]}
+        - label: {id: e5s, x: 202, y: 249, text: "", styles: [dim]}
+        - label: {id: l_cursor, x: 462, y: 252, text: "█"}
