@@ -25,8 +25,7 @@ esphome:
             id(log_lines).push_back("${board_name} booted");
             id(log_lines).push_back("Guition JC4827W543 480x272");
         # Страховка: через 2 секунды панель переинициализируется целиком еще
-        # раз, мимо драйвера (см. panel_reinit). Основное лечение кнопки RESET
-        # это обнуление 40h/43h в init_sequence.
+        # раз, мимо драйвера (см. panel_reinit). Вручную то же делает SW1.
         - delay: 2s
         - script.execute: panel_reinit
 
@@ -47,7 +46,7 @@ script:
             d->disable();
           };
           static const uint8_t VENDOR[][2] = {
-            {0xFF,0xA5},{0x40,0x00},{0x43,0x00},{0x41,0x03},{0x44,0x15},{0x45,0x15},{0x7D,0x03},{0xC1,0xBB},
+            {0x40,0x00},{0x41,0x03},{0x44,0x15},{0x45,0x15},{0x7D,0x03},{0xC1,0xBB},
             {0xC2,0x05},{0xC3,0x10},{0xC6,0x3E},{0xC7,0x25},{0xC8,0x11},{0x7A,0x5F},
             {0x6F,0x44},{0x78,0x70},{0xC9,0x00},{0x67,0x21},{0x51,0x0A},{0x52,0x76},
             {0x53,0x0A},{0x54,0x76},{0x46,0x0A},{0x47,0x2A},{0x48,0x0A},{0x49,0x1A},
@@ -66,6 +65,9 @@ script:
           const uint8_t zero = 0x00, pixfmt = 0x55, madctl = 0xC0;
           cmd(0x01, nullptr, 0);          // SWRESET
           delay(150);
+          const uint8_t unlock[2] = {0xA5, 0xA5}, zz[2] = {0x00, 0x00};
+          cmd(0xFF, unlock, 2);           // с дублем байта, см. init_sequence
+          cmd(0x43, zz, 2);               // QSPI_DCTL = 0, снимает qspi_dummy
           for (auto &p : VENDOR) cmd(p[0], &p[1], 1);
           cmd(0x3A, &pixfmt, 1);          // 16 бит
           cmd(0x36, &madctl, 1);          // MY|MX, rotation 180
@@ -236,6 +238,24 @@ touchscreen:
             id(radar_mode_sw).publish_state(id(display_mode) == 1);
             ESP_LOGI("touch", "Toggled mode -> %d", id(display_mode));
 
+# SW1 (BOOT, GPIO0): полная переинициализация панели руками.
+binary_sensor:
+  - platform: gpio
+    id: sw1
+    internal: true
+    pin:
+      number: GPIO0
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+      ignore_strapping_warning: true
+    filters:
+      - delayed_on: 30ms
+    on_press:
+      - logger.log: "SW1 pressed, panel reinit"
+      - script.execute: panel_reinit
+
 esp32_ble:
   enable_on_boot: true
 
@@ -367,10 +387,6 @@ switch:
 button:
   - platform: safe_mode
     name: ${board_name} Safe Mode (OTA)
-  - platform: template
-    name: ${board_name} Panel Reinit
-    on_press:
-      - script.execute: panel_reinit
 
 font:
   # Atari Portfolio 6x8 из пака int10h (выбран по превью из семи шрифтов 5-6x8).
@@ -518,15 +534,19 @@ display:
     color_order: RGB
     init_sequence:
       - delay 150ms
-      - [0xFF, 0xA5]
+      # FF A5 и 43h уходят с продублированным байтом. Если в 43h QSPI_DCTL застрял
+      # бит qspi_dummy (8 пустых тактов между адресом и данными), панель съедает
+      # первый байт данных любой команды, и без дубля ее оттуда не вывести.
+      # В обычном режиме лишний байт регистр игнорирует.
+      - [0xFF, 0xA5, 0xA5]
       # 40h MACTL_USR работает по XOR с MADCTL (биты my, mx, rev), 43h QSPI_DCTL.
       # Программный сброс их не чистит (по даташиту регистры сбрасывает только
       # ножка GRB, а она на ESP не выведена). Мусор на шине при кнопке RESET
       # (CS на GPIO45 в это время притянут к земле strapping-подтяжкой) мог
       # оставить там биты, и панель переворачивала и инвертировала картинку
       # поверх любых наших команд до снятия питания. Обнуляются явно.
+      - [0x43, 0x00, 0x00]
       - [0x40, 0x00]
-      - [0x43, 0x00]
       - [0x41, 0x03]
       - [0x44, 0x15]
       - [0x45, 0x15]
