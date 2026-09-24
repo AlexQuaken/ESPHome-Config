@@ -24,97 +24,10 @@ esphome:
         - lambda: |-
             id(log_lines).push_back("${board_name} booted");
             id(log_lines).push_back("Guition JC4827W543 480x272");
-        # После холодного старта (снятие питания) панель оставалась с белым
-        # фоном, розовым текстом и перевернутой на 180, хотя после прошивки
-        # (сброс без снятия питания) все было верно. Повторная отправка
-        # INVOFF и MADCTL через set_invert_colors не помогла. Поэтому через
-        # полторы секунды панель инициализируется целиком заново, см. скрипт
-        # panel_reinit.
-        - delay: 1500ms
-        - script.execute: panel_reinit
-
-# Полная повторная инициализация NV3041A, мимо драйвера mipi_spi.
-# Отличия от того, что шлет драйвер:
-# - паузы 150 мс после сброса и после выхода из сна (у драйвера 10 мс, а
-#   SLPOUT из заводской последовательности идет без паузы, и за ним сразу
-#   PIXFMT, INV и MADCTL);
-# - команды без параметров идут с нулевым байтом, как 0x11/0x29 в заводской
-#   последовательности модели: по QSPI NV3041A, похоже, не защелкивает
-#   команду без данных.
-# Транзакция та же, что у драйвера: опкод 0x02, команда во втором байте адреса.
-# Лямбда блокирует цикл на ~330 мс, чтобы кадры не вклинились между командами.
-script:
-  # Диагностика: 8 комбинаций по 5 секунд с крупным номером на экране.
-  # 1-4: INV пустой командой (как шлет драйвер mipi_spi), 5-8: INV с байтом 0x00.
-  # Нечетные INVOFF, четные INVON; 1,2,5,6 MADCTL 0x00; 3,4,7,8 MADCTL 0xC0.
-  - id: panel_test
-    mode: restart
-    then:
-      - repeat:
-          count: 8
-          then:
-            - lambda: |-
-                int n = iteration + 1;
-                id(test_step) = n;
-                auto *d = id(lcd);
-                bool inv_on = (n % 2) == 0;
-                bool with_byte = n > 4;
-                uint8_t madctl = (((n - 1) % 4) >= 2) ? 0xC0 : 0x00;
-                uint8_t c = inv_on ? 0x21 : 0x20;
-                uint8_t zero = 0x00;
-                d->enable();
-                d->write_cmd_addr_data(8, 0x02, 24, (uint32_t) c << 8, &zero, with_byte ? 1 : 0);
-                d->disable();
-                d->enable();
-                d->write_cmd_addr_data(8, 0x02, 24, (uint32_t) 0x36 << 8, &madctl, 1);
-                d->disable();
-                ESP_LOGI("panel", "TEST %d: %s %s MADCTL=0x%02X", n, inv_on ? "INVON" : "INVOFF",
-                         with_byte ? "+byte" : "bare", madctl);
-            - delay: 5s
-      - lambda: 'id(test_step) = 0;'
-
-  - id: panel_reinit
-    mode: queued
-    then:
-      - lambda: |-
-          auto *d = id(lcd);
-          auto cmd = [d](uint8_t c, std::initializer_list<uint8_t> data) {
-            std::vector<uint8_t> v(data);
-            d->enable();
-            d->write_cmd_addr_data(8, 0x02, 24, (uint32_t) c << 8, v.data(), v.size());
-            d->disable();
-          };
-          static const uint8_t VENDOR[][2] = {
-            {0xFF,0xA5},{0x41,0x03},{0x44,0x15},{0x45,0x15},{0x7D,0x03},{0xC1,0xBB},
-            {0xC2,0x05},{0xC3,0x10},{0xC6,0x3E},{0xC7,0x25},{0xC8,0x11},{0x7A,0x5F},
-            {0x6F,0x44},{0x78,0x70},{0xC9,0x00},{0x67,0x21},{0x51,0x0A},{0x52,0x76},
-            {0x53,0x0A},{0x54,0x76},{0x46,0x0A},{0x47,0x2A},{0x48,0x0A},{0x49,0x1A},
-            {0x56,0x43},{0x57,0x42},{0x58,0x3C},{0x59,0x64},{0x5A,0x41},{0x5B,0x3C},
-            {0x5C,0x02},{0x5D,0x3C},{0x5E,0x1F},{0x60,0x80},{0x61,0x3F},{0x62,0x21},
-            {0x63,0x07},{0x64,0xE0},{0x65,0x02},{0xCA,0x20},{0xCB,0x52},{0xCC,0x10},
-            {0xCD,0x42},{0xD0,0x20},{0xD1,0x52},{0xD2,0x10},{0xD3,0x42},{0xD4,0x0A},
-            {0xD5,0x32},{0x80,0x00},{0xA0,0x00},{0x81,0x07},{0xA1,0x06},{0x82,0x02},
-            {0xA2,0x01},{0x86,0x11},{0xA6,0x10},{0x87,0x27},{0xA7,0x27},{0x83,0x37},
-            {0xA3,0x37},{0x84,0x35},{0xA4,0x35},{0x85,0x3F},{0xA5,0x3F},{0x88,0x0B},
-            {0xA8,0x0B},{0x89,0x14},{0xA9,0x14},{0x8A,0x1A},{0xAA,0x1A},{0x8B,0x0A},
-            {0xAB,0x0A},{0x8C,0x14},{0xAC,0x08},{0x8D,0x17},{0xAD,0x07},{0x8E,0x16},
-            {0xAE,0x06},{0x8F,0x1B},{0xAF,0x07},{0x90,0x04},{0xB0,0x04},{0x91,0x0A},
-            {0xB1,0x0A},{0x92,0x16},{0xB2,0x15},{0xFF,0x00},
-          };
-          uint8_t madctl = id(panel_flip) ? 0xC0 : 0x00;  // MY|MX = поворот на 180
-          uint8_t inv = id(panel_invert) ? 0x21 : 0x20;     // INVON : INVOFF
-          cmd(0x01, {});            // SWRESET
-          delay(150);
-          for (auto &p : VENDOR) cmd(p[0], {p[1]});
-          cmd(0x3A, {0x55});        // PIXFMT 16 бит
-          cmd(0x36, {madctl});      // MADCTL
-          cmd(inv, {0x00});
-          cmd(0x11, {0x00});        // SLPOUT
-          delay(150);
-          cmd(0x29, {0x00});        // DISPON
-          delay(20);
-          ESP_LOGI("panel", "reinit done: invert=%d flip=%d madctl=0x%02X",
-                   (int) id(panel_invert), (int) id(panel_flip), madctl);
+        # Инверсию и MADCTL драйвер шлет один раз в конце setup(). Повтор
+        # через секунду ничего не стоит и страхует от холодного старта.
+        - delay: 1s
+        - lambda: 'id(lcd).set_invert_colors(true);'
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -403,46 +316,12 @@ switch:
       - lambda: 'id(display_mode) = 1;'
     turn_off_action:
       - lambda: 'id(display_mode) = 0;'
-  # Инверсия и поворот панели, запоминаются во флеше. Если после холодного
-  # старта цвета или ориентация снова не те, это переключается здесь, без
-  # перепрошивки: панель тут же переинициализируется с новым значением.
-  - platform: template
-    name: ${board_name} Panel Invert
-    lambda: 'return id(panel_invert);'
-    turn_on_action:
-      - lambda: 'id(panel_invert) = true;'
-      - script.execute: panel_reinit
-    turn_off_action:
-      - lambda: 'id(panel_invert) = false;'
-      - script.execute: panel_reinit
-  - platform: template
-    name: ${board_name} Panel Flip 180
-    lambda: 'return id(panel_flip);'
-    turn_on_action:
-      - lambda: 'id(panel_flip) = true;'
-      - script.execute: panel_reinit
-    turn_off_action:
-      - lambda: 'id(panel_flip) = false;'
-      - script.execute: panel_reinit
 
 button:
   - platform: safe_mode
     name: ${board_name} Safe Mode (OTA)
-  - platform: template
-    name: ${board_name} Panel Test
-    on_press:
-      - script.execute: panel_test
-  - platform: template
-    name: ${board_name} Panel Reinit
-    on_press:
-      - script.execute: panel_reinit
 
 font:
-  - file: "fonts/Px437_IBM_VGA_9x16.ttf"
-    id: f_big
-    size: 48
-    bpp: 1
-    glyphs: 'TES 0123456789'
   # Atari Portfolio 6x8 из пака int10h (выбран по превью из семи шрифтов 5-6x8).
   # В пиксель попадает только при size: 8. Строка 8 px: 80 знаков x 34 строки
   - file: "fonts/Px437_Portfolio_6x8.ttf"
@@ -470,18 +349,6 @@ color:
     blue: 0%
 
 globals:
-  - id: test_step
-    type: int
-    restore_value: no
-    initial_value: '0'
-  - id: panel_invert
-    type: bool
-    restore_value: yes
-    initial_value: 'false'
-  - id: panel_flip
-    type: bool
-    restore_value: yes
-    initial_value: 'false'
   - id: log_lines
     type: std::vector<std::string>
     restore_value: no
@@ -573,19 +440,20 @@ globals:
     initial_value: 'false'
 
 display:
-  # Матрица родная ландшафтная 480x272, поворот не нужен. Если картинка
-  # окажется вверх ногами (зависит от того, как плата стоит), rotation: 180.
-  # Кадр 480x272x2 = 255 КБ по QSPI 20 МГц идет ~26 мс, отсюда 33 мс на кадр.
+  # Матрица родная ландшафтная 480x272. Проверено тестом всех комбинаций
+  # 24.09.2026: нормальная картинка только при INVON и MADCTL 0xC0, как в
+  # Arduino_GFX и в конфиге с devices.esphome.io. INVON дает invert_colors: true
+  # (это и так значение модели), 0xC0 дает rotation: 180, в модели зашит 0x00.
+  # Кадр 480x272x2 = 255 КБ по QSPI 26,67 МГц идет ~20 мс, отсюда 33 мс на кадр.
   - platform: mipi_spi
     id: lcd
     model: JC4827W543
     spi_id: quad_spi
-    rotation: 0
-    # В модели invert_colors: true, на этой партии панели с ним фон белый,
-    # а зеленый текст розовый (двойная инверсия), поэтому выключено
-    invert_colors: false
-    # Паспортные 20 МГц модели дают кадр ~26 мс, NV3041A держит 40
-    data_rate: 40MHz
+    rotation: 180
+    invert_colors: true
+    # Потолок NV3041A 32 МГц (Arduino_GFX), шина ESP32 делит 80 МГц, ближайшее
+    # ниже 26,67. На 40 МГц, выше паспорта, команды панели принимались через раз.
+    data_rate: 26.67MHz
     # Буфер чистим сами через it.fill() в начале лямбды
     auto_clear_enabled: false
     update_interval: 33ms
@@ -885,10 +753,5 @@ display:
         char devc[24];
         snprintf(devc, sizeof(devc), "Found: %u/min", (unsigned)id(cache_uniq60));
         it.printf(sb_x + (W - sb_x) / 2, sb_y_end + 5, id(f_console), id(c_green), TextAlign::TOP_CENTER, "%s", devc);
-      }
-      if (id(test_step) > 0) {
-        it.filled_rectangle(W / 2 - 110, H / 2 - 34, 220, 68, id(c_black));
-        it.rectangle(W / 2 - 110, H / 2 - 34, 220, 68, id(c_green));
-        it.printf(W / 2, H / 2, id(f_big), id(c_green), TextAlign::CENTER, "TEST %d", id(test_step));
       }
       id(render_us) = micros() - t0_us;
