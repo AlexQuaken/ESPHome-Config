@@ -33,9 +33,9 @@ esp32:
   framework:
     type: esp-idf
     sdkconfig_options:
-      # BLE-стек и буферы Wi-Fi по возможности в PSRAM, внутренней RAM у S3 мало
+      # BLE-стек по возможности в PSRAM. Буферы Wi-Fi/LWIP туда не уносить:
+      # PSRAM занята кадровым буфером и DMA на экран, с ними пинг был 200-600 мс
       CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST: "y"
-      CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: "y"
 
 psram:
   mode: octal
@@ -68,7 +68,7 @@ api:
         - lambda: |-
             auto &v = id(log_lines);
             std::string s = line;
-            if (s.size() > 60) s = s.substr(0, 60);
+            if (s.size() > 94) s = s.substr(0, 94);
             v.push_back(s);
             while ((int)v.size() > id(log_max)) v.erase(v.begin());
         - component.update: lcd
@@ -119,7 +119,7 @@ logger:
           if (clean.empty()) return;
           uint32_t now = millis();
           auto &v = id(log_lines);
-          const int LINE_H = 9;
+          const int LINE_H = 8;
           const int FRAME_MS = 16;
           if (id(has_pending)) {
             if (id(scroll_off) > 0 && id(scroll_off) < LINE_H && (int)v.size() > id(log_max)) {
@@ -237,10 +237,12 @@ interval:
   - interval: 10s
     then:
       - lambda: |-
-          ESP_LOGI("hb", "up=%lus heap=%uKB fps=%d dev=%u mode=%d",
+          ESP_LOGI("hb", "up=%lus heap=%uKB int=%uKB fps=%d render=%ums dev=%u mode=%d",
                    (unsigned long)(millis()/1000),
                    (unsigned)(esp_get_free_heap_size()/1024),
+                   (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)/1024),
                    id(fps_value),
+                   (unsigned)(id(render_us)/1000),
                    (unsigned)id(dev_addr).size(),
                    id(display_mode));
   - interval: 5s
@@ -303,7 +305,9 @@ switch:
     name: ${board_name} Radar Mode
     id: radar_mode_sw
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
+    # RESTORE_DEFAULT_OFF восстанавливает сохраненное «включено» после любого
+    # тапа, и плата стартует сразу в радаре, мимо лога. Всегда с лога.
+    restore_mode: ALWAYS_OFF
     turn_on_action:
       - lambda: 'id(display_mode) = 1;'
     turn_off_action:
@@ -314,11 +318,10 @@ button:
     name: ${board_name} Safe Mode (OTA)
 
 font:
-  # IBM PC BIOS 8x8 из пака int10h, в пиксель попадает только при size: 8.
-  # Строка 9 px (8 знак + 1 зазор): 60 знаков x 30 строк на 480x272
-  - file: "fonts/Px437_IBM_BIOS.ttf"
+  # X11 misc-fixed 5x7 (растровый BDF, заглавные 6 px). Строка 8 px:
+  # 96 знаков x 34 строки на 480x272. Еще мельче есть fonts/4x6.bdf
+  - file: "fonts/5x7.bdf"
     id: f_console
-    size: 8
     bpp: 1
     glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
 
@@ -347,7 +350,7 @@ globals:
   - id: log_max
     type: int
     restore_value: no
-    initial_value: '29'
+    initial_value: '33'
   - id: scroll_off
     type: float
     restore_value: no
@@ -422,6 +425,10 @@ globals:
     type: int
     restore_value: no
     initial_value: '0'
+  - id: render_us
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
   - id: auto_switched
     type: bool
     restore_value: no
@@ -446,6 +453,7 @@ display:
     update_interval: 33ms
     lambda: |-
       id(frame_counter)++;
+      uint32_t t0_us = micros();
       uint32_t t = millis();
       int W = it.get_width();
       int H = it.get_height();
@@ -455,11 +463,11 @@ display:
 
       if (id(display_mode) == 0) {
         // ===== LOG CONSOLE =====
-        const int LINE_H = 9;
-        const int CHAR_W = 8;
+        const int LINE_H = 8;
+        const int CHAR_W = 5;
         const int FRAME_MS = 16;
-        const int GAP = 80;
-        const int CLOCK_GAP = 8;
+        const int GAP = 50;
+        const int CLOCK_GAP = 6;
         auto &v = id(log_lines);
         if ((int)v.size() > id(log_max)) {
           uint32_t elapsed = t - id(scroll_start_ms);
@@ -522,14 +530,14 @@ display:
       } else {
         // ===== BLE RADAR =====
         // Круг в левом квадрате 272x272, справа таблица 208 px.
-        // max_r 130: подписи в углах шрифтом 8x8 до круга не достают (проверено
+        // max_r 132: подписи в углах шрифтом 5x7 до круга не достают (проверено
         // по дальним углам строк часов, даты, аптайма и памяти).
         const int cx = 136;
         const int cy = 136;
-        const int max_r = 130;
+        const int max_r = 132;
         // Дистанция точки по RSSI: -40 дБм у центра (D_MIN), -100 у края (D_MAX)
         const int D_MIN = 18;
-        const int D_MAX = 127;
+        const int D_MAX = 129;
 
         it.line(cx - max_r, cy, cx + max_r, cy, id(c_dim));
         it.line(cx, cy - max_r, cx, cy + max_r, id(c_dim));
@@ -554,9 +562,9 @@ display:
         int sy0 = cy + (int)(sinf(sw) * (float)max_r);
         it.line(cx, cy, sx0, sy0, Color(140, 255, 140));
 
-        it.circle(cx, cy, 32, id(c_dim));
-        it.circle(cx, cy, 65, id(c_dim));
-        it.circle(cx, cy, 97, id(c_dim));
+        it.circle(cx, cy, 33, id(c_dim));
+        it.circle(cx, cy, 66, id(c_dim));
+        it.circle(cx, cy, 99, id(c_dim));
         it.circle(cx, cy, max_r, id(c_green));
 
         auto &addrs = id(dev_addr);
@@ -630,34 +638,34 @@ display:
             int rssi_val = (i < rssis.size()) ? rssis[i] : -99;
             char rssi_s[12];
             snprintf(rssi_s, sizeof(rssi_s), "R:%d", rssi_val);
-            int name_w = (int)strlen(label) * 8;
-            int rssi_w = (int)strlen(rssi_s) * 8;
+            int name_w = (int)strlen(label) * 5;
+            int rssi_w = (int)strlen(rssi_s) * 5;
             int max_w = (name_w > rssi_w) ? name_w : rssi_w;
             int lx = (dx > cx) ? dx + dot_r + 6 : dx - dot_r - 6 - max_w;
-            int ly = dy - 9;
+            int ly = dy - 8;
             it.printf(lx, ly, id(f_console), Color(0, intensity, 0), "%s", label);
-            it.printf(lx, ly + 9, id(f_console), Color(0, intensity, 0), "%s", rssi_s);
+            it.printf(lx, ly + 8, id(f_console), Color(0, intensity, 0), "%s", rssi_s);
           }
         }
 
         // ===== Sidebar (x=272..479) =====
-        // SCAN[272..312] | NAME[312..440] | RSSI[440..479], 24 строки по 10 px
+        // SCAN[272..300] | NAME[300..452] | RSSI[452..479], 27 строк по 9 px
         const int sb_x = 272;
-        const int CW = 8;
-        const int row_h = 10;
-        const int sb_y_start = 15;
-        const int visible_rows = 24;
+        const int CW = 5;
+        const int row_h = 9;
+        const int sb_y_start = 12;
+        const int visible_rows = 27;
         const int sb_y_end = sb_y_start + visible_rows * row_h;  // 255
-        const int col1_x = sb_x + 40;   // 312
-        const int col2_x = sb_x + 168;  // 440
-        const int scan_cell_l = sb_x;       const int scan_cell_w = col1_x - sb_x;       // 40
-        const int name_cell_l = col1_x;     const int name_cell_w = col2_x - col1_x;     // 128
-        const int rssi_cell_l = col2_x;     const int rssi_cell_w = W - col2_x;          // 40
+        const int col1_x = sb_x + 28;   // 300
+        const int col2_x = sb_x + 180;  // 452
+        const int scan_cell_l = sb_x;       const int scan_cell_w = col1_x - sb_x;       // 28
+        const int name_cell_l = col1_x;     const int name_cell_w = col2_x - col1_x;     // 152
+        const int rssi_cell_l = col2_x;     const int rssi_cell_w = W - col2_x;          // 28
 
         const int hdr_w = 4 * CW;
-        it.printf(scan_cell_l + (scan_cell_w - hdr_w) / 2, 4, id(f_console), id(c_green), "SCAN");
-        it.printf(name_cell_l + (name_cell_w - hdr_w) / 2, 4, id(f_console), id(c_green), "NAME");
-        it.printf(rssi_cell_l + (rssi_cell_w - hdr_w) / 2, 4, id(f_console), id(c_green), "RSSI");
+        it.printf(scan_cell_l + (scan_cell_w - hdr_w) / 2, 2, id(f_console), id(c_green), "SCAN");
+        it.printf(name_cell_l + (name_cell_w - hdr_w) / 2, 2, id(f_console), id(c_green), "NAME");
+        it.printf(rssi_cell_l + (rssi_cell_w - hdr_w) / 2, 2, id(f_console), id(c_green), "RSSI");
 
         int N = (int)addrs.size();
         int skip = (N > visible_rows) ? (N - visible_rows) : 0;
@@ -677,7 +685,7 @@ display:
           int scan_w = 4 * CW;
           it.printf(scan_cell_l + (scan_cell_w - scan_w) / 2, row_y, id(f_console), id(c_green), "%s", sc);
 
-          // NAME: 15 знаков влезает, длиннее идет бегущей строкой
+          // NAME: 29 знаков влезает, длиннее идет бегущей строкой
           int name_x = name_cell_l + 4;
           int name_max_chars = (name_cell_w - 8) / CW;
           if ((int)nm.size() <= name_max_chars) {
@@ -692,7 +700,7 @@ display:
             it.end_clipping();
           }
 
-          // RSSI без " dB", в 44 px влезает только число
+          // RSSI без " dB", в 28 px влезает только число
           char rb[8];
           snprintf(rb, sizeof(rb), "%d", r0);
           int rssi_w = (int)strlen(rb) * CW;
@@ -719,7 +727,7 @@ display:
         it.printf(4, 3, id(f_console), id(c_green), "%s", clk);
         char fps_s[16];
         snprintf(fps_s, sizeof(fps_s), "FPS:%d", id(fps_value));
-        it.printf(4, 12, id(f_console), id(c_green), "%s", fps_s);
+        it.printf(4, 11, id(f_console), id(c_green), "%s", fps_s);
 
         char dt[24];
         if (tn.is_valid()) snprintf(dt, sizeof(dt), "%04d.%02d.%02d", tn.year, tn.month, tn.day_of_month);
@@ -731,12 +739,13 @@ display:
         char upbuf[32];
         if (d > 0) snprintf(upbuf, sizeof(upbuf), "Up %ud %02u:%02u", d, h, m);
         else snprintf(upbuf, sizeof(upbuf), "Up %02u:%02u:%02u", h, m, ss);
-        it.printf(4, H - 10, id(f_console), id(c_green), "%s", upbuf);
+        it.printf(4, H - 9, id(f_console), id(c_green), "%s", upbuf);
         char mem[16];
         snprintf(mem, sizeof(mem), "MEM %uK", (unsigned)(esp_get_free_heap_size() / 1024));
-        it.printf(sb_x - 8, H - 10, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", mem);
+        it.printf(sb_x - 8, H - 9, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", mem);
 
         char devc[24];
         snprintf(devc, sizeof(devc), "Found: %u/min", (unsigned)id(cache_uniq60));
-        it.printf(sb_x + (W - sb_x) / 2, sb_y_end + 6, id(f_console), id(c_green), TextAlign::TOP_CENTER, "%s", devc);
+        it.printf(sb_x + (W - sb_x) / 2, sb_y_end + 5, id(f_console), id(c_green), TextAlign::TOP_CENTER, "%s", devc);
       }
+      id(render_us) = micros() - t0_us;
