@@ -44,6 +44,35 @@ esphome:
 # Транзакция та же, что у драйвера: опкод 0x02, команда во втором байте адреса.
 # Лямбда блокирует цикл на ~330 мс, чтобы кадры не вклинились между командами.
 script:
+  # Диагностика: 8 комбинаций по 5 секунд с крупным номером на экране.
+  # 1-4: INV пустой командой (как шлет драйвер mipi_spi), 5-8: INV с байтом 0x00.
+  # Нечетные INVOFF, четные INVON; 1,2,5,6 MADCTL 0x00; 3,4,7,8 MADCTL 0xC0.
+  - id: panel_test
+    mode: restart
+    then:
+      - repeat:
+          count: 8
+          then:
+            - lambda: |-
+                int n = iteration + 1;
+                id(test_step) = n;
+                auto *d = id(lcd);
+                bool inv_on = (n % 2) == 0;
+                bool with_byte = n > 4;
+                uint8_t madctl = (((n - 1) % 4) >= 2) ? 0xC0 : 0x00;
+                uint8_t c = inv_on ? 0x21 : 0x20;
+                uint8_t zero = 0x00;
+                d->enable();
+                d->write_cmd_addr_data(8, 0x02, 24, (uint32_t) c << 8, &zero, with_byte ? 1 : 0);
+                d->disable();
+                d->enable();
+                d->write_cmd_addr_data(8, 0x02, 24, (uint32_t) 0x36 << 8, &madctl, 1);
+                d->disable();
+                ESP_LOGI("panel", "TEST %d: %s %s MADCTL=0x%02X", n, inv_on ? "INVON" : "INVOFF",
+                         with_byte ? "+byte" : "bare", madctl);
+            - delay: 5s
+      - lambda: 'id(test_step) = 0;'
+
   - id: panel_reinit
     mode: queued
     then:
@@ -400,11 +429,20 @@ button:
   - platform: safe_mode
     name: ${board_name} Safe Mode (OTA)
   - platform: template
+    name: ${board_name} Panel Test
+    on_press:
+      - script.execute: panel_test
+  - platform: template
     name: ${board_name} Panel Reinit
     on_press:
       - script.execute: panel_reinit
 
 font:
+  - file: "fonts/Px437_IBM_VGA_9x16.ttf"
+    id: f_big
+    size: 48
+    bpp: 1
+    glyphs: 'TES 0123456789'
   # Atari Portfolio 6x8 из пака int10h (выбран по превью из семи шрифтов 5-6x8).
   # В пиксель попадает только при size: 8. Строка 8 px: 80 знаков x 34 строки
   - file: "fonts/Px437_Portfolio_6x8.ttf"
@@ -432,6 +470,10 @@ color:
     blue: 0%
 
 globals:
+  - id: test_step
+    type: int
+    restore_value: no
+    initial_value: '0'
   - id: panel_invert
     type: bool
     restore_value: yes
@@ -843,5 +885,10 @@ display:
         char devc[24];
         snprintf(devc, sizeof(devc), "Found: %u/min", (unsigned)id(cache_uniq60));
         it.printf(sb_x + (W - sb_x) / 2, sb_y_end + 5, id(f_console), id(c_green), TextAlign::TOP_CENTER, "%s", devc);
+      }
+      if (id(test_step) > 0) {
+        it.filled_rectangle(W / 2 - 110, H / 2 - 34, 220, 68, id(c_black));
+        it.rectangle(W / 2 - 110, H / 2 - 34, 220, 68, id(c_green));
+        it.printf(W / 2, H / 2, id(f_big), id(c_green), TextAlign::CENTER, "TEST %d", id(test_step));
       }
       id(render_us) = micros() - t0_us;
