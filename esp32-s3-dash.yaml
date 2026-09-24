@@ -168,6 +168,10 @@ touchscreen:
       number: GPIO3
       ignore_strapping_warning: true
     reset_pin: GPIO38
+    on_touch:
+      - lambda: |-
+          for (auto &t : touches)
+            ESP_LOGI("touch", "x=%d y=%d raw=%d,%d", t.x, t.y, t.x_raw, t.y_raw);
 
 globals:
   - id: g_power
