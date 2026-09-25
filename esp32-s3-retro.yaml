@@ -218,6 +218,14 @@ interval:
       - lambda: |-
           id(g_cursor) = !id(g_cursor);
           lv_obj_set_style_text_opa((lv_obj_t *) id(l_cursor), id(g_cursor) ? LV_OPA_COVER : LV_OPA_TRANSP, LV_PART_MAIN);
+          // часы с секундами: тут, а не в refresh (тот раз в 2 с); текст меняется раз в секунду
+          auto t = id(ha_time).now();
+          if (t.is_valid()) {
+            char b[32];
+            snprintf(b, sizeof b, "%02d.%02d.%04d %02d:%02d:%02d", t.day_of_month, t.month, t.year, t.hour, t.minute, t.second);
+            lv_obj_t *o = (lv_obj_t *) id(l_clock);
+            if (strcmp(lv_label_get_text(o), b) != 0) lv_label_set_text(o, b);
+          }
   - interval: 100ms
     then:
       - lambda: 'dash_snap::loop(id(lvgl_comp).get_disp());'
@@ -282,11 +290,6 @@ script:
             return s;
           };
           char b[48];
-          auto t = id(ha_time).now();
-          if (t.is_valid()) {
-            snprintf(b, sizeof b, "%02d.%02d.%04d %02d:%02d", t.day_of_month, t.month, t.year, t.hour, t.minute);
-            set((lv_obj_t *) id(l_clock), b);
-          }
           float p = id(ha_p_now).state, ds = id(ha_d_sock).state, dl = id(ha_d_light).state, dc = id(ha_d_chg).state;
           float te = id(ha_temp).state, hu = id(ha_hum).state, U = id(ha_volt).state, F = id(ha_freq).state;
           struct Row { lv_obj_t *val, *bar; const char *fmt; float v, show, frac; };
