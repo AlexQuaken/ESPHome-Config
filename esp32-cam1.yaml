@@ -5,14 +5,14 @@ substitutions:
 esphome:
   name: ${board_name}
   on_boot:
-    priority: -100
-    then:
-      - delay: 2s
-      - lambda: |-
-          auto t = id(homeassistant_time).now();
-          if (!t.is_valid()) return;
-          if (t.hour >= 7 && t.hour < 23) id(oled).turn_on();
-          else id(oled).turn_off();
+    - priority: -100
+      then:
+        - delay: 2s
+        - lambda: |-
+            auto t = id(homeassistant_time).now();
+            if (!t.is_valid()) return;
+            if (t.hour >= 7 && t.hour < 23) id(oled).turn_on();
+            else id(oled).turn_off();
 
 interval:
   - interval: 60s
@@ -50,6 +50,7 @@ packages:
   base_sensors: !include packages/2common_sensors.yaml
   led: !include packages/3status_led_esp32.yaml
   esp32cam: !include packages/8esp32-cam.yaml
+  diag: !include packages/diag.yaml
 
 esp32_camera:
   vertical_flip: true
