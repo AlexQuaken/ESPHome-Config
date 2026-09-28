@@ -50,7 +50,7 @@ packages:
   base_sensors: !include packages/2common_sensors.yaml
   led: !include packages/3status_led_esp32.yaml
   esp32cam: !include packages/8esp32-cam.yaml
-  diag: !include packages/diag.yaml
+  # diag: !include packages/diag.yaml   # ВРЕМЕННО выключен: проверка, не он ли ломает камеру
 
 esp32_camera:
   vertical_flip: true
