@@ -5,7 +5,7 @@
 #   2 дашборд   неоновый KPI гаража (шаблон 002 exceltable.com)
 #   3 терминал  ретро GARAGE.EXE, полосы из блоков и журнал событий
 #
-# Тап по экрану переключает режим по кругу. Выбранный режим пишется в NVS сразу
+# Тап по экрану или кнопка BOOT переключают режим по кругу. Режим пишется в NVS сразу
 # (не раз в минуту, как globals) и после перезагрузки включается сам, когда
 # консоль загрузки отработает: плата подключилась к HA и прошло еще 5 секунд.
 # Тап во время загрузки переключает сразу. Из HA режим ставится селектом
@@ -36,7 +36,7 @@
 #
 # Распиновка (devices.esphome.io, guition-jc4827543c):
 #   QSPI: CLK=47, D0..D3=21/48/40/39, CS=45 (задан в модели JC4827W543)
-#   подсветка GPIO1 (PWM), GT911: SDA=8, SCL=4, INT=3, RST=38, SW1 (BOOT) GPIO0
+#   подсветка GPIO1 (PWM), GT911: SDA=8, SCL=4, INT=3, RST=38, кнопка BOOT GPIO0
 substitutions:
   board_name: 'esp32-s3-disp'
   static_ip: '192.168.0.221'
@@ -318,10 +318,14 @@ touchscreen:
             if (id(g_shown) == 2 && p.x >= 240 && p.y >= 168) return;
             id(show_mode).execute(id(g_shown) + 1, true);
 
-# SW1 (BOOT, GPIO0): полная переинициализация панели руками.
+# Кнопка BOOT (GPIO0, слева на обороте платы): короткое нажатие меняет режим, как
+# тап; удержание 3-10 с переинициализирует панель. SW1 на верхнем торце это
+# выключатель батареи (Battery button switch по спецификации), к GPIO он не
+# подключен, прошивка его не видит. На IO0 по таблице выводов еще и LCD_TE
+# панели: короткие импульсы отсекает delayed_on.
 binary_sensor:
   - platform: gpio
-    id: sw1
+    id: boot_btn
     internal: true
     pin:
       number: GPIO0
@@ -332,9 +336,18 @@ binary_sensor:
       ignore_strapping_warning: true
     filters:
       - delayed_on: 30ms
-    on_press:
-      - logger.log: "SW1 pressed, panel reinit"
-      - script.execute: panel_reinit
+    on_click:
+      - min_length: 30ms
+        max_length: 1s
+        then:
+          - lambda: |-
+              ESP_LOGI("boot_btn", "click, mode %d -> next", id(g_shown));
+              id(show_mode).execute(id(g_shown) + 1, true);
+      - min_length: 3s
+        max_length: 10s
+        then:
+          - logger.log: "BOOT held, panel reinit"
+          - script.execute: panel_reinit
   - platform: homeassistant
     internal: true
     id: ha_gate
@@ -1125,7 +1138,7 @@ script:
             dash_snap::ready = true;
           }
 
-  # Полная инициализация NV3041A мимо драйвера, вручную кнопкой SW1: SWRESET,
+  # Полная инициализация NV3041A мимо драйвера, удержанием кнопки BOOT: SWRESET,
   # вендорская последовательность модели, PIXFMT, MADCTL 0xC0 (rotation 180),
   # INVON, SLPOUT, DISPON, с паузами 150 мс как у Arduino_GFX (там 120).
   # Транзакция как у драйвера: опкод 0x02, команда во втором байте адреса.
