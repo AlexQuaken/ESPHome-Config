@@ -786,9 +786,11 @@ script:
 
   # Кадр консоли или радара. Лямбда перенесена с дисплея прошлой esp32-s3-disp
   # без изменений: it здесь не дисплей, а переходник PanelIt. Он пишет пиксели в
-  # кадровый буфер в PSRAM сразу в виде панели: повернутыми на 180 градусов (как
-  # rotation: 180 у LVGL) и RGB565 старшим байтом вперед, как ждет NV3041A.
-  # Такой буфер mipi_spi отправляет одним куском, без перекладки.
+  # кадровый буфер в PSRAM в RGB565 старшим байтом вперед, как ждет NV3041A.
+  # Такой буфер mipi_spi отправляет одним куском, без перекладки. Поворот на 180
+  # не нужен: rotation: 180 из блока lvgl ESPHome отдает панели (MADCTL), и
+  # draw_pixels_at уже работает в повернутых координатах. 28.09.2026 я повернул
+  # кадр еще и программно, и консоль с радаром встали вверх ногами.
   - id: raw_draw
     then:
       - lambda: |-
@@ -806,7 +808,7 @@ script:
             void draw_pixel_at(int x, int y, Color c) override {
               if ((unsigned) x >= 480u || (unsigned) y >= 272u) return;
               if (!this->get_clipping().inside(x, y)) return;
-              this->buf[(271 - y) * 480 + (479 - x)] = c565(c);
+              this->buf[y * 480 + x] = c565(c);
             }
             void fill(Color c) override { std::fill(this->buf, this->buf + 480 * 272, c565(c)); }
           };
@@ -1116,9 +1118,9 @@ script:
           id(render_us) = micros() - t0_us;
           id(lcd).draw_pixels_at(0, 0, 480, 272, (const uint8_t *) pit->buf, display::COLOR_ORDER_RGB,
                                  display::COLOR_BITNESS_565, true, 0, 0, 0);
-          // снимок экрана для :8080/screen.bmp: кадр обратно в вид глаза
+          // снимок экрана для :8080/screen.bmp
           if (dash_snap::req && dash_snap::fb != nullptr) {
-            for (int i = 0; i < 480 * 272; i++) dash_snap::fb[i] = pit->buf[480 * 272 - 1 - i];
+            memcpy(dash_snap::fb, pit->buf, 480 * 272 * 2);
             dash_snap::req = false;
             dash_snap::ready = true;
           }
