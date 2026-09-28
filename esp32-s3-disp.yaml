@@ -94,6 +94,7 @@ esphome:
             gs::EV = &id(g_ev);
             gs::EV_BASE = &id(g_ev_base);
             gs::LAST = &id(g_last);
+            gs::JLOG = &id(g_log);
             gs::PIN = "${alarm_pin}";
             gs::TARIFF = ${tariff};
             gs::cb_arm = []() { id(gs_arm).execute(); };
@@ -217,7 +218,8 @@ api:
     - action: console_clear
       then:
         - lambda: 'id(log_lines).clear();'
-    # Статусы, для проверки без касаний: 0 главный, 1 календарь, 2 пин-панель
+    # Статусы, для проверки без касаний: 0 главный, 1 календарь, 2 пин-панель,
+    # 3 события (часы суток и журнал), 4 доли линий
     - action: status_screen
       variables:
         screen: int
@@ -226,6 +228,7 @@ api:
             if (id(g_shown) != 4) id(show_mode).execute(4, false);
             if (screen == 1) gs::show_page(1);
             else if (screen == 2) { gs::show_page(0); gs::pin_open(); }
+            else if (screen == 3 || screen == 4) gs::show_page(screen);
             else { gs::pin_close(); gs::show_page(0); }
     # 0 консоль, 1 радар, 2 дашборд, 3 терминал, 4 статусы; запоминается как тап
     - action: set_display_mode

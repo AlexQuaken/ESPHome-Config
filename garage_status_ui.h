@@ -20,7 +20,8 @@ namespace gs {
 
 // ------------------------------------------------------------------ палитра
 enum : uint32_t {
-  BG1 = 0x060414, BG2 = 0x0e0828, PANEL = 0x120c2e, PANEL2 = 0x0c0820, EDGE = 0x3c2878,
+  BG1 = 0x060414, BG2 = 0x0e0828, PANEL = 0x060a1e, PANEL2 = 0x060a1e,  // панели темно-синие без градиента, 28.09.2026
+  EDGE = 0x3c2878,
   VIOLET = 0x8c46ff, PURPLE = 0xbe3cff, MAGENTA = 0xff32c8, PINK = 0xff5aa0, ORANGE = 0xff8c28,
   AMBER = 0xffbe3c, CYAN = 0x3cc8ff, TEXT = 0xf0ecff, SUB = 0xa096d2, DIM = 0x645a96, RED = 0xff2d55,
 };
@@ -116,7 +117,7 @@ static lv_obj_t *obj(lv_obj_t *p, int x, int y, int w, int h) {
 static void fill(lv_obj_t *o, uint32_t c1, int r, uint32_t c2 = 0xFFFFFFFF, bool hor = false) {
   lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
   lv_obj_set_style_bg_color(o, C(c1), 0);
-  if (c2 != 0xFFFFFFFF) {
+  if (c2 != 0xFFFFFFFF && c2 != c1) {
     lv_obj_set_style_bg_grad_color(o, C(c2), 0);
     lv_obj_set_style_bg_grad_dir(o, hor ? LV_GRAD_DIR_HOR : LV_GRAD_DIR_VER, 0);
   } else {
@@ -346,6 +347,12 @@ static void on_charge(lv_event_t *e) {
 static void on_power(lv_event_t *e) {
   if (lv_event_get_code(e) == LV_EVENT_SHORT_CLICKED) show_page(1);
 }
+static void on_events(lv_event_t *e) {
+  if (lv_event_get_code(e) == LV_EVENT_SHORT_CLICKED) show_page(3);
+}
+static void on_shares(lv_event_t *e) {
+  if (lv_event_get_code(e) == LV_EVENT_SHORT_CLICKED) show_page(4);
+}
 
 static void build_main(lv_obj_t *scr) {
   scr_main = scr;
@@ -421,6 +428,8 @@ static void build_main(lv_obj_t *scr) {
   for (int k = 0; k < 12; k++) hlab[k] = lbl(pw_panel, (int) (34 + (2 * k + 0.5f) * cw), 38 + 52 + 13, FS, SUB, "", 1, 16);
   // ---- доли линий
   lv_obj_t *dp = panel(scr, RX, Y2, RW, H2);
+  lv_obj_add_flag(dp, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(dp, on_shares, LV_EVENT_SHORT_CLICKED, nullptr);
   lbl(dp, 8, 6, FS, SUB, "МЕСЯЦ");
   d_month = lbl(dp, 8 + 30 + 4, 3, FM, ORANGE, "--");
   d_today = lbl(dp, RW - 8, 3, FM, ORANGE, "--", 2, 48);
@@ -449,6 +458,8 @@ static void build_main(lv_obj_t *scr) {
   fill(hl, 0x322464, 0);
   // ---- события 72 ч
   ev_panel = panel(scr, M, Y3, PW, H3);
+  lv_obj_add_flag(ev_panel, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(ev_panel, on_events, LV_EVENT_SHORT_CLICKED, nullptr);
   lbl(ev_panel, 8, 4, FS, SUB, "СОБЫТИЯ ЗА 72 Ч");
   ev_last = lbl(ev_panel, PW - 8, 4, FS, SUB, "", 2, 170);
   for (int k = 0; k < 4; k++) {
@@ -704,7 +715,7 @@ static void build_cal() {
   fill(scr_cal, 0x000000, 0);
   lv_obj_add_flag(scr_cal, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(scr_cal, on_cal, LV_EVENT_SHORT_CLICKED, nullptr);
-  lv_obj_t *tb = panel(scr_cal, CM, TB_Y, 480 - 2 * CM, TB_H, 8, EDGE, 0x1a103e, 0x0e0924);
+  lv_obj_t *tb = panel(scr_cal, CM, TB_Y, 480 - 2 * CM, TB_H, 8, EDGE, PANEL, PANEL2);
   lv_obj_t *bk = obj(tb, 4, 4 - 1, 84, 16);
   fill(bk, 0x7828be, 8, 0xc83296, true);
   border(bk, 0xffbee6);
@@ -723,7 +734,7 @@ static void build_cal() {
   }
   c_cost = lbl(tb, 480 - 2 * CM - 8, 3, FB, AMBER, "", 2, 90);
   // сетка
-  lv_obj_t *cp = panel(scr_cal, CXP, CY, CW, CH, 10, 0x503296, 0x160e38, 0x0a071e);
+  lv_obj_t *cp = panel(scr_cal, CXP, CY, CW, CH, 10, 0x503296, PANEL, PANEL2);
   c_title = lbl(cp, 9, 6, FM, TEXT, "");
   c_med = lbl(cp, CW - 9, 9, FS, SUB, "", 2, 170);
   int gx0 = (CW - (7 * CCW + 6 * CGX)) / 2;
@@ -760,7 +771,7 @@ static void build_cal() {
   lv_obj_set_style_radius(q, 2, 0);
   lbl(cp, x4 + 12, ly, FS, SUB, "сегодня");
   // итоги месяца
-  lv_obj_t *rp = panel(scr_cal, CRX, CY, CRW, CRH, 10, 0x503296, 0x180e3c, 0x0a071e);
+  lv_obj_t *rp = panel(scr_cal, CRX, CY, CRW, CRH, 10, 0x503296, PANEL, PANEL2);
   lbl(rp, 9, 6, FS, SUB, "ИТОГИ МЕСЯЦА");
   c_rcv = canvas(rp, 52 - 50, 80 - 50, 100, 100);
   c_ctr1 = lbl(rp, 52, 80 - 13, FB, 0xbea0ff, "", 1, 40);
@@ -781,7 +792,7 @@ static void build_cal() {
   }
   // линии
   int LY = CY + CRH + 6, LH = CY + CH - LY;
-  lv_obj_t *lp = panel(scr_cal, CRX, LY, CRW, LH, 10, 0x503296, 0x160e38, 0x0a071e);
+  lv_obj_t *lp = panel(scr_cal, CRX, LY, CRW, LH, 10, 0x503296, PANEL, PANEL2);
   lbl(lp, 9, 5, FS, SUB, "ЛИНИИ ЗА МЕСЯЦ");
   c_ltot = lbl(lp, CRW - 9, 5, FS, AMBER, "", 2, 80);
   const char *RN[4] = {"Розетки", "Свет", "Вне линий", "Авто"};
@@ -974,6 +985,251 @@ static void refresh_cal() {
   }
 }
 
+// ------------------------------------------------------------------ общие для доп. экранов
+// Верхняя полоса как у календаря: кнопка «назад» с отсчетом, заголовок, итог справа.
+static lv_obj_t *topbar(lv_obj_t *scr, const char *title, lv_obj_t **cd) {
+  lv_obj_t *tb = panel(scr, CM, TB_Y, 480 - 2 * CM, TB_H, 8, EDGE, PANEL, PANEL2);
+  lv_obj_t *bk = obj(tb, 4, 3, 84, 16);
+  fill(bk, 0x7828be, 8, 0xc83296, true);
+  border(bk, 0xffbee6);
+  glow(bk, MAGENTA, 10, 150);
+  lv_obj_t *ar = canvas(bk, 5, 3, 8, 10);
+  {
+    Layer L(ar);
+    L.tri(1, 4, 7, 0, 7, 8, TEXT);
+  }
+  lbl(bk, 17, 3, FS, TEXT, "назад");
+  *cd = lbl(bk, 84 - 6, 3, FS, 0xffdcaa, "5:00", 2, 30);
+  lbl(tb, 100, 3, FM, TEXT, title);
+  return lbl(tb, 480 - 2 * CM - 8, 3, FB, AMBER, "", 2, 170);
+}
+static lv_obj_t *new_screen() {
+  lv_obj_t *s = lv_obj_create(nullptr);
+  lv_obj_remove_style_all(s);
+  lv_obj_remove_flag(s, LV_OBJ_FLAG_SCROLLABLE);
+  fill(s, 0x000000, 0);
+  lv_obj_add_flag(s, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(s, on_cal, LV_EVENT_SHORT_CLICKED, nullptr);
+  return s;
+}
+
+// ------------------------------------------------------------------ экран событий: часы суток
+// Круглый циферблат на 24 часа, четыре кольца-дорожки (снаружи внутрь: ворота, свет, охрана,
+// движение). Сектор часа светится тем ярче, чем больше событий было в этот час за 72 часа.
+// Справа журнал последних событий (тот же, что ведет терминал) и итоги по дорожкам.
+static std::array<std::array<char, 72>, 6> *JLOG = nullptr;
+static lv_obj_t *scr_ev = nullptr, *e_cd, *e_tot, *e_clock, *e_c1, *e_c2, *e_c3, *e_hl[8];
+static lv_obj_t *e_jt[6], *e_jw[6], *e_js[6], *e_jd[6], *e_ln[4], *e_lc[4];
+static const int EK = 184;  // размер циферблата
+static void build_events() {
+  scr_ev = new_screen();
+  e_tot = topbar(scr_ev, "СОБЫТИЯ ГАРАЖА", &e_cd);
+  lv_obj_t *lp = panel(scr_ev, CM, CY, 290, CH, 10, 0x2c3a78, PANEL, PANEL2);
+  lbl(lp, 9, 6, FS, SUB, "ЧАСЫ СУТОК, 72 Ч");
+  e_c3 = lbl(lp, 290 - 9, 6, FS, SUB, "", 2, 150);
+  e_clock = canvas(lp, (290 - EK) / 2, 20, EK, EK);
+  const int cx = 145, cy = 20 + EK / 2;
+  for (int k = 0; k < 8; k++) {  // подписи часов снаружи
+    int h = k * 3;
+    float a = (-90 + h * 15) * (float) M_PI / 180;
+    char b[4];
+    snprintf(b, sizeof b, "%02d", h);
+    e_hl[k] = lbl(lp, (int) (cx + 99 * cosf(a)), (int) (cy + 99 * sinf(a) - 4), FS, SUB, b, 1, 16);
+  }
+  e_c1 = lbl(lp, cx, cy - 14, FB, TEXT, "", 1, 60);
+  e_c2 = lbl(lp, cx, cy + 4, FS, SUB, "событий", 1, 60);
+  // легенда колец
+  for (int k = 0; k < 4; k++) {
+    int x = 9 + k * 70, y = CH - 14;
+    lv_obj_t *d = obj(lp, x, y + 1, 7, 7);
+    fill(d, LANE_C[k], LV_RADIUS_CIRCLE);
+    lbl(lp, x + 10, y, FS, SUB, LANE_N[k]);
+  }
+  // журнал
+  lv_obj_t *rp = panel(scr_ev, CRX, CY, CRW, CH, 10, 0x2c3a78, PANEL, PANEL2);
+  lbl(rp, 9, 6, FS, SUB, "ЖУРНАЛ");
+  for (int i = 0; i < 6; i++) {
+    int y = 20 + i * 21;
+    e_jd[i] = obj(rp, 9, y + 2, 5, 5);
+    fill(e_jd[i], SUB, LV_RADIUS_CIRCLE);
+    e_jw[i] = lbl(rp, 18, y, FS, TEXT, "");
+    e_jt[i] = lbl(rp, CRW - 9, y, FS, SUB, "", 2, 70);
+    e_js[i] = lbl(rp, 18, y + 9, FS, SUB, "");
+  }
+  lv_obj_t *hl = obj(rp, 9, 150, CRW - 18, 1);
+  fill(hl, 0x2c3a78, 0);
+  lbl(rp, 9, 156, FS, SUB, "ПОСЛЕДНЕЕ ПО ДОРОЖКАМ");
+  for (int k = 0; k < 4; k++) {
+    int y = 170 + k * 14;
+    e_ln[k] = lbl(rp, 9, y, FS, LANE_C[k], LANE_N[k]);
+    e_lc[k] = lbl(rp, CRW - 9, y, FS, TEXT, "", 2, 100);
+  }
+}
+static uint32_t lane_col(const std::string &w) {
+  if (w == "ВОРОТА") return PINK;
+  if (w == "СВЕТ") return AMBER;
+  if (w == "ОХРАНА") return MAGENTA;
+  if (w == "ДВИЖЕНИЕ") return PURPLE;
+  if (w == "ЗАРЯДКА") return ORANGE;
+  return SUB;
+}
+static uint32_t ev_clock_ver = 0xFFFFFFFF;
+static void refresh_events(bool force) {
+  if (!EV) return;
+  // сумма по часам суток (местным) за 72 ч
+  int by[4][24] = {};
+  int tot = 0, mx = 1, hour_tot[24] = {};
+  for (int i = 0; i < 72; i++) {
+    uint32_t h = *EV_BASE - (71 - i);
+    int lh = (int) (((int64_t) h * 3600 + TZ_OFF) / 3600 % 24);
+    for (int k = 0; k < 4; k++) {
+      int c = (*EV)[i * 4 + k];
+      by[k][lh] += c;
+      hour_tot[lh] += c;
+      tot += c;
+    }
+  }
+  for (int k = 0; k < 4; k++)
+    for (int h = 0; h < 24; h++) mx = std::max(mx, by[k][h]);
+  int pk = 0;
+  for (int h = 1; h < 24; h++) if (hour_tot[h] > hour_tot[pk]) pk = h;
+  char b[48];
+  snprintf(b, sizeof b, "%d за 72 ч", tot);
+  set_text(e_tot, b);
+  snprintf(b, sizeof b, "%d", tot);
+  set_text(e_c1, b);
+  if (tot) snprintf(b, sizeof b, "чаще всего в %02d:00", pk);
+  else b[0] = 0;
+  set_text(e_c3, b);
+  if (force || ev_clock_ver != EV_VER + (uint32_t) S.now.hour) {
+    ev_clock_ver = EV_VER + (uint32_t) S.now.hour;
+    Layer L(e_clock);
+    const float c = EK / 2.0f;
+    for (int k = 0; k < 4; k++) {
+      int r = 88 - k * 15;
+      for (int h = 0; h < 24; h++) {
+        int n = by[k][h];
+        uint32_t col = n ? mix(mix(0, LANE_C[k], 0.45f), LANE_C[k], std::min(1.0f, (float) n / mx * 1.4f))
+                         : mix(0x000000, LANE_C[k], 0.12f);
+        L.arc(c, c, r, 12, -90 + h * 15 + 1, -90 + h * 15 + 14, col);
+      }
+    }
+    // стрелка текущего часа
+    if (S.time_ok) {
+      float hn = S.now.hour + S.now.minute / 60.0f;
+      float a = (-90 + hn * 15) * (float) M_PI / 180;
+      L.line(c + 29 * cosf(a), c + 29 * sinf(a), c + 88 * cosf(a), c + 88 * sinf(a), TEXT, 2);
+      L.circle(c + 88 * cosf(a), c + 88 * sinf(a), 3, TEXT);
+    }
+    L.circle(c, c, 28, 0x000000, LV_OPA_COVER, 0x2c3a78, 1);
+  }
+  // журнал
+  if (JLOG) {
+    for (int i = 0; i < 6; i++) {
+      const auto &e = (*JLOG)[i];
+      std::string line(e.data(), strnlen(e.data(), e.size()));
+      size_t a = line.find('|'), z = a == std::string::npos ? a : line.find('|', a + 1);
+      if (z == std::string::npos) {
+        set_text(e_jw[i], i == 0 ? "пока пусто" : "");
+        set_text(e_jt[i], ""); set_text(e_js[i], "");
+        lv_obj_add_flag(e_jd[i], LV_OBJ_FLAG_HIDDEN);
+        continue;
+      }
+      std::string w = line.substr(a + 1, z - a - 1);
+      uint32_t col = lane_col(w);
+      lv_obj_remove_flag(e_jd[i], LV_OBJ_FLAG_HIDDEN);
+      fill(e_jd[i], col, LV_RADIUS_CIRCLE);
+      glow(e_jd[i], col, i == 0 ? 8 : 0, 180);
+      set_text(e_jw[i], w.c_str());
+      set_color(e_jw[i], i == 0 ? col : mix(col, SUB, 0.35f));
+      set_text(e_jt[i], line.substr(0, a).c_str());
+      set_text(e_js[i], line.substr(z + 1).c_str());
+    }
+  }
+  for (int k = 0; k < 4; k++) set_text(e_lc[k], dm(last_of(k)).c_str());
+}
+
+// ------------------------------------------------------------------ экран долей: бублик месяца
+// Весь расход счетчика за месяц одним бубликом: свет, розетки, зарядка и то, что прошло мимо
+// линий (счетчик минус сумма линий). Справа карточки линий с долей, кВт·ч и гривнами.
+static lv_obj_t *scr_sh = nullptr, *s_cd, *s_tot, *s_cv, *s_c1, *s_c2, *s_c3;
+static lv_obj_t *s_pct[4], *s_val[4], *s_bar[4], *s_barbg[4];
+static const char *SH_N[4] = {"СВЕТ", "РОЗЕТКИ", "ЗАРЯДКА", "ВНЕ ЛИНИЙ"};
+static const uint32_t SH_C1[4] = {AMBER, MAGENTA, ORANGE, 0x46507a}, SH_C2[4] = {ORANGE, PURPLE, MAGENTA, 0x6e78a0};
+static void build_shares() {
+  scr_sh = new_screen();
+  s_tot = topbar(scr_sh, "ДОЛИ ЛИНИЙ", &s_cd);
+  lv_obj_t *lp = panel(scr_sh, CM, CY, 226, CH, 10, 0x2c3a78, PANEL, PANEL2);
+  lbl(lp, 9, 6, FS, SUB, "МЕСЯЦ ПО СЧЕТЧИКУ");
+  s_cv = canvas(lp, (226 - 190) / 2, 26, 190, 190);
+  s_c1 = lbl(lp, 113, 26 + 95 - 16, FB, TEXT, "", 1, 90);
+  s_c2 = lbl(lp, 113, 26 + 95 + 2, FS, SUB, "кВт·ч", 1, 90);
+  s_c3 = lbl(lp, 113, 26 + 95 + 14, FS, ORANGE, "", 1, 110);
+  int rx = CM + 226 + 6, rw = 480 - CM - rx;
+  lv_obj_t *rp = panel(scr_sh, rx, CY, rw, CH, 10, 0x2c3a78, PANEL, PANEL2);
+  for (int k = 0; k < 4; k++) {
+    int y = 8 + k * 56;
+    lv_obj_t *st = obj(rp, 8, y + 2, 4, 40);
+    fill(st, SH_C1[k], 2, SH_C2[k]);
+    lbl(rp, 18, y, FM, k == 3 ? SUB : TEXT, SH_N[k]);
+    s_pct[k] = lbl(rp, rw - 9, y, FB, SH_C1[k], "", 2, 60);
+    s_val[k] = lbl(rp, 18, y + 18, FS, SUB, "");
+    s_barbg[k] = obj(rp, 18, y + 32, rw - 27, 5);
+    fill(s_barbg[k], mix(0x000000, SH_C1[k], 0.15f), 2);
+    s_bar[k] = obj(rp, 18, y + 32, 2, 5);
+    fill(s_bar[k], SH_C1[k], 2, SH_C2[k], true);
+    glow(s_bar[k], SH_C1[k], k == 3 ? 0 : 8, 140);
+  }
+}
+static void refresh_shares() {
+  if (!S.time_ok) return;
+  int mon = S.now.month;
+  float meter = (int) H_MONTHS.size() >= mon ? H_MONTHS[mon - 1] : 0;
+  auto nz = [](float v) { return std::isnan(v) ? 0.0f : v; };
+  float m[4] = {nz(S.m_light), nz(S.m_sock), nz(S.m_chg), 0};
+  float d[4] = {nz(S.d_light), nz(S.d_sock), nz(S.d_chg), 0};
+  float lines = m[0] + m[1] + m[2];
+  m[3] = std::max(0.0f, meter - lines);
+  float today = H_DAYS.empty() ? 0 : H_DAYS.back();
+  d[3] = std::max(0.0f, today - d[0] - d[1] - d[2]);
+  float tot = std::max(meter, lines);
+  char b[64];
+  snprintf(b, sizeof b, "≈%.0f грн", tot * TARIFF);
+  set_text(s_tot, b);
+  snprintf(b, sizeof b, "%.1f", tot);
+  set_text(s_c1, b);
+  snprintf(b, sizeof b, "сегодня %.2f", today);
+  set_text(s_c3, b);
+  static float drawn[4] = {-1, -1, -1, -1};
+  bool same = true;
+  for (int k = 0; k < 4; k++) if (std::abs(drawn[k] - m[k]) > 0.05f) same = false;
+  if (!same) {
+    Layer L(s_cv);
+    const float c = 95;
+    L.arc(c, c, 88, 24, 0, 360, 0x0c1024);
+    float a = -90;
+    for (int k = 0; k < 4; k++) {
+      drawn[k] = m[k];
+      if (tot <= 0) break;
+      float sw = 360 * m[k] / tot;
+      if (sw >= 3) L.arc_grad(c, c, 88, 24, a + 1, a + sw - 1, SH_C1[k], SH_C2[k], 36);
+      a += sw;
+    }
+    L.circle(c, c, 60, 0x000000, LV_OPA_COVER, 0x2c3a78, 1);
+  }
+  int rw = 480 - CM - (CM + 226 + 6);
+  for (int k = 0; k < 4; k++) {
+    float pct = tot > 0 ? m[k] / tot * 100 : 0;
+    snprintf(b, sizeof b, "%d%%", (int) lroundf(pct));
+    set_text(s_pct[k], b);
+    snprintf(b, sizeof b, "%.1f мес · %.2f сег · ≈%.0f грн", m[k], d[k], m[k] * TARIFF);
+    set_text(s_val[k], b);
+    int w = (int) ((rw - 27) * pct / 100);
+    if (w < 2) lv_obj_add_flag(s_bar[k], LV_OBJ_FLAG_HIDDEN);
+    else { lv_obj_remove_flag(s_bar[k], LV_OBJ_FLAG_HIDDEN); lv_obj_set_width(s_bar[k], w); }
+  }
+}
+
 // ------------------------------------------------------------------ пин-панель снятия охраны
 static lv_obj_t *p_dots[4], *p_msg, *p_cd, *p_cdcv;
 static std::string pin_buf;
@@ -1023,7 +1279,7 @@ static void build_pin(lv_obj_t *scr) {
   lv_obj_add_flag(pin_layer, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(pin_layer, on_pin_bg, LV_EVENT_SHORT_CLICKED, nullptr);
   lv_obj_t *p = obj(pin_layer, 16, 14, 448, 244);
-  fill(p, 0x1c1046, 14, 0x0c0822);
+  fill(p, PANEL, 14);
   border(p, 0xb45cff, 2);
   glow(p, PURPLE, 24, 170);
   // слева: заголовок, щит, точки кода, отсчет
@@ -1084,11 +1340,13 @@ static void pin_open() {
 
 // ------------------------------------------------------------------ навигация, обновление
 static void show_page(int p) {
-  if (p == 1) {
-    refresh_cal();
+  if (p == 1 || p == 3 || p == 4) {
+    if (p == 1) refresh_cal();
+    if (p == 3) refresh_events(true);
+    if (p == 4) refresh_shares();
     cal_open_ms = esphome::millis();
-    CUR_PAGE = 1;
-    lv_screen_load(scr_cal);
+    CUR_PAGE = p;
+    lv_screen_load(p == 1 ? scr_cal : p == 3 ? scr_ev : scr_sh);
   } else {
     CUR_PAGE = 0;
     lv_screen_load(scr_main);
@@ -1099,6 +1357,8 @@ static void init(lv_obj_t *main_scr, const lv_font_t *fs, const lv_font_t *fm, c
   FS = fs; FM = fm; FB = fb;
   build_main(main_scr);
   build_cal();
+  build_events();
+  build_shares();
   build_pin(main_scr);
 }
 
@@ -1112,13 +1372,13 @@ static void tick(const esphome::ESPTime &t) {
     set_text(l_clock, b);
   }
   uint32_t now = esphome::millis();
-  if (CUR_PAGE == 1) {
+  if (CUR_PAGE != 0) {
     int left = 300 - (int) ((now - cal_open_ms) / 1000);
     if (left <= 0) show_page(0);
     else {
       char b[8];
       snprintf(b, sizeof b, "%d:%02d", left / 60, left % 60);
-      set_text(c_cd, b);
+      set_text(CUR_PAGE == 1 ? c_cd : CUR_PAGE == 3 ? e_cd : s_cd, b);
     }
   }
   if (pin_open_ms) {
@@ -1261,6 +1521,8 @@ static void refresh(const State &st) {
   set_text(cg_l2, b);
   set_color(cg_l2, tone);
   if (CUR_PAGE == 1) refresh_cal();
+  if (CUR_PAGE == 3) refresh_events(false);
+  if (CUR_PAGE == 4) refresh_shares();
 }
 
 }  // namespace gs
