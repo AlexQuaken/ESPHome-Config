@@ -4,10 +4,10 @@
 #   diag: !include packages/diag.yaml
 #
 # Что отдает в HA:
-#   Reset Reason    причина последнего старта: Power On, Brownout, Watchdog, panic, Software
+#   Reset Reason    причина последнего старта: power-on, brownout, watchdog, panic, software
 #   Failed Boots    сколько загрузок подряд перед этой не дошли до HA; если плата крутилась
 #                   в перезагрузке раньше Wi-Fi, здесь будет число этих попыток
-#   Prev Uptime     сколько прожила прошлая загрузка, с точностью до 10 минут
+#   Prev Uptime     сколько прожила прошлая загрузка, с точностью до минуты
 #   Total Boots     сколько раз плата стартовала за всю жизнь пакета
 #   WiFi Drops      обрывов Wi-Fi с последнего старта
 #
@@ -16,20 +16,28 @@
 # (минута по умолчанию). Плата, которая падает по brownout через три секунды после
 # старта, до этой записи не доживает, и счетчик неудачных загрузок навсегда стоял бы
 # на нуле. Поэтому на старте значение пишется во флеш немедленно, с sync(), и
-# происходит это на приоритете 600, то есть до подъема Wi-Fi, который и дает
+# происходит это на приоритете 800, то есть до подъема Wi-Fi, который и дает
 # главный бросок тока.
 #
 # Failed Boots считает удачной загрузку, дошедшую до API HA. Если в это время лежал
 # сам HA, счетчик тоже вырастет, это надо держать в голове при чтении.
 #
-# Износ флеша: одна запись на загрузку плюс аптайм раз в 10 минут, около 50 тысяч
-# записей в год, NVS размазывает их по страницам. Для флеша это ничто.
+# Износ флеша: одна запись на загрузку плюс аптайм раз в минуту, около полумиллиона
+# записей в год. NVS размазывает их по страницам, и раздел выдерживает десятки
+# миллионов таких записей, так что на жизнь платы это не влияет.
 
 # ID платы берется из подстановки number файла устройства. У кого ее нет, будет
 # пусто: подстановки из файла устройства перекрывают эту, а эта нужна только чтобы
 # пакет собирался на платах без number.
 substitutions:
   number: ''
+  # номер для таблицы; по умолчанию number, но его можно переопределить отдельно,
+  # не трогая number, который вшит в имена BLE-сенсоров платы
+  board_id: ${number}
+  # 'false' выключает запись аптайма во флеш раз в минуту, Prev Uptime тогда всегда 0.
+  # Заведено для esp32cam-3s-24: она 28.09.2026 стала падать по interrupt watchdog, и
+  # с частой записью падала чаще. Но падала и совсем без пакета, так что это не причина.
+  diag_save_uptime: 'true'
 
 globals:
   - id: diag_failed_before
@@ -61,9 +69,11 @@ globals:
 #
 # Второй аргумент true у make_preference: на ESP8266 без него значение ляжет в
 # RTC-память и пропадет при обесточивании. На ESP32 он ничего не меняет, там всегда NVS.
+#
+# Приоритет 800: раньше всех железных компонентов и задолго до Wi-Fi.
 esphome:
   on_boot:
-    - priority: 600
+    - priority: 800
       then:
       - lambda: |-
           auto p_att = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_att"), true);
@@ -104,29 +114,51 @@ wifi:
     - lambda: 'id(diag_wifi_drops) += 1;'
 
 interval:
-  # Аптайм во флеш раз в 10 минут: после сбоя видно, сколько плата прожила.
+  # Аптайм во флеш раз в минуту: после сбоя видно, сколько плата прожила, с точностью
+  # до минуты. Первый запуск идет сразу после старта и пишет 0-1 с, поэтому
+  # Prev Uptime около нуля значит «прожила меньше минуты».
   # millis() переполняется через 49.7 суток, для этой цели точности хватает.
-  - interval: 10min
+  - interval: 1min
     then:
       - lambda: |-
+          if (!${diag_save_uptime}) return;
           auto p_up = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_up"), true);
           uint32_t up = millis() / 1000;
           p_up.save(&up);
 
-debug:
-  update_interval: 60s
-
+# Причина сброса читается напрямую, без компонента debug. С debug на классическом
+# ESP32 переставали работать камеры: esp32_camera Setup Failed: ESP_ERR_NOT_SUPPORTED
+# на cam1 и cam2. Проверено 28.09.2026 на cam1: без пакета камера работает, с пакетом
+# и debug нет, с пакетом без debug снова работает. Сдвиг on_boot на 800 не помогал.
+# На ESP8266 esp_reset_reason() нет, там причину отдает ESP.getResetReason().
 text_sensor:
-  - platform: debug
-    reset_reason:
-      name: ${board_name} Reset Reason
-      entity_category: diagnostic
+  - platform: template
+    name: ${board_name} Reset Reason
+    entity_category: diagnostic
+    update_interval: 1h
+    lambda: |-
+      #ifdef USE_ESP32
+      switch (esp_reset_reason()) {
+        case ESP_RST_POWERON:   return {"power-on"};
+        case ESP_RST_BROWNOUT:  return {"brownout"};
+        case ESP_RST_SW:        return {"software"};
+        case ESP_RST_PANIC:     return {"panic"};
+        case ESP_RST_INT_WDT:   return {"interrupt watchdog"};
+        case ESP_RST_TASK_WDT:  return {"task watchdog"};
+        case ESP_RST_WDT:       return {"watchdog"};
+        case ESP_RST_DEEPSLEEP: return {"deep sleep"};
+        case ESP_RST_EXT:       return {"external pin"};
+        default:                return {"unknown"};
+      }
+      #else
+      return {ESP.getResetReason().c_str()};
+      #endif
   # номер платы для таблицы на дашборде
   - platform: template
     name: ${board_name} Board ID
     entity_category: diagnostic
     update_interval: 1h
-    lambda: 'return {"${number}"};'
+    lambda: 'return {"${board_id}"};'
 
 sensor:
   - platform: template
