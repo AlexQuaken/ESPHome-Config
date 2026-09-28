@@ -1,0 +1,140 @@
+# Диагностика сбоев: почему плата перезагрузилась и сколько раз не смогла подняться.
+#
+# Подключается одной строкой в packages: платы:
+#   diag: !include packages/diag.yaml
+#
+# Что отдает в HA:
+#   Reset Reason    причина последнего старта: Power On, Brownout, Watchdog, panic, Software
+#   Failed Boots    сколько загрузок подряд перед этой не дошли до HA; если плата крутилась
+#                   в перезагрузке раньше Wi-Fi, здесь будет число этих попыток
+#   Prev Uptime     сколько прожила прошлая загрузка, с точностью до 10 минут
+#   Total Boots     сколько раз плата стартовала за всю жизнь пакета
+#   WiFi Drops      обрывов Wi-Fi с последнего старта
+#
+# Почему счетчики пишутся вручную через global_preferences, а не через globals
+# с restore_value. Globals сбрасываются во флеш не сразу, а раз в flash_write_interval
+# (минута по умолчанию). Плата, которая падает по brownout через три секунды после
+# старта, до этой записи не доживает, и счетчик неудачных загрузок навсегда стоял бы
+# на нуле. Поэтому на старте значение пишется во флеш немедленно, с sync(), и
+# происходит это на приоритете 600, то есть до подъема Wi-Fi, который и дает
+# главный бросок тока.
+#
+# Failed Boots считает удачной загрузку, дошедшую до API HA. Если в это время лежал
+# сам HA, счетчик тоже вырастет, это надо держать в голове при чтении.
+#
+# Износ флеша: одна запись на загрузку плюс аптайм раз в 10 минут, около 50 тысяч
+# записей в год, NVS размазывает их по страницам. Для флеша это ничто.
+
+globals:
+  - id: diag_failed_before
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: diag_prev_uptime
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: diag_total_boots
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: diag_wifi_drops
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: diag_reported
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+esphome:
+  on_boot:
+    priority: 600
+    then:
+      - lambda: |-
+          auto p_att = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_att"));
+          auto p_tot = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_tot"));
+          auto p_up  = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_up"));
+          uint32_t att = 0, tot = 0, up = 0;
+          p_att.load(&att);
+          p_tot.load(&tot);
+          p_up.load(&up);
+          // att это загрузки с момента последнего выхода в HA; каждая удачная его обнуляет,
+          // значит сейчас в нем ровно число неудачных стартов перед этим
+          id(diag_failed_before) = att;
+          id(diag_prev_uptime) = up;
+          id(diag_total_boots) = tot + 1;
+          att += 1;
+          tot += 1;
+          up = 0;
+          p_att.save(&att);
+          p_tot.save(&tot);
+          p_up.save(&up);
+          global_preferences->sync();
+          ESP_LOGI("diag", "boot #%u, failed before: %u, prev uptime: %us",
+                   (unsigned) tot, (unsigned) id(diag_failed_before), (unsigned) id(diag_prev_uptime));
+
+api:
+  on_client_connected:
+    - lambda: |-
+        // HA переподключается сам по себе, обнулять счетчик надо один раз за загрузку
+        if (id(diag_reported)) return;
+        id(diag_reported) = true;
+        auto p_att = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_att"));
+        uint32_t zero = 0;
+        p_att.save(&zero);
+        global_preferences->sync();
+
+wifi:
+  on_disconnect:
+    - lambda: 'id(diag_wifi_drops) += 1;'
+
+interval:
+  # Аптайм во флеш раз в 10 минут: после сбоя видно, сколько плата прожила.
+  # millis() переполняется через 49.7 суток, для этой цели точности хватает.
+  - interval: 10min
+    then:
+      - lambda: |-
+          auto p_up = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_up"));
+          uint32_t up = millis() / 1000;
+          p_up.save(&up);
+
+debug:
+  update_interval: 60s
+
+text_sensor:
+  - platform: debug
+    reset_reason:
+      name: ${board_name} Reset Reason
+      entity_category: diagnostic
+
+sensor:
+  - platform: template
+    name: ${board_name} Failed Boots
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    state_class: measurement
+    update_interval: 60s
+    lambda: 'return id(diag_failed_before);'
+  - platform: template
+    name: ${board_name} Prev Uptime
+    entity_category: diagnostic
+    device_class: duration
+    unit_of_measurement: s
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return id(diag_prev_uptime);'
+  - platform: template
+    name: ${board_name} Total Boots
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    state_class: total_increasing
+    update_interval: 60s
+    lambda: 'return id(diag_total_boots);'
+  - platform: template
+    name: ${board_name} WiFi Drops
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    state_class: measurement
+    update_interval: 60s
+    lambda: 'return id(diag_wifi_drops);'
