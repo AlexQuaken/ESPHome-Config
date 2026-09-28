@@ -4,6 +4,9 @@ substitutions:
   board_name: 'esp32-c6-lcd'
   static_ip: '192.168.0.215'
   number: '215'
+  # номер в таблице ESP; number не трогаем, он вшит в имена BLE-сенсоров
+  # (esp32_c6_lcd_*_ble_215) и в базу позиционирования tools/ble_locator
+  board_id: '22'
   pin_clk: GPIO7
   pin_mosi: GPIO6
   pin_cs: GPIO14
