@@ -213,18 +213,27 @@ struct Layer {
   void circle(float x, float y, float r, uint32_t fillc, lv_opa_t fo = LV_OPA_COVER, uint32_t bc = 0, int bw = 0) {
     rect(x - r, y - r, 2 * r + 1, 2 * r + 1, LV_RADIUS_CIRCLE, fillc, fo, bc, bw);
   }
+  // углы в градусах от 3 часов по часовой, можно отрицательные: LVGL их не понимает
+  // (от -90 рисовал полный круг), поэтому приводим к 0..359, конец может быть меньше начала
   void arc(float cx, float cy, int r, int w, float a0, float a1, uint32_t col, lv_opa_t opa = LV_OPA_COVER) {
+    int i0 = (int) lroundf(a0), i1 = (int) lroundf(a1);
+    if (i1 <= i0) return;
     lv_draw_arc_dsc_t d;
     lv_draw_arc_dsc_init(&d);
     d.center.x = cx; d.center.y = cy; d.radius = r; d.width = w;
-    d.start_angle = a0; d.end_angle = a1; d.color = C(col); d.opa = opa;
+    if (i1 - i0 >= 360) { d.start_angle = 0; d.end_angle = 360; }
+    else { d.start_angle = ((i0 % 360) + 360) % 360; d.end_angle = ((i1 % 360) + 360) % 360; }
+    d.color = C(col); d.opa = opa;
     lv_draw_arc(&l, &d);
   }
   // дуга с переходом цвета: сегменты
   void arc_grad(float cx, float cy, int r, int w, float a0, float a1, uint32_t c1, uint32_t c2, int steps = 40) {
-    for (int i = 0; i < steps; i++) {
-      float t0 = a0 + (a1 - a0) * i / steps, t1 = a0 + (a1 - a0) * (i + 1) / steps + 0.8f;
-      arc(cx, cy, r, w, t0, std::min(t1, a1), mix(c1, c2, (float) i / std::max(1, steps - 1)));
+    // сегменты по целым градусам встык, перекрытие на градус против щелей
+    int i0 = (int) lroundf(a0), i1 = (int) lroundf(a1);
+    int n = std::max(1, std::min(steps, i1 - i0));
+    for (int i = 0; i < n; i++) {
+      int t0 = i0 + (i1 - i0) * i / n, t1 = std::min(i1, i0 + (i1 - i0) * (i + 1) / n + 1);
+      arc(cx, cy, r, w, t0, t1, mix(c1, c2, n > 1 ? (float) i / (n - 1) : 0.0f));
     }
   }
 };
@@ -1072,9 +1081,69 @@ static void pin_open() {
   lv_obj_move_foreground(pin_layer);
 }
 
+// ------------------------------------------------------------------ калибровка цвета
+// Тестовый экран: палитра дашборда с именами, серая шкала, чистые R/G/B и кусок
+// фона с панелью. Та же картинка со скриншота открывается на мониторе, ползунки
+// коррекции в HA двигаются, пока панель не станет похожей.
+static lv_obj_t *scr_calib = nullptr, *k_info = nullptr;
+static void build_calib() {
+  scr_calib = lv_obj_create(nullptr);
+  lv_obj_remove_style_all(scr_calib);
+  lv_obj_remove_flag(scr_calib, LV_OBJ_FLAG_SCROLLABLE);
+  fill(scr_calib, BG1, 0, BG2);
+  lv_obj_add_flag(scr_calib, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(scr_calib, on_cal, LV_EVENT_SHORT_CLICKED, nullptr);
+  lbl(scr_calib, 8, 4, FM, TEXT, "КАЛИБРОВКА ЦВЕТА");
+  k_info = lbl(scr_calib, 472, 8, FS, SUB, "", 2, 300);
+  struct Sw { uint32_t c; const char *n; };
+  static const Sw SW[12] = {{BG1, "фон 1"}, {BG2, "фон 2"}, {PANEL, "панель"}, {EDGE, "рамка"},
+                            {VIOLET, "фиолет"}, {PURPLE, "пурпур"}, {MAGENTA, "маджента"}, {PINK, "розовый"},
+                            {ORANGE, "оранж"}, {AMBER, "янтарь"}, {CYAN, "циан"}, {TEXT, "текст"}};
+  for (int i = 0; i < 12; i++) {
+    int x = 8 + (i % 6) * 78, y = 24 + (i / 6) * 50;
+    lv_obj_t *b = obj(scr_calib, x, y, 72, 34);
+    fill(b, SW[i].c, 6);
+    border(b, 0x5a4696);
+    lbl(scr_calib, x + 36, y + 36, FS, SUB, SW[i].n, 1, 76);
+  }
+  // серая шкала 16 ступеней и чистые каналы
+  const int ry[4] = {126, 150, 174, 198};
+  const char *rn[4] = {"серый", "R", "G", "B"};
+  for (int r = 0; r < 4; r++) {
+    lbl(scr_calib, 8, ry[r] + 6, FS, SUB, rn[r]);
+    for (int i = 0; i < 16; i++) {
+      int v = i * 17;
+      uint32_t c = r == 0 ? (v << 16 | v << 8 | v) : r == 1 ? (v << 16) : r == 2 ? (v << 8) : v;
+      lv_obj_t *b = obj(scr_calib, 44 + i * 27, ry[r], 26, 20);
+      fill(b, c, 0);
+    }
+  }
+  // кусок интерфейса: фон, панель, текст, градиенты
+  lv_obj_t *p1 = panel(scr_calib, 8, 226, 150, 38);
+  lbl(p1, 8, 4, FS, SUB, "МОЩНОСТЬ");
+  lbl(p1, 8, 16, FM, ORANGE, "22:03:53");
+  lv_obj_t *g1 = obj(scr_calib, 166, 226, 150, 38);
+  fill(g1, 0xe628be, 10, 0xff8232, true);
+  border(g1, 0xffd2af);
+  lbl(g1, 8, 4, FS, 0xffebf5, "ОХРАНА");
+  lbl(g1, 8, 16, FM, TEXT, "ВКЛЮЧЕНА");
+  lv_obj_t *g2 = obj(scr_calib, 324, 226, 148, 38);
+  fill(g2, 0x781eaa, 10, 0xa03246);
+  border(g2, 0xffbeaa);
+  lbl(g2, 8, 4, FS, 0xffe6f0, "ЗАРЯДКА");
+  lbl(g2, 8, 16, FB, TEXT, "23:00-07:00");
+}
+static void calib_info(const char *t) {
+  if (k_info) set_text(k_info, t);
+}
+
 // ------------------------------------------------------------------ навигация, обновление
 static void show_page(int p) {
-  if (p == 1) {
+  if (p == 2) {
+    cal_open_ms = esphome::millis();
+    CUR_PAGE = 2;
+    lv_screen_load(scr_calib);
+  } else if (p == 1) {
     refresh_cal();
     cal_open_ms = esphome::millis();
     CUR_PAGE = 1;
@@ -1089,6 +1158,7 @@ static void init(lv_obj_t *main_scr, const lv_font_t *fs, const lv_font_t *fm, c
   FS = fs; FM = fm; FB = fb;
   build_main(main_scr);
   build_cal();
+  build_calib();
   build_pin(main_scr);
 }
 
@@ -1102,6 +1172,7 @@ static void tick(const esphome::ESPTime &t) {
     set_text(l_clock, b);
   }
   uint32_t now = esphome::millis();
+  if (CUR_PAGE == 2 && (int) ((now - cal_open_ms) / 1000) >= 300) show_page(0);
   if (CUR_PAGE == 1) {
     int left = 300 - (int) ((now - cal_open_ms) / 1000);
     if (left <= 0) show_page(0);
