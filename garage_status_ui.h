@@ -350,7 +350,8 @@ static void on_power(lv_event_t *e) {
 static void build_main(lv_obj_t *scr) {
   scr_main = scr;
   lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
-  fill(scr, BG1, 0, BG2);
+  // фон черный: градиент в 565 на этой панели шел полосами снизу
+  fill(scr, 0x000000, 0);
   // ---- верхние плитки
   const char *titles[5] = {"ВОРОТА", "ОХРАНА", "СВЕТ", "ДВИЖЕНИЕ", "МОЩНОСТЬ"};
   const uint32_t ics[5] = {PINK, MAGENTA, AMBER, PURPLE, ORANGE};
@@ -700,7 +701,7 @@ static void build_cal() {
   scr_cal = lv_obj_create(nullptr);
   lv_obj_remove_style_all(scr_cal);
   lv_obj_remove_flag(scr_cal, LV_OBJ_FLAG_SCROLLABLE);
-  fill(scr_cal, BG1, 0, BG2);
+  fill(scr_cal, 0x000000, 0);
   lv_obj_add_flag(scr_cal, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(scr_cal, on_cal, LV_EVENT_SHORT_CLICKED, nullptr);
   lv_obj_t *tb = panel(scr_cal, CM, TB_Y, 480 - 2 * CM, TB_H, 8, EDGE, 0x1a103e, 0x0e0924);
@@ -1081,69 +1082,9 @@ static void pin_open() {
   lv_obj_move_foreground(pin_layer);
 }
 
-// ------------------------------------------------------------------ калибровка цвета
-// Тестовый экран: палитра дашборда с именами, серая шкала, чистые R/G/B и кусок
-// фона с панелью. Та же картинка со скриншота открывается на мониторе, ползунки
-// коррекции в HA двигаются, пока панель не станет похожей.
-static lv_obj_t *scr_calib = nullptr, *k_info = nullptr;
-static void build_calib() {
-  scr_calib = lv_obj_create(nullptr);
-  lv_obj_remove_style_all(scr_calib);
-  lv_obj_remove_flag(scr_calib, LV_OBJ_FLAG_SCROLLABLE);
-  fill(scr_calib, BG1, 0, BG2);
-  lv_obj_add_flag(scr_calib, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_add_event_cb(scr_calib, on_cal, LV_EVENT_SHORT_CLICKED, nullptr);
-  lbl(scr_calib, 8, 4, FM, TEXT, "КАЛИБРОВКА ЦВЕТА");
-  k_info = lbl(scr_calib, 472, 8, FS, SUB, "", 2, 300);
-  struct Sw { uint32_t c; const char *n; };
-  static const Sw SW[12] = {{BG1, "фон 1"}, {BG2, "фон 2"}, {PANEL, "панель"}, {EDGE, "рамка"},
-                            {VIOLET, "фиолет"}, {PURPLE, "пурпур"}, {MAGENTA, "маджента"}, {PINK, "розовый"},
-                            {ORANGE, "оранж"}, {AMBER, "янтарь"}, {CYAN, "циан"}, {TEXT, "текст"}};
-  for (int i = 0; i < 12; i++) {
-    int x = 8 + (i % 6) * 78, y = 24 + (i / 6) * 50;
-    lv_obj_t *b = obj(scr_calib, x, y, 72, 34);
-    fill(b, SW[i].c, 6);
-    border(b, 0x5a4696);
-    lbl(scr_calib, x + 36, y + 36, FS, SUB, SW[i].n, 1, 76);
-  }
-  // серая шкала 16 ступеней и чистые каналы
-  const int ry[4] = {126, 150, 174, 198};
-  const char *rn[4] = {"серый", "R", "G", "B"};
-  for (int r = 0; r < 4; r++) {
-    lbl(scr_calib, 8, ry[r] + 6, FS, SUB, rn[r]);
-    for (int i = 0; i < 16; i++) {
-      int v = i * 17;
-      uint32_t c = r == 0 ? (v << 16 | v << 8 | v) : r == 1 ? (v << 16) : r == 2 ? (v << 8) : v;
-      lv_obj_t *b = obj(scr_calib, 44 + i * 27, ry[r], 26, 20);
-      fill(b, c, 0);
-    }
-  }
-  // кусок интерфейса: фон, панель, текст, градиенты
-  lv_obj_t *p1 = panel(scr_calib, 8, 226, 150, 38);
-  lbl(p1, 8, 4, FS, SUB, "МОЩНОСТЬ");
-  lbl(p1, 8, 16, FM, ORANGE, "22:03:53");
-  lv_obj_t *g1 = obj(scr_calib, 166, 226, 150, 38);
-  fill(g1, 0xe628be, 10, 0xff8232, true);
-  border(g1, 0xffd2af);
-  lbl(g1, 8, 4, FS, 0xffebf5, "ОХРАНА");
-  lbl(g1, 8, 16, FM, TEXT, "ВКЛЮЧЕНА");
-  lv_obj_t *g2 = obj(scr_calib, 324, 226, 148, 38);
-  fill(g2, 0x781eaa, 10, 0xa03246);
-  border(g2, 0xffbeaa);
-  lbl(g2, 8, 4, FS, 0xffe6f0, "ЗАРЯДКА");
-  lbl(g2, 8, 16, FB, TEXT, "23:00-07:00");
-}
-static void calib_info(const char *t) {
-  if (k_info) set_text(k_info, t);
-}
-
 // ------------------------------------------------------------------ навигация, обновление
 static void show_page(int p) {
-  if (p == 2) {
-    cal_open_ms = esphome::millis();
-    CUR_PAGE = 2;
-    lv_screen_load(scr_calib);
-  } else if (p == 1) {
+  if (p == 1) {
     refresh_cal();
     cal_open_ms = esphome::millis();
     CUR_PAGE = 1;
@@ -1158,7 +1099,6 @@ static void init(lv_obj_t *main_scr, const lv_font_t *fs, const lv_font_t *fm, c
   FS = fs; FM = fm; FB = fb;
   build_main(main_scr);
   build_cal();
-  build_calib();
   build_pin(main_scr);
 }
 
@@ -1172,7 +1112,6 @@ static void tick(const esphome::ESPTime &t) {
     set_text(l_clock, b);
   }
   uint32_t now = esphome::millis();
-  if (CUR_PAGE == 2 && (int) ((now - cal_open_ms) / 1000) >= 300) show_page(0);
   if (CUR_PAGE == 1) {
     int left = 300 - (int) ((now - cal_open_ms) / 1000);
     if (left <= 0) show_page(0);
