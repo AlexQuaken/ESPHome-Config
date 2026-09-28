@@ -54,11 +54,11 @@ wifi:
 esphome:
   name: ${board_name}
   on_boot:
-    priority: -100
-    then:
-      - lambda: |-
-          id(log_lines).push_back("${board_name} booted");
-          id(log_lines).push_back("display OK");
+    - priority: -100
+      then:
+        - lambda: |-
+            id(log_lines).push_back("${board_name} booted");
+            id(log_lines).push_back("display OK");
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -136,6 +136,7 @@ packages:
   ble_ira: !include packages/ble_ira.yaml
   ble_lila: !include packages/ble_lila.yaml
   ble_radar: !include packages/ble_radar_tdisplay_s3.yaml
+  diag: !include packages/diag.yaml
 
 # Яркость экрана по датчику освещенности гаража 2 (sensor.garage2_illuminance).
 # Темно, значит 30%, светло, значит 100%. До переезда 19.09.2026 тут был
