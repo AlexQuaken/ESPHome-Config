@@ -18,8 +18,8 @@
 #
 # Как устроен экран. Все на LVGL: он несовместим с лямбдой дисплея, ESPHome
 # такое не собирает. Консоль и радар рисуются лямбдой на полноэкранном холсте
-# (страница p_raw, 480x272 в PSRAM) примерно 30 раз в секунду, код перенесен с
-# лямбды дисплея почти дословно, поменялись только функции рисования. Дашборд и
+# (страница p_raw, 480x272 в PSRAM) примерно 30 раз в секунду: лямбда прежняя, от
+# дисплея, только it в ней переходник, пишущий пиксели в буфер холста. Дашборд и
 # терминал это обычные страницы LVGL, обновляются раз в 2 секунды, в фоне тоже,
 # чтобы при переключении были свежими.
 #
@@ -582,6 +582,24 @@ font:
     bpp: 1
     glyphs: " %.0123456789"
 
+color:
+  - id: c_green
+    red: 0%
+    green: 100%
+    blue: 0%
+  - id: c_dim
+    red: 0%
+    green: 30%
+    blue: 0%
+  - id: c_amber
+    red: 100%
+    green: 70%
+    blue: 0%
+  - id: c_black
+    red: 0%
+    green: 0%
+    blue: 0%
+
 globals:
   # ---- режим экрана: g_mode сохраненный (NVS), g_shown тот, что на экране
   - id: g_mode
@@ -756,76 +774,57 @@ script:
           id(mode_sel).publish_state(NAME[m]);
           ESP_LOGI("mode", "mode %d%s", m, save ? " (saved)" : "");
 
-  # Кадр консоли или радара на холсте raw_cv. Код перенесен с лямбды дисплея
-  # прошлой esp32-s3-disp: it.printf/line/circle заменены на функции ниже,
-  # рисующие через lv_draw в слой холста. Текст копируется (text_local), потому
-  # что слой отрисовывается целиком в lv_canvas_finish_layer, когда буферы
-  # snprintf уже переписаны.
+  # Кадр консоли или радара на холсте raw_cv. Лямбда перенесена с дисплея прошлой
+  # esp32-s3-disp без изменений: it здесь не дисплей, а переходник CanvasIt,
+  # который пишет пиксели прямо в буфер холста (RGB565 в PSRAM). Штатное
+  # рисование LVGL (lv_draw_triangle, круги, сотня подписей) тянуло радар на 8 FPS.
   - id: raw_draw
     then:
       - lambda: |-
           if (id(g_shown) > 1) return;
+          struct CanvasIt : public display::Display {
+            uint16_t *buf = nullptr;
+            uint32_t stride = 480;   // в пикселях
+            void update() override {}
+            display::DisplayType get_display_type() override { return display::DISPLAY_TYPE_COLOR; }
+            int get_width_internal() override { return 480; }
+            int get_height_internal() override { return 272; }
+            static uint16_t c565(Color c) { return lv_color_to_u16(lv_color_make(c.r, c.g, c.b)); }
+            void draw_pixel_at(int x, int y, Color c) override {
+              if ((unsigned) x >= 480u || (unsigned) y >= 272u) return;
+              if (!this->get_clipping().inside(x, y)) return;
+              this->buf[y * this->stride + x] = c565(c);
+            }
+            void fill(Color c) override {
+              uint16_t v = c565(c);
+              std::fill(this->buf, this->buf + this->stride * 272, v);
+            }
+          };
+          static CanvasIt *cit = nullptr;
+          lv_obj_t *cv = (lv_obj_t *) id(raw_cv);
+          if (cit == nullptr) {
+            lv_draw_buf_t *db = lv_canvas_get_draw_buf(cv);
+            cit = new CanvasIt();
+            cit->buf = (uint16_t *) db->data;
+            cit->stride = db->header.stride / 2;
+            ESP_LOGI("raw", "canvas %ux%u stride %u cf %u", (unsigned) db->header.w, (unsigned) db->header.h,
+                     (unsigned) db->header.stride, (unsigned) db->header.cf);
+          }
+          auto &it = *cit;
           id(frame_counter)++;
           uint32_t t0_us = micros();
           uint32_t t = millis();
-          const int W = 480, H = 272;
-          lv_obj_t *cv = (lv_obj_t *) id(raw_cv);
-          lv_canvas_fill_bg(cv, lv_color_black(), LV_OPA_COVER);
-          lv_layer_t layer;
-          lv_canvas_init_layer(cv, &layer);
-          lv_layer_t *LY = &layer;
-          const lv_area_t FULL = {0, 0, W - 1, H - 1};
-          const lv_font_t *FONT = id(f_console).get_lv_font();
-          const lv_color_t GREEN = lv_color_make(0, 255, 0), DIM = lv_color_make(0, 77, 0), BLACK = lv_color_black();
-          auto G = [](int v) { return lv_color_make(0, v, 0); };
-          auto line = [&](int x1, int y1, int x2, int y2, lv_color_t c) {
-            lv_draw_line_dsc_t d; lv_draw_line_dsc_init(&d);
-            d.p1.x = x1; d.p1.y = y1; d.p2.x = x2; d.p2.y = y2;
-            d.color = c; d.width = 1; d.opa = LV_OPA_COVER;
-            lv_draw_line(LY, &d);
-          };
-          auto tri = [&](int ax, int ay, int bx, int by, int qx, int qy, lv_color_t c) {
-            lv_draw_triangle_dsc_t d; lv_draw_triangle_dsc_init(&d);
-            d.p[0].x = ax; d.p[0].y = ay; d.p[1].x = bx; d.p[1].y = by; d.p[2].x = qx; d.p[2].y = qy;
-            d.color = c; d.opa = LV_OPA_COVER;
-            lv_draw_triangle(LY, &d);
-          };
-          auto rect = [&](int x, int y, int w, int h, lv_color_t c) {
-            if (w <= 0 || h <= 0) return;
-            lv_draw_rect_dsc_t d; lv_draw_rect_dsc_init(&d);
-            d.bg_color = c; d.bg_opa = LV_OPA_COVER;
-            lv_area_t a = {x, y, x + w - 1, y + h - 1};
-            lv_draw_rect(LY, &d, &a);
-          };
-          auto circle = [&](int x, int y, int r, lv_color_t c, bool fill) {
-            lv_draw_rect_dsc_t d; lv_draw_rect_dsc_init(&d);
-            d.radius = LV_RADIUS_CIRCLE;
-            if (fill) { d.bg_color = c; d.bg_opa = LV_OPA_COVER; }
-            else { d.bg_opa = LV_OPA_TRANSP; d.border_color = c; d.border_width = 1; d.border_opa = LV_OPA_COVER; }
-            lv_area_t a = {x - r, y - r, x + r, y + r};
-            lv_draw_rect(LY, &d, &a);
-          };
-          // align: 0 от x вправо, 1 x это правый край, 2 x это середина
-          auto text = [&](int x, int y, lv_color_t c, const char *s, int align) {
-            int w = (int) strlen(s) * 6;
-            if (align == 1) x -= w; else if (align == 2) x -= w / 2;
-            lv_draw_label_dsc_t d; lv_draw_label_dsc_init(&d);
-            d.font = FONT; d.color = c; d.text = s; d.text_local = 1;
-            lv_area_t a = {x, y, x + w + 5, y + 9};
-            lv_draw_label(LY, &d, &a);
-          };
-          auto clip = [&](int x, int y, int w, int h) {
-            lv_area_t r = {x, y, x + w - 1, y + h - 1};
-            lv_area_t prev = LY->_clip_area;
-            LY->_clip_area = {std::max(prev.x1, r.x1), std::max(prev.y1, r.y1),
-                              std::min(prev.x2, r.x2), std::min(prev.y2, r.y2)};
-            return prev;
-          };
+          int W = it.get_width();
+          int H = it.get_height();
+          // it.fill чистит буфер одним куском. filled_rectangle на весь экран
+          // идет попиксельно (130 тысяч вызовов) и на S3 съедал больше половины кадра
+          it.fill(id(c_black));
 
           if (id(g_shown) == 0) {
             // ===== LOG CONSOLE =====
             const int LINE_H = 8;
             const int CHAR_W = 6;
+            const int FRAME_MS = 16;
             const int GAP = 50;
             const int CLOCK_GAP = 6;
             auto &v = id(log_lines);
@@ -842,34 +841,56 @@ script:
             char clk[32];
             auto tn = id(homeassistant_time).now();
             unsigned msec = (unsigned)(t % 1000);
-            if (tn.is_valid()) snprintf(clk, sizeof(clk), "%02d:%02d:%02d.%03u", tn.hour, tn.minute, tn.second, msec);
-            else snprintf(clk, sizeof(clk), "--:--:--.%03u", msec);
+            if (tn.is_valid()) {
+              snprintf(clk, sizeof(clk), "%02d:%02d:%02d.%03u", tn.hour, tn.minute, tn.second, msec);
+            } else {
+              snprintf(clk, sizeof(clk), "--:--:--.%03u", msec);
+            }
             int cw = (int)strlen(clk) * CHAR_W;
             int line_w_top = W - cw - CLOCK_GAP;
             if (line_w_top < 1) line_w_top = 1;
 
-            auto draw_row = [&](const std::string &s, int y) {
-              if (y >= H || y + LINE_H <= 0) return;
+            for (int i = 0; i < n; i++) {
+              int y = i * LINE_H - yoff;
+              if (y >= H) continue;
+              if (y + LINE_H <= 0) continue;
+              auto &s = v[i];
               int w = (int)s.size() * CHAR_W;
               int avail = (y < LINE_H) ? line_w_top : W;
               if (w <= avail) {
-                text(0, y, GREEN, s.c_str(), 0);
+                it.printf(0, y, id(f_console), id(c_green), "%s", s.c_str());
               } else {
                 int cycle = w + GAP;
                 int off_x = ((int)(t * 0.075f)) % cycle;
-                text(-off_x, y, GREEN, s.c_str(), 0);
-                text(-off_x + cycle, y, GREEN, s.c_str(), 0);
+                it.printf(-off_x, y, id(f_console), id(c_green), "%s", s.c_str());
+                it.printf(-off_x + cycle, y, id(f_console), id(c_green), "%s", s.c_str());
               }
-            };
-            for (int i = 0; i < n; i++) draw_row(v[i], i * LINE_H - yoff);
-            if (id(has_pending)) draw_row(id(pending_line), n * LINE_H - yoff);
+            }
 
-            rect(line_w_top, 0, W - line_w_top, LINE_H, BLACK);
-            text(W, 0, GREEN, clk, 1);
+            if (id(has_pending)) {
+              int y = n * LINE_H - yoff;
+              if (y < H && y + LINE_H > 0) {
+                auto &s = id(pending_line);
+                int w = (int)s.size() * CHAR_W;
+                int avail = (y < LINE_H) ? line_w_top : W;
+                if (w <= avail) {
+                  it.printf(0, y, id(f_console), id(c_green), "%s", s.c_str());
+                } else {
+                  int cycle = w + GAP;
+                  int off_x = ((int)(t * 0.075f)) % cycle;
+                  it.printf(-off_x, y, id(f_console), id(c_green), "%s", s.c_str());
+                  it.printf(-off_x + cycle, y, id(f_console), id(c_green), "%s", s.c_str());
+                }
+              }
+            }
+
+            it.filled_rectangle(line_w_top, 0, W - line_w_top, LINE_H, id(c_black));
+            it.printf(W, 0, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", clk);
           } else {
             // ===== BLE RADAR =====
             // Круг в левом квадрате 272x272, справа таблица 208 px.
-            // max_r 132: подписи в углах до круга не достают.
+            // max_r 132: подписи в углах шрифтом 6x8 до круга не достают (проверено
+            // по дальним углам строк часов, даты, аптайма и памяти).
             const int cx = 136;
             const int cy = 136;
             const int max_r = 132;
@@ -877,8 +898,8 @@ script:
             const int D_MIN = 18;
             const int D_MAX = 129;
 
-            line(cx - max_r, cy, cx + max_r, cy, DIM);
-            line(cx, cy - max_r, cx, cy + max_r, DIM);
+            it.line(cx - max_r, cy, cx + max_r, cy, id(c_dim));
+            it.line(cx, cy - max_r, cx, cy + max_r, id(c_dim));
 
             float sw = (float)(t % 6000) / 6000.0f * 6.28318f;
             const int TRAIL_SEG = 10;
@@ -890,25 +911,26 @@ script:
               int p1y = cy + (int)(sinf(a1) * (float)max_r);
               int p2x = cx + (int)(cosf(a2) * (float)max_r);
               int p2y = cy + (int)(sinf(a2) * (float)max_r);
-              // яркость хвоста 12..240 линейно
+              // Gradient 240→12 (≈95%→5%) линейно по trail
               int intensity = 12 + (TRAIL_SEG - i) * 26;
               if (intensity > 240) intensity = 240;
               if (intensity < 12) intensity = 12;
-              tri(cx, cy, p1x, p1y, p2x, p2y, G(intensity));
+              it.filled_triangle(cx, cy, p1x, p1y, p2x, p2y, Color(0, intensity, 0));
             }
             int sx0 = cx + (int)(cosf(sw) * (float)max_r);
             int sy0 = cy + (int)(sinf(sw) * (float)max_r);
-            line(cx, cy, sx0, sy0, lv_color_make(140, 255, 140));
+            it.line(cx, cy, sx0, sy0, Color(140, 255, 140));
 
-            circle(cx, cy, 33, DIM, false);
-            circle(cx, cy, 66, DIM, false);
-            circle(cx, cy, 99, DIM, false);
-            circle(cx, cy, max_r, GREEN, false);
+            it.circle(cx, cy, 33, id(c_dim));
+            it.circle(cx, cy, 66, id(c_dim));
+            it.circle(cx, cy, 99, id(c_dim));
+            it.circle(cx, cy, max_r, id(c_green));
 
             auto &addrs = id(dev_addr);
             auto &names = id(dev_name);
             auto &rssis = id(dev_rssi);
             auto &rssis0 = id(dev_rssi0);
+            auto &seens = id(dev_seen);
             auto &painted = id(dev_painted);
 
             float prev = id(prev_sweep);
@@ -948,7 +970,7 @@ script:
               uint32_t age = (painted[i] == 0) ? 99999 : (t - painted[i]);
               if (!known && age > 5000) continue;
 
-              int dist = (i < dists.size()) ? dists[i] : 0;
+              int dist = (i < id(dev_dist).size()) ? id(dev_dist)[i] : 0;
               if (dist == 0) {
                 int r = rssis[i];
                 dist = D_MIN + ((-40 - r) * (D_MAX - D_MIN)) / 60;
@@ -970,7 +992,7 @@ script:
                 if (intensity < 0) intensity = 0;
                 dot_r = (age < 200) ? 3 : 2;
               }
-              circle(dx, dy, dot_r, G(intensity), true);
+              it.filled_circle(dx, dy, dot_r, Color(0, intensity, 0));
               if (label) {
                 int rssi_val = (i < rssis.size()) ? rssis[i] : -99;
                 char rssi_s[12];
@@ -980,8 +1002,8 @@ script:
                 int max_w = (name_w > rssi_w) ? name_w : rssi_w;
                 int lx = (dx > cx) ? dx + dot_r + 6 : dx - dot_r - 6 - max_w;
                 int ly = dy - 8;
-                text(lx, ly, G(intensity), label, 0);
-                text(lx, ly + 8, G(intensity), rssi_s, 0);
+                it.printf(lx, ly, id(f_console), Color(0, intensity, 0), "%s", label);
+                it.printf(lx, ly + 8, id(f_console), Color(0, intensity, 0), "%s", rssi_s);
               }
             }
 
@@ -1000,14 +1022,14 @@ script:
             const int rssi_cell_l = col2_x;     const int rssi_cell_w = W - col2_x;          // 30
 
             const int hdr_w = 4 * CW;
-            text(scan_cell_l + (scan_cell_w - hdr_w) / 2, 2, GREEN, "SCAN", 0);
-            text(name_cell_l + (name_cell_w - hdr_w) / 2, 2, GREEN, "NAME", 0);
-            text(rssi_cell_l + (rssi_cell_w - hdr_w) / 2, 2, GREEN, "RSSI", 0);
+            it.printf(scan_cell_l + (scan_cell_w - hdr_w) / 2, 2, id(f_console), id(c_green), "SCAN");
+            it.printf(name_cell_l + (name_cell_w - hdr_w) / 2, 2, id(f_console), id(c_green), "NAME");
+            it.printf(rssi_cell_l + (rssi_cell_w - hdr_w) / 2, 2, id(f_console), id(c_green), "RSSI");
 
             int N = (int)addrs.size();
             int skip = (N > visible_rows) ? (N - visible_rows) : 0;
 
-            lv_area_t outer = clip(sb_x, sb_y_start - 2, W - sb_x, sb_y_end - sb_y_start + 2);
+            it.start_clipping(Rect(sb_x, sb_y_start - 2, W - sb_x, sb_y_end - sb_y_start + 2));
             for (int i = skip; i < N; i++) {
               size_t k = (size_t)i;
               int row_y = sb_y_start + (i - skip) * row_h;
@@ -1020,40 +1042,40 @@ script:
               int r0 = (k < rssis0.size()) ? rssis0[k] : rssis[k];
 
               int scan_w = 4 * CW;
-              text(scan_cell_l + (scan_cell_w - scan_w) / 2, row_y, GREEN, sc, 0);
+              it.printf(scan_cell_l + (scan_cell_w - scan_w) / 2, row_y, id(f_console), id(c_green), "%s", sc);
 
               // NAME: 23 знака влезает, длиннее идет бегущей строкой
               int name_x = name_cell_l + 4;
               int name_max_chars = (name_cell_w - 8) / CW;
               if ((int)nm.size() <= name_max_chars) {
-                text(name_x, row_y, GREEN, nm.c_str(), 0);
+                it.printf(name_x, row_y, id(f_console), id(c_green), "%s", nm.c_str());
               } else {
                 std::string padded = nm + "    ";
                 int cycle_px = (int)padded.size() * CW;
                 int off_px = (int)((t / 60) % (uint32_t)cycle_px);
-                lv_area_t mid = clip(name_x, row_y, name_cell_w - 8, row_h);
-                text(name_x - off_px, row_y, GREEN, padded.c_str(), 0);
-                text(name_x - off_px + cycle_px, row_y, GREEN, padded.c_str(), 0);
-                LY->_clip_area = mid;
+                it.start_clipping(Rect(name_x, row_y, name_cell_w - 8, row_h));
+                it.printf(name_x - off_px, row_y, id(f_console), id(c_green), "%s", padded.c_str());
+                it.printf(name_x - off_px + cycle_px, row_y, id(f_console), id(c_green), "%s", padded.c_str());
+                it.end_clipping();
               }
 
               // RSSI без " dB", в 30 px влезает только число
               char rb[8];
               snprintf(rb, sizeof(rb), "%d", r0);
               int rssi_w = (int)strlen(rb) * CW;
-              text(rssi_cell_l + (rssi_cell_w - rssi_w) / 2, row_y, GREEN, rb, 0);
+              it.printf(rssi_cell_l + (rssi_cell_w - rssi_w) / 2, row_y, id(f_console), id(c_green), "%s", rb);
             }
-            LY->_clip_area = outer;
+            it.end_clipping();
 
             const int bottom_y = H - 1;
-            line(sb_x - 2, 0, sb_x - 2, bottom_y, DIM);
-            line(W - 1, 0, W - 1, bottom_y, DIM);
-            line(sb_x - 2, 0, W - 1, 0, DIM);
-            line(sb_x - 2, sb_y_start - 2, W - 1, sb_y_start - 2, DIM);
-            line(sb_x - 2, sb_y_end + 1, W - 1, sb_y_end + 1, DIM);
-            line(sb_x - 2, bottom_y, W - 1, bottom_y, DIM);
-            line(col1_x, 0, col1_x, sb_y_end + 1, DIM);
-            line(col2_x, 0, col2_x, sb_y_end + 1, DIM);
+            it.line(sb_x - 2, 0, sb_x - 2, bottom_y, id(c_dim));
+            it.line(W - 1, 0, W - 1, bottom_y, id(c_dim));
+            it.line(sb_x - 2, 0, W - 1, 0, id(c_dim));
+            it.line(sb_x - 2, sb_y_start - 2, W - 1, sb_y_start - 2, id(c_dim));
+            it.line(sb_x - 2, sb_y_end + 1, W - 1, sb_y_end + 1, id(c_dim));
+            it.line(sb_x - 2, bottom_y, W - 1, bottom_y, id(c_dim));
+            it.line(col1_x, 0, col1_x, sb_y_end + 1, id(c_dim));
+            it.line(col2_x, 0, col2_x, sb_y_end + 1, id(c_dim));
 
             // Углы левого квадрата: часы и FPS сверху слева, дата сверху справа,
             // аптайм снизу слева, свободная память снизу справа
@@ -1061,33 +1083,32 @@ script:
             auto tn = id(homeassistant_time).now();
             if (tn.is_valid()) snprintf(clk, sizeof(clk), "%02d:%02d:%02d", tn.hour, tn.minute, tn.second);
             else snprintf(clk, sizeof(clk), "--:--:--");
-            text(4, 3, GREEN, clk, 0);
+            it.printf(4, 3, id(f_console), id(c_green), "%s", clk);
             char fps_s[16];
             snprintf(fps_s, sizeof(fps_s), "FPS:%d", id(fps_value));
-            text(4, 11, GREEN, fps_s, 0);
+            it.printf(4, 11, id(f_console), id(c_green), "%s", fps_s);
 
             char dt[24];
             if (tn.is_valid()) snprintf(dt, sizeof(dt), "%04d.%02d.%02d", tn.year, tn.month, tn.day_of_month);
             else snprintf(dt, sizeof(dt), "----.--.--");
-            text(sb_x - 8, 3, GREEN, dt, 1);
+            it.printf(sb_x - 8, 3, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", dt);
 
             uint32_t up_s = t / 1000;
             unsigned d = up_s / 86400, h = (up_s % 86400) / 3600, m = (up_s % 3600) / 60, ss = up_s % 60;
             char upbuf[32];
             if (d > 0) snprintf(upbuf, sizeof(upbuf), "Up %ud %02u:%02u", d, h, m);
             else snprintf(upbuf, sizeof(upbuf), "Up %02u:%02u:%02u", h, m, ss);
-            text(4, H - 9, GREEN, upbuf, 0);
+            it.printf(4, H - 9, id(f_console), id(c_green), "%s", upbuf);
             char mem[16];
             snprintf(mem, sizeof(mem), "MEM %uK", (unsigned)(esp_get_free_heap_size() / 1024));
-            text(sb_x - 8, H - 9, GREEN, mem, 1);
+            it.printf(sb_x - 8, H - 9, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", mem);
 
             char devc[24];
             snprintf(devc, sizeof(devc), "Found: %u/min", (unsigned)id(cache_uniq60));
-            text(sb_x + (W - sb_x) / 2, sb_y_end + 5, GREEN, devc, 2);
+            it.printf(sb_x + (W - sb_x) / 2, sb_y_end + 5, id(f_console), id(c_green), TextAlign::TOP_CENTER, "%s", devc);
           }
-          LY->_clip_area = FULL;
-          lv_canvas_finish_layer(cv, &layer);
           id(render_us) = micros() - t0_us;
+          lv_obj_invalidate(cv);
 
   # Полная инициализация NV3041A мимо драйвера, вручную кнопкой SW1: SWRESET,
   # вендорская последовательность модели, PIXFMT, MADCTL 0xC0 (rotation 180),
