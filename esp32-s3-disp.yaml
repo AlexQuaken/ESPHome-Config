@@ -817,7 +817,8 @@ script:
           auto clip = [&](int x, int y, int w, int h) {
             lv_area_t r = {x, y, x + w - 1, y + h - 1};
             lv_area_t prev = LY->_clip_area;
-            if (!lv_area_intersect(&LY->_clip_area, &prev, &r)) LY->_clip_area = {0, 0, -1, -1};
+            LY->_clip_area = {std::max(prev.x1, r.x1), std::max(prev.y1, r.y1),
+                              std::min(prev.x2, r.x2), std::min(prev.y2, r.y2)};
             return prev;
           };
 
