@@ -1550,7 +1550,9 @@ lvgl:
   touchscreens: [ts]
   buffer_size: 25%
   default_font: fs
-  # цвет и шрифт текста задает каждая страница, подписи их наследуют
+  # Цвет подписей по умолчанию светлый, для дашборда. Без него подписи внутри
+  # панелей берут темный цвет карточки из штатной темы LVGL. У терминала свой
+  # зеленый стилем rfg, шрифт fm задан на странице и наследуется.
   theme:
     obj:
       pad_all: 0
@@ -1559,6 +1561,8 @@ lvgl:
       bg_opa: TRANSP
       scrollbar_mode: "OFF"
       scrollable: false
+    label:
+      text_color: 0xe6ecff
     bar:
       pad_all: 0
       scrollable: false
@@ -1604,7 +1608,9 @@ lvgl:
       radius: 3
       text_color: 0xffffff
       text_align: CENTER
-    # терминал: приглушенные подписи
+    # терминал: подписи и приглушенные подписи
+    - id: rfg
+      text_color: ${fg}
     - id: rdim
       text_color: ${fg_dim}
   pages:
@@ -1621,7 +1627,6 @@ lvgl:
             width: 480
             height: 272
     - id: p_dash
-      text_color: 0xe6ecff
       bg_opa: COVER
       bg_color: 0x050918
       bg_grad_color: 0x0c1438
@@ -1988,13 +1993,12 @@ lvgl:
     - id: p_retro
       bg_opa: COVER
       bg_color: 0x020802
-      text_color: ${fg}
       text_font: fm
       scrollable: false
       widgets:
         - obj: {x: 2, y: 2, width: 476, height: 268, radius: 4, border_width: 1, border_color: 0x0e4a05, scrollable: false}
-        - label: {x: 10, y: 8, text: "GARAGE.EXE  v1.0"}
-        - label: {id: l_clock, x: 250, y: 8, width: 220, text: "", text_align: RIGHT}
+        - label: {x: 10, y: 8, text: "GARAGE.EXE  v1.0", styles: [rfg]}
+        - label: {id: l_clock, x: 250, y: 8, width: 220, text: "", text_align: RIGHT, styles: [rfg]}
         - label: {x: 10, y: 24, text: "════════════════════════════════════════════════════════════════════════════", text_font: fs, styles: [rdim]}
 
         - label: {x: 10, y: 36, text: "МОЩНОСТЬ....", styles: [rdim]}
@@ -2005,29 +2009,29 @@ lvgl:
         - label: {x: 10, y: 111, text: "ВЛАЖНОСТЬ...", styles: [rdim]}
         - label: {x: 10, y: 126, text: "НАПРЯЖЕНИЕ..", styles: [rdim]}
         - label: {x: 10, y: 141, text: "ЧАСТОТА.....", styles: [rdim]}
-        - label: {id: v0, x: 106, y: 36, width: 104, text: "", text_align: RIGHT}
-        - label: {id: v1, x: 106, y: 51, width: 104, text: "", text_align: RIGHT}
-        - label: {id: v2, x: 106, y: 66, width: 104, text: "", text_align: RIGHT}
-        - label: {id: v3, x: 106, y: 81, width: 104, text: "", text_align: RIGHT}
-        - label: {id: v4, x: 106, y: 96, width: 104, text: "", text_align: RIGHT}
-        - label: {id: v5, x: 106, y: 111, width: 104, text: "", text_align: RIGHT}
-        - label: {id: v6, x: 106, y: 126, width: 104, text: "", text_align: RIGHT}
-        - label: {id: v7, x: 106, y: 141, width: 104, text: "", text_align: RIGHT}
-        - label: {id: b0, x: 226, y: 36, text: ""}
-        - label: {id: b1, x: 226, y: 51, text: ""}
-        - label: {id: b2, x: 226, y: 66, text: ""}
-        - label: {id: b3, x: 226, y: 81, text: ""}
-        - label: {id: b4, x: 226, y: 96, text: ""}
-        - label: {id: b5, x: 226, y: 111, text: ""}
-        - label: {id: b6, x: 226, y: 126, text: ""}
-        - label: {id: b7, x: 226, y: 141, text: ""}
+        - label: {id: v0, x: 106, y: 36, width: 104, text: "", text_align: RIGHT, styles: [rfg]}
+        - label: {id: v1, x: 106, y: 51, width: 104, text: "", text_align: RIGHT, styles: [rfg]}
+        - label: {id: v2, x: 106, y: 66, width: 104, text: "", text_align: RIGHT, styles: [rfg]}
+        - label: {id: v3, x: 106, y: 81, width: 104, text: "", text_align: RIGHT, styles: [rfg]}
+        - label: {id: v4, x: 106, y: 96, width: 104, text: "", text_align: RIGHT, styles: [rfg]}
+        - label: {id: v5, x: 106, y: 111, width: 104, text: "", text_align: RIGHT, styles: [rfg]}
+        - label: {id: v6, x: 106, y: 126, width: 104, text: "", text_align: RIGHT, styles: [rfg]}
+        - label: {id: v7, x: 106, y: 141, width: 104, text: "", text_align: RIGHT, styles: [rfg]}
+        - label: {id: b0, x: 226, y: 36, text: "", styles: [rfg]}
+        - label: {id: b1, x: 226, y: 51, text: "", styles: [rfg]}
+        - label: {id: b2, x: 226, y: 66, text: "", styles: [rfg]}
+        - label: {id: b3, x: 226, y: 81, text: "", styles: [rfg]}
+        - label: {id: b4, x: 226, y: 96, text: "", styles: [rfg]}
+        - label: {id: b5, x: 226, y: 111, text: "", styles: [rfg]}
+        - label: {id: b6, x: 226, y: 126, text: "", styles: [rfg]}
+        - label: {id: b7, x: 226, y: 141, text: "", styles: [rfg]}
 
         - label: {x: 10, y: 158, text: "════════════════════════════════════════════════════════════════════════════", text_font: fs, styles: [rdim]}
-        - label: {x: 10, y: 168, text: "ЖУРНАЛ"}
+        - label: {x: 10, y: 168, text: "ЖУРНАЛ", styles: [rfg]}
         # журнал: время / что / состояние, новая строка ярче
-        - label: {id: e0t, x: 10, y: 184, text: ""}
-        - label: {id: e0w, x: 114, y: 184, text: ""}
-        - label: {id: e0s, x: 202, y: 184, text: ""}
+        - label: {id: e0t, x: 10, y: 184, text: "", styles: [rfg]}
+        - label: {id: e0w, x: 114, y: 184, text: "", styles: [rfg]}
+        - label: {id: e0s, x: 202, y: 184, text: "", styles: [rfg]}
         - label: {id: e1t, x: 10, y: 197, text: "", styles: [rdim]}
         - label: {id: e1w, x: 114, y: 197, text: "", styles: [rdim]}
         - label: {id: e1s, x: 202, y: 197, text: "", styles: [rdim]}
@@ -2043,4 +2047,4 @@ lvgl:
         - label: {id: e5t, x: 10, y: 249, text: "", styles: [rdim]}
         - label: {id: e5w, x: 114, y: 249, text: "", styles: [rdim]}
         - label: {id: e5s, x: 202, y: 249, text: "", styles: [rdim]}
-        - label: {id: l_cursor, x: 462, y: 252, text: "█"}
+        - label: {id: l_cursor, x: 462, y: 252, text: "█", styles: [rfg]}
