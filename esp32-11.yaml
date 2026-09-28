@@ -20,4 +20,5 @@ packages:
   ble_alex: !include packages/ble_alex.yaml
   ble_ira: !include packages/ble_ira.yaml
   ble_lila: !include packages/ble_lila.yaml
+  diag: !include packages/diag.yaml
   #am43: !include packages/7am43_cover.yaml
