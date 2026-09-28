@@ -14,10 +14,20 @@
 substitutions:
   board_name: 'esp32-s3-disp'
   static_ip: '192.168.0.221'
+  # ID платы в таблице ESP: первый свободный номер выше 20 (21 у t-display, 22 у C6)
+  number: '23'
+  update_interval: !secret update_interval
   # ядовито-зеленый, с 25.09.2026 (до этого был янтарь 0xffb000)
   fg: '0x39ff14'
   fg_dim: '0x1c9a0a'
   fg_dark: '0x0e4a05'
+
+# Общие датчики и диагностика, как у остальных плат. 1wifi_api_ota_logger не
+# подключен: Wi-Fi, API и OTA у прошивки свои и с пакетом совпадают. BLE-присутствия
+# нет: для него нужен сканер, а радио у S3 одно на Wi-Fi и BLE, дашборду он ни к чему.
+packages:
+  base_sensors: !include packages/2common_sensors.yaml
+  diag: !include packages/diag.yaml
 
 esphome:
   name: ${board_name}
