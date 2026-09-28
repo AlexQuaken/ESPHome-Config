@@ -25,6 +25,12 @@
 # Износ флеша: одна запись на загрузку плюс аптайм раз в 10 минут, около 50 тысяч
 # записей в год, NVS размазывает их по страницам. Для флеша это ничто.
 
+# ID платы берется из подстановки number файла устройства. У кого ее нет, будет
+# пусто: подстановки из файла устройства перекрывают эту, а эта нужна только чтобы
+# пакет собирался на платах без number.
+substitutions:
+  number: ''
+
 globals:
   - id: diag_failed_before
     type: uint32_t
@@ -47,14 +53,22 @@ globals:
     restore_value: no
     initial_value: 'false'
 
+# on_boot списком, а не словарем. При слиянии пакета с файлом устройства словарь
+# против словаря сливается в одну автоматизацию с приоритетом из файла устройства,
+# а список против словаря просто затирается. Только список против списка дает две
+# отдельные автоматизации, каждую со своим приоритетом. Поэтому у плат со своим
+# on_boot он тоже должен быть записан списком.
+#
+# Второй аргумент true у make_preference: на ESP8266 без него значение ляжет в
+# RTC-память и пропадет при обесточивании. На ESP32 он ничего не меняет, там всегда NVS.
 esphome:
   on_boot:
-    priority: 600
-    then:
+    - priority: 600
+      then:
       - lambda: |-
-          auto p_att = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_att"));
-          auto p_tot = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_tot"));
-          auto p_up  = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_up"));
+          auto p_att = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_att"), true);
+          auto p_tot = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_tot"), true);
+          auto p_up  = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_up"), true);
           uint32_t att = 0, tot = 0, up = 0;
           p_att.load(&att);
           p_tot.load(&tot);
@@ -80,7 +94,7 @@ api:
         // HA переподключается сам по себе, обнулять счетчик надо один раз за загрузку
         if (id(diag_reported)) return;
         id(diag_reported) = true;
-        auto p_att = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_att"));
+        auto p_att = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_att"), true);
         uint32_t zero = 0;
         p_att.save(&zero);
         global_preferences->sync();
@@ -95,7 +109,7 @@ interval:
   - interval: 10min
     then:
       - lambda: |-
-          auto p_up = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_up"));
+          auto p_up = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_up"), true);
           uint32_t up = millis() / 1000;
           p_up.save(&up);
 
@@ -107,6 +121,12 @@ text_sensor:
     reset_reason:
       name: ${board_name} Reset Reason
       entity_category: diagnostic
+  # номер платы для таблицы на дашборде
+  - platform: template
+    name: ${board_name} Board ID
+    entity_category: diagnostic
+    update_interval: 1h
+    lambda: 'return {"${number}"};'
 
 sensor:
   - platform: template
