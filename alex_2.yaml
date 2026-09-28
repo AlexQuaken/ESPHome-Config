@@ -7,11 +7,11 @@ substitutions:
 esphome:
   name: ${board_name}
   on_boot:
-    priority: -100
-    then:
-      - lambda: |-
-          id(log_lines).push_back("${board_name} booted");
-          id(log_lines).push_back("display OK");
+    - priority: -100
+      then:
+        - lambda: |-
+            id(log_lines).push_back("${board_name} booted");
+            id(log_lines).push_back("display OK");
 
 esp32:
   board: esp32doit-devkit-v1
@@ -29,6 +29,7 @@ packages:
   ble_ira: !include packages/ble_ira.yaml
   ble_lila: !include packages/ble_lila.yaml
   oled_log_console: !include packages/oled_log_console.yaml
+  diag: !include packages/diag.yaml
 
 i2c:
   sda: GPIO14
