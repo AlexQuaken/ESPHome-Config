@@ -19,4 +19,5 @@ packages:
   ble_common: !include packages/ble_common.yaml
   ble_alex: !include packages/ble_alex.yaml
   ble_ira: !include packages/ble_ira.yaml
+  diag: !include packages/diag.yaml
   ble_lila: !include packages/ble_lila.yaml
