@@ -1,17 +1,41 @@
-# Guition JC4827W543C (ESP32-S3-WROOM-1 N4R8, 4.3" IPS 480x272, NV3041A по QSPI)
-# Порт с esp32-p4-disp (JC4880P443C, 800x480): лог-консоль + BLE-радар.
-# Touch GT911: тап по экрану переключает log <-> radar.
+# Guition JC4827W543C (ESP32-S3-WROOM-1 N4R8, 4.3" IPS 480x272, NV3041A по QSPI,
+# тач GT911). Экран гаража, одна прошивка на четыре режима:
+#   0 консоль   лог платы строками, как на esp32-p4-disp
+#   1 радар     BLE-устройства вокруг, свои браслеты подписаны
+#   2 дашборд   неоновый KPI гаража (шаблон 002 exceltable.com)
+#   3 терминал  ретро GARAGE.EXE, полосы из блоков и журнал событий
 #
-# Чем плата отличается от P4 и что из этого следует:
-# - экран 480x272 против 800x480, вся разметка в лямбде пересчитана;
-# - Wi-Fi и BLE свои у S3, сопроцессора C6 нет, поэтому ушли esp32_hosted,
-#   update прошивки C6 и esp_ldo под DSI;
-# - одно радио на Wi-Fi и BLE, окно скана 30%, иначе Wi-Fi голодает;
-# - флеш 4 МБ, на прошивку под OTA остается около 1,8 МБ.
+# Тап по экрану переключает режим по кругу. Выбранный режим пишется в NVS сразу
+# (не раз в минуту, как globals) и после перезагрузки включается сам, когда
+# консоль загрузки отработает: плата подключилась к HA и прошло еще 5 секунд.
+# Тап во время загрузки переключает сразу. Из HA режим ставится селектом
+# "Display Mode" или действием set_display_mode (0..3).
+# В дашборде панель графика справа внизу тапом режим не меняет: там вкладки
+# СУТКИ / НЕДЕЛЯ / МЕСЯЦ.
+#
+# Раньше это были три отдельных файла на одну плату (esp32-s3-disp, -dash,
+# -retro), и на плате стоял тот, что залили последним. Объединены 28.09.2026.
+#
+# Как устроен экран. Все на LVGL: он несовместим с лямбдой дисплея, ESPHome
+# такое не собирает. Консоль и радар рисуются лямбдой на полноэкранном холсте
+# (страница p_raw, 480x272 в PSRAM) примерно 30 раз в секунду, код перенесен с
+# лямбды дисплея почти дословно, поменялись только функции рисования. Дашборд и
+# терминал это обычные страницы LVGL, обновляются раз в 2 секунды, в фоне тоже,
+# чтобы при переключении были свежими.
+#
+# Данные дашборда: текущие значения берутся из HA (platform homeassistant),
+# историю (24 часа мощности, 30 дней и 12 месяцев энергии) присылает действием
+# set_history автоматизация garage_dash_push_history
+# (HomeAssistant/automations/misc/garage_dash.yaml), раз в 10 минут и при
+# подключении платы. Журнал терминала плата ведет сама, 6 строк во флеше.
+#
+# Одно радио на Wi-Fi и BLE: окно скана 330 мс из 1100, иначе Wi-Fi голодает.
+# Флеш 4 МБ, под прошивку в слоте OTA 1,75 МБ.
+# Скриншот экрана: http://192.168.0.221:8080/screen.bmp (dash_snapshot.h).
 #
 # Распиновка (devices.esphome.io, guition-jc4827543c):
 #   QSPI: CLK=47, D0..D3=21/48/40/39, CS=45 (задан в модели JC4827W543)
-#   подсветка GPIO1 (PWM), GT911: SDA=8, SCL=4, INT=3, RST=38
+#   подсветка GPIO1 (PWM), GT911: SDA=8, SCL=4, INT=3, RST=38, SW1 (BOOT) GPIO0
 substitutions:
   board_name: 'esp32-s3-disp'
   static_ip: '192.168.0.221'
@@ -25,9 +49,12 @@ substitutions:
   alex_ble: !secret alex_ble
   ira_ble: !secret ira_ble
   lila_ble: !secret lila_ble
+  # терминал: ядовито-зеленый, с 25.09.2026 (до этого был янтарь 0xffb000)
+  fg: '0x39ff14'
+  fg_dim: '0x1c9a0a'
 
 # Общие пакеты, как у остальных плат. 1wifi_api_ota_logger сюда не подключен
-# намеренно: Wi-Fi, API (с сервисами консоли) и OTA у этой платы свои и по сети и
+# намеренно: Wi-Fi, API (со своими действиями) и OTA у этой платы свои и по сети и
 # паролям с пакетом совпадают, а слияние задвоило бы блоки. ble_common тоже нет:
 # сканер свой, с окном 30% под одно радио S3, BLE-присутствие работает поверх него.
 packages:
@@ -39,58 +66,35 @@ packages:
 
 esphome:
   name: ${board_name}
+  # копии столбиков дашборда через <<: *vbar переопределяют x и value, так и задумано
+  merge_warnings: false
+  includes:
+    - dash_snapshot.h
   on_boot:
     - priority: -100
       then:
         - lambda: |-
+            // режим из NVS, пишется в show_mode
+            auto pref = global_preferences->make_preference<int32_t>(fnv1_hash("s3_disp_mode"), true);
+            int32_t m;
+            if (pref.load(&m) && m >= 0 && m <= 3) id(g_mode) = m;
+            dash_snap::start(id(lvgl_comp).get_disp());
             id(log_lines).push_back("${board_name} booted");
             id(log_lines).push_back("Guition JC4827W543 480x272");
-
-# Полная инициализация NV3041A мимо драйвера, вручную кнопкой SW1: SWRESET,
-# вендорская последовательность модели, PIXFMT, MADCTL 0xC0 (rotation 180),
-# INVON, SLPOUT, DISPON, с паузами 150 мс как у Arduino_GFX (там 120).
-# Транзакция как у драйвера: опкод 0x02, команда во втором байте адреса.
-# Лямбда держит цикл ~330 мс, чтобы кадр не вклинился между командами.
-script:
-  - id: panel_reinit
-    mode: queued
-    then:
-      - lambda: |-
-          auto *d = id(lcd);
-          auto cmd = [d](uint8_t c, const uint8_t *data, size_t n) {
-            d->enable();
-            d->write_cmd_addr_data(8, 0x02, 24, (uint32_t) c << 8, data, n);
-            d->disable();
-          };
-          static const uint8_t VENDOR[][2] = {
-            {0xFF,0xA5},{0x41,0x03},{0x44,0x15},{0x45,0x15},{0x7D,0x03},{0xC1,0xBB},
-            {0xC2,0x05},{0xC3,0x10},{0xC6,0x3E},{0xC7,0x25},{0xC8,0x11},{0x7A,0x5F},
-            {0x6F,0x44},{0x78,0x70},{0xC9,0x00},{0x67,0x21},{0x51,0x0A},{0x52,0x76},
-            {0x53,0x0A},{0x54,0x76},{0x46,0x0A},{0x47,0x2A},{0x48,0x0A},{0x49,0x1A},
-            {0x56,0x43},{0x57,0x42},{0x58,0x3C},{0x59,0x64},{0x5A,0x41},{0x5B,0x3C},
-            {0x5C,0x02},{0x5D,0x3C},{0x5E,0x1F},{0x60,0x80},{0x61,0x3F},{0x62,0x21},
-            {0x63,0x07},{0x64,0xE0},{0x65,0x02},{0xCA,0x20},{0xCB,0x52},{0xCC,0x10},
-            {0xCD,0x42},{0xD0,0x20},{0xD1,0x52},{0xD2,0x10},{0xD3,0x42},{0xD4,0x0A},
-            {0xD5,0x32},{0x80,0x00},{0xA0,0x00},{0x81,0x07},{0xA1,0x06},{0x82,0x02},
-            {0xA2,0x01},{0x86,0x11},{0xA6,0x10},{0x87,0x27},{0xA7,0x27},{0x83,0x37},
-            {0xA3,0x37},{0x84,0x35},{0xA4,0x35},{0x85,0x3F},{0xA5,0x3F},{0x88,0x0B},
-            {0xA8,0x0B},{0x89,0x14},{0xA9,0x14},{0x8A,0x1A},{0xAA,0x1A},{0x8B,0x0A},
-            {0xAB,0x0A},{0x8C,0x14},{0xAC,0x08},{0x8D,0x17},{0xAD,0x07},{0x8E,0x16},
-            {0xAE,0x06},{0x8F,0x1B},{0xAF,0x07},{0x90,0x04},{0xB0,0x04},{0x91,0x0A},
-            {0xB1,0x0A},{0x92,0x16},{0xB2,0x15},{0xFF,0x00},
-          };
-          const uint8_t zero = 0x00, pixfmt = 0x55, madctl = 0xC0;
-          cmd(0x01, nullptr, 0);          // SWRESET
-          delay(150);
-          for (auto &p : VENDOR) cmd(p[0], &p[1], 1);
-          cmd(0x3A, &pixfmt, 1);          // 16 бит
-          cmd(0x36, &madctl, 1);          // MY|MX, rotation 180
-          cmd(0x21, nullptr, 0);          // INVON, пустой командой, как драйвер
-          cmd(0x11, &zero, 1);            // SLPOUT
-          delay(150);
-          cmd(0x29, &zero, 1);            // DISPON
-          delay(20);
-          ESP_LOGI("panel", "reinit done");
+            ESP_LOGI("mode", "saved mode %d, shown after boot console", id(g_mode));
+        - delay: 500ms
+        - script.execute: draw_charts
+        - script.execute: dash_refresh
+        - script.execute: retro_refresh
+        - wait_until:
+            condition:
+              api.connected:
+            timeout: 40s
+        - delay: 5s
+        - lambda: 'if (id(g_booting)) id(show_mode).execute(id(g_mode), false);'
+        # первые состояния после загрузки это не события, журнал терминала не пишем
+        - delay: 10s
+        - lambda: 'id(g_log_armed) = true;'
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -101,7 +105,7 @@ esp32:
     type: esp-idf
     sdkconfig_options:
       # BLE-стек по возможности в PSRAM. Буферы Wi-Fi/LWIP туда не уносить:
-      # PSRAM занята кадровым буфером и DMA на экран, с ними пинг был 200-600 мс
+      # PSRAM занята буферами экрана и DMA, с ними пинг был 200-600 мс
       CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST: "y"
 
 psram:
@@ -127,8 +131,32 @@ wifi:
 captive_portal:
 
 api:
-  services:
-    - service: console_log
+  actions:
+    # История для дашборда: power 24 часовых средних, кВт; months 12 месяцев,
+    # кВт·ч; days 30 дней, кВт·ч, последний это сегодня; first_hour местный час
+    # первого часового ведра; first_dow день недели первого дня (0 = пн);
+    # first_day число месяца первого дня.
+    - action: set_history
+      variables:
+        power: float[]
+        months: float[]
+        days: float[]
+        first_hour: int
+        first_dow: int
+        first_day: int
+      then:
+        - lambda: |-
+            id(g_power) = power;
+            id(g_months) = months;
+            id(g_days) = days;
+            id(g_first_hour) = first_hour;
+            id(g_first_dow) = first_dow;
+            id(g_first_day) = first_day;
+            ESP_LOGI("dash", "history: %u hours, %u months, %u days", (unsigned) power.size(),
+                     (unsigned) months.size(), (unsigned) days.size());
+        - script.execute: draw_charts
+        - script.execute: dash_refresh
+    - action: console_log
       variables:
         line: string
       then:
@@ -138,16 +166,15 @@ api:
             if (s.size() > 78) s = s.substr(0, 78);
             v.push_back(s);
             while ((int)v.size() > id(log_max)) v.erase(v.begin());
-        - component.update: lcd
-    - service: console_clear
+    - action: console_clear
       then:
         - lambda: 'id(log_lines).clear();'
-        - component.update: lcd
-    - service: set_display_mode
+    # 0 консоль, 1 радар, 2 дашборд, 3 терминал; запоминается как тап
+    - action: set_display_mode
       variables:
         mode: int
       then:
-        - lambda: 'id(display_mode) = mode;'
+        - lambda: 'id(show_mode).execute(mode, true);'
 
 ota:
   platform: esphome
@@ -159,10 +186,12 @@ logger:
     font: ERROR
     display: ERROR
     mipi_spi: ERROR
+    lvgl: ERROR
     component: ERROR
     scheduler: ERROR
     esp32_ble_tracker: INFO
     esp32_ble: INFO
+  # каждая строка лога идет в консоль (режим 0)
   on_message:
     level: DEBUG
     then:
@@ -171,6 +200,7 @@ logger:
           if (t.find("font") != std::string::npos) return;
           if (t.find("display") != std::string::npos) return;
           if (t.find("mipi") != std::string::npos) return;
+          if (t.find("lvgl") != std::string::npos) return;
           std::string raw;
           for (size_t i = 0; message[i] != 0; i++) {
             unsigned char c = (unsigned char)message[i];
@@ -207,6 +237,17 @@ logger:
 
 # time (homeassistant_time) приходит из packages/2common_sensors.yaml
 
+# После OTA прошивка считается непроверенной, пока не проработает
+# boot_is_good_after. Перезагрузка в это окно (кнопка RESET) откатывает на
+# прошлую прошивку из второго раздела. 24.09.2026 это приняли за «RESET
+# ломает экран»: откат шел на сборку с неверной инверсией. Окно 15 секунд.
+safe_mode:
+  boot_is_good_after: 15s
+
+button:
+  - platform: safe_mode
+    name: ${board_name} Safe Mode (OTA)
+
 output:
   - platform: ledc
     pin: GPIO1
@@ -233,8 +274,21 @@ spi:
   clk_pin: GPIO47
   data_pins: [GPIO21, GPIO48, GPIO40, GPIO39]
 
-# Тап нужен только как событие, координаты не используются,
-# поэтому transform не настроен. Понадобятся кнопки на экране, подобрать тогда.
+display:
+  # Матрица родная ландшафтная 480x272. Нормальная картинка только при INVON и
+  # MADCTL 0xC0 (проверено 24.09.2026 перебором): INVON дает invert_colors, поворот
+  # на 180 задан в блоке lvgl. Потолок NV3041A 32 МГц, шина ESP32 делит 80 МГц,
+  # ближайшее ниже 26,67; на 40 МГц команды панели принимались через раз.
+  # Без лямбды драйвер работает без своего буфера, кадры в панель пишет LVGL.
+  - platform: mipi_spi
+    id: lcd
+    model: JC4827W543
+    spi_id: quad_spi
+    invert_colors: true
+    data_rate: 26.67MHz
+    auto_clear_enabled: false
+    update_interval: never
+
 touchscreen:
   - platform: gt911
     id: ts
@@ -243,12 +297,23 @@ touchscreen:
       number: GPIO3
       ignore_strapping_warning: true
     reset_pin: GPIO38
+    # GT911 и так отдает координаты как видит глаз, а LVGL (rotation: 180)
+    # разворачивает их еще раз, как будто тач смотрит туда же, куда матрица.
+    # Без зеркала тап по вкладкам внизу справа уходил в верхний левый угол.
+    transform:
+      mirror_x: true
+      mirror_y: true
+    # Смена режима по отпусканию пальца. Координаты берутся у LVGL (последняя
+    # точка нажатия, как видит глаз): в дашборде панель графика отдана вкладкам.
     on_release:
       then:
         - lambda: |-
-            id(display_mode) = 1 - id(display_mode);
-            id(radar_mode_sw).publish_state(id(display_mode) == 1);
-            ESP_LOGI("touch", "Toggled mode -> %d", id(display_mode));
+            lv_point_t p = {0, 0};
+            lv_indev_t *ind = lv_indev_get_next(nullptr);
+            if (ind != nullptr) lv_indev_get_point(ind, &p);
+            ESP_LOGI("touch", "tap x=%d y=%d mode=%d", (int) p.x, (int) p.y, id(g_shown));
+            if (id(g_shown) == 2 && p.x >= 240 && p.y >= 168) return;
+            id(show_mode).execute(id(g_shown) + 1, true);
 
 # SW1 (BOOT, GPIO0): полная переинициализация панели руками.
 binary_sensor:
@@ -267,6 +332,91 @@ binary_sensor:
     on_press:
       - logger.log: "SW1 pressed, panel reinit"
       - script.execute: panel_reinit
+  - platform: homeassistant
+    internal: true
+    id: ha_gate
+    entity_id: binary_sensor.garage_gate
+    on_state:
+      - lambda: 'id(log_event).execute("ВОРОТА", x ? "открыты" : "закрыты");'
+  - platform: homeassistant
+    internal: true
+    id: ha_motion
+    entity_id: binary_sensor.garage_motion_any
+    on_state:
+      - lambda: 'id(log_event).execute("ДВИЖЕНИЕ", x ? "есть" : "нет");'
+  # по нему HA понимает, что плата вышла на связь, и сразу шлет историю дашборду
+  - platform: status
+    name: Status
+
+sensor:
+  - {platform: homeassistant, internal: true, id: ha_p_now, entity_id: sensor.schetchik_garazh_power}
+  - {platform: homeassistant, internal: true, id: ha_volt, entity_id: sensor.schetchik_garazh_voltage}
+  - {platform: homeassistant, internal: true, id: ha_freq, entity_id: sensor.schetchik_garazh_frequency}
+  - {platform: homeassistant, internal: true, id: ha_pf, entity_id: sensor.schetchik_garazh_power_factor}
+  - {platform: homeassistant, internal: true, id: ha_cur, entity_id: sensor.schetchik_garazh_current}
+  - {platform: homeassistant, internal: true, id: ha_cpu_t, entity_id: sensor.schetchik_garazh_cpu_temperature}
+  - {platform: homeassistant, internal: true, id: ha_sock_t, entity_id: sensor.rozetki_garazh_temperature}
+  - {platform: homeassistant, internal: true, id: ha_d_sock, entity_id: sensor.garage_sockets_daily}
+  - {platform: homeassistant, internal: true, id: ha_d_light, entity_id: sensor.garage_light_daily}
+  - {platform: homeassistant, internal: true, id: ha_d_chg, entity_id: sensor.garage_charger_daily}
+  - {platform: homeassistant, internal: true, id: ha_m_sock, entity_id: sensor.garage_sockets_monthly}
+  - {platform: homeassistant, internal: true, id: ha_m_light, entity_id: sensor.garage_light_monthly}
+  - {platform: homeassistant, internal: true, id: ha_m_chg, entity_id: sensor.garage_charger_monthly}
+  - {platform: homeassistant, internal: true, id: ha_s_sock, entity_id: sensor.garage_sockets_charge_session}
+  - {platform: homeassistant, internal: true, id: ha_s_chg, entity_id: sensor.garage_charger_charge_session}
+  - {platform: homeassistant, internal: true, id: ha_temp, entity_id: sensor.garage_air_temperature}
+  - {platform: homeassistant, internal: true, id: ha_hum, entity_id: sensor.garage_humidity}
+  - {platform: homeassistant, internal: true, id: ha_press, entity_id: sensor.garage_pressure}
+  - {platform: homeassistant, internal: true, id: ha_bat1, entity_id: sensor.garage_climate_battery}
+  - {platform: homeassistant, internal: true, id: ha_bat2, entity_id: sensor.garage_gate_battery}
+  - {platform: homeassistant, internal: true, id: ha_bat3, entity_id: sensor.garage_motion_battery}
+  - platform: homeassistant
+    internal: true
+    id: ha_p_sock
+    entity_id: sensor.rozetki_garazh_power
+    on_value:
+      - script.execute: check_charge
+  - platform: homeassistant
+    internal: true
+    id: ha_p_chg
+    entity_id: sensor.zariadka_avto_power
+    on_value:
+      - script.execute: check_charge
+
+text_sensor:
+  - {platform: homeassistant, internal: true, id: ha_line, entity_id: input_select.garage_charge_line}
+  - {platform: homeassistant, internal: true, id: ha_chg_on, entity_id: input_boolean.garage_charge_enabled}
+  - {platform: homeassistant, internal: true, id: ha_chg_start, entity_id: input_datetime.garage_charge_start}
+  - {platform: homeassistant, internal: true, id: ha_chg_end, entity_id: input_datetime.garage_charge_end}
+  - platform: homeassistant
+    internal: true
+    id: ha_light
+    entity_id: switch.svet_garazh
+    on_value:
+      - lambda: |-
+          if (x == "on") id(log_event).execute("СВЕТ", "вкл");
+          else if (x == "off") id(log_event).execute("СВЕТ", "выкл");
+  - platform: homeassistant
+    internal: true
+    id: ha_alarm
+    entity_id: alarm_control_panel.shliuz_4_alarm
+    on_value:
+      - lambda: |-
+          const char *s = x.rfind("armed", 0) == 0 ? "под охраной" : x == "disarmed" ? "снята" :
+                          x == "arming" ? "ставится" : x == "pending" ? "ожидание" :
+                          x == "triggered" ? "ТРЕВОГА" : nullptr;
+          if (s) id(log_event).execute("ОХРАНА", s);
+
+select:
+  - platform: template
+    name: ${board_name} Display Mode
+    id: mode_sel
+    options: ["Консоль", "Радар", "Дашборд", "Терминал"]
+    optimistic: true
+    set_action:
+      - lambda: |-
+          auto i = id(mode_sel).index_of(x);
+          if (i.has_value() && (int) *i != id(g_shown)) id(show_mode).execute((int) *i, true);
 
 esp32_ble:
   enable_on_boot: true
@@ -312,6 +462,30 @@ esp32_ble_tracker:
             id(dev_scan_id).push_back(id(scan_counter));
 
 interval:
+  # консоль и радар: кадр на холсте, только когда они на экране
+  - interval: 33ms
+    then:
+      - script.execute: raw_draw
+  - interval: 2s
+    then:
+      - script.execute: dash_refresh
+      - script.execute: retro_refresh
+  - interval: 500ms
+    then:
+      - lambda: |-
+          // курсор и часы терминала; текст часов меняется раз в секунду
+          id(g_cursor) = !id(g_cursor);
+          lv_obj_set_style_text_opa((lv_obj_t *) id(l_cursor), id(g_cursor) ? LV_OPA_COVER : LV_OPA_TRANSP, LV_PART_MAIN);
+          auto t = id(homeassistant_time).now();
+          if (t.is_valid()) {
+            char b[32];
+            snprintf(b, sizeof b, "%02d.%02d.%04d %02d:%02d:%02d", t.day_of_month, t.month, t.year, t.hour, t.minute, t.second);
+            lv_obj_t *o = (lv_obj_t *) id(l_clock);
+            if (strcmp(lv_label_get_text(o), b) != 0) lv_label_set_text(o, b);
+          }
+  - interval: 100ms
+    then:
+      - lambda: 'dash_snap::loop(id(lvgl_comp).get_disp());'
   - interval: 1s
     then:
       - lambda: |-
@@ -327,16 +501,8 @@ interval:
                    id(fps_value),
                    (unsigned)(id(render_us)/1000),
                    (unsigned)id(dev_addr).size(),
-                   id(display_mode));
-  - interval: 5s
-    then:
-      - lambda: |-
-          if (!id(auto_switched) && id(display_mode) == 0 && millis() > 60000) {
-            id(display_mode) = 1;
-            id(radar_mode_sw).publish_state(true);
-            id(auto_switched) = true;
-            ESP_LOGI("auto", "Auto-switched to radar after 60s (one-shot)");
-          }
+                   id(g_shown));
+  # радар: старые устройства вон, список для точек на круге
   - interval: 1s
     then:
       - lambda: |-
@@ -383,59 +549,54 @@ interval:
           }
           id(cache_uniq60) = uniq;
 
-switch:
-  - platform: template
-    name: ${board_name} Radar Mode
-    id: radar_mode_sw
-    optimistic: true
-    # RESTORE_DEFAULT_OFF восстанавливает сохраненное «включено» после любого
-    # тапа, и плата стартует сразу в радаре, мимо лога. Всегда с лога.
-    restore_mode: ALWAYS_OFF
-    turn_on_action:
-      - lambda: 'id(display_mode) = 1;'
-    turn_off_action:
-      - lambda: 'id(display_mode) = 0;'
-
-# После OTA прошивка считается непроверенной, пока не проработает
-# boot_is_good_after. Перезагрузка в это окно (кнопка RESET) откатывает на
-# прошлую прошивку из второго раздела. 24.09.2026 это приняли за «RESET
-# ломает экран»: откат шел на сборку с неверной инверсией. Окно сокращено
-# с минуты до 15 секунд.
-safe_mode:
-  boot_is_good_after: 15s
-
-button:
-  - platform: safe_mode
-    name: ${board_name} Safe Mode (OTA)
-
 font:
-  # Atari Portfolio 6x8 из пака int10h (выбран по превью из семи шрифтов 5-6x8).
-  # В пиксель попадает только при size: 8. Строка 8 px: 80 знаков x 34 строки
+  # Консоль и радар: Atari Portfolio 6x8 из пака int10h, в пиксель попадает
+  # только при size: 8. Строка 8 px: 80 знаков x 34 строки. Только ASCII.
   - file: "fonts/Px437_Portfolio_6x8.ttf"
     id: f_console
     size: 8
     bpp: 1
     glyphs: '!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~0123456789AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz °'
-
-color:
-  - id: c_green
-    red: 0%
-    green: 100%
-    blue: 0%
-  - id: c_dim
-    red: 0%
-    green: 30%
-    blue: 0%
-  - id: c_amber
-    red: 100%
-    green: 70%
-    blue: 0%
-  - id: c_black
-    red: 0%
-    green: 0%
-    blue: 0%
+  # Дашборд и терминал: PxPlus (int10h, с кириллицей и псевдографикой), bpp 1
+  # без сглаживания, каждый в родном размере или ровно x2
+  - file: "fonts/PxPlus_HP_100LX_6x8.ttf"
+    id: fs
+    size: 8
+    bpp: 1
+    glyphs: &glyphs " !%()+,-./0123456789:;°·ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюя═█░▒"
+  # em у этого шрифта 16 пикселей (1600 единиц, 100 на пиксель), ячейка 8x14.
+  # При size: 14 он сжимался в 0.875 и буквы ломались, родной размер 16.
+  - file: "fonts/PxPlus_IBM_VGA_8x14.ttf"
+    id: fm
+    size: 16
+    bpp: 1
+    glyphs: *glyphs
+  - file: "fonts/PxPlus_IBM_VGA_8x16.ttf"
+    id: fb
+    size: 16
+    bpp: 1
+    glyphs: *glyphs
+  - file: "fonts/PxPlus_IBM_VGA_8x16.ttf"
+    id: fx
+    size: 32
+    bpp: 1
+    glyphs: " %.0123456789"
 
 globals:
+  # ---- режим экрана: g_mode сохраненный (NVS), g_shown тот, что на экране
+  - id: g_mode
+    type: int
+    restore_value: no
+    initial_value: '3'
+  - id: g_shown
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: g_booting
+    type: bool
+    restore_value: no
+    initial_value: 'true'
+  # ---- консоль
   - id: log_lines
     type: std::vector<std::string>
     restore_value: no
@@ -466,6 +627,7 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  # ---- радар
   - id: dev_addr
     type: std::vector<std::string>
     restore_value: no
@@ -505,10 +667,6 @@ globals:
   - id: cache_radar_idx
     type: std::vector<int>
     restore_value: no
-  - id: display_mode
-    type: int
-    restore_value: no
-    initial_value: '0'
   - id: frame_counter
     type: uint32_t
     restore_value: no
@@ -521,324 +679,1346 @@ globals:
     type: uint32_t
     restore_value: no
     initial_value: '0'
-  - id: auto_switched
+  # ---- дашборд
+  - id: g_power
+    type: std::vector<float>
+    restore_value: no
+  - id: g_months
+    type: std::vector<float>
+    restore_value: no
+  - id: g_first_hour
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: g_days
+    type: std::vector<float>
+    restore_value: no
+  - id: g_first_dow
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: g_first_day
+    type: int
+    restore_value: no
+    initial_value: '1'
+  # вид графика: 0 сутки по часам, 1 неделя по дням, 2 месяц по дням
+  - id: g_view
+    type: int
+    restore_value: yes
+    initial_value: '1'
+  - id: g_radar
+    type: std::vector<float>
+    restore_value: no
+    initial_value: 'std::vector<float>(6, 0.0f)'
+  - id: g_tick
+    type: int
+    restore_value: no
+    initial_value: '0'
+  # ---- терминал: журнал 6 строк по 3 поля (время, что, состояние), новая первой; во флеше
+  - id: g_log
+    type: std::array<std::array<char, 72>, 6>
+    restore_value: yes
+  - id: g_log_armed
     type: bool
     restore_value: no
     initial_value: 'false'
+  - id: g_charging
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: g_cursor
+    type: bool
+    restore_value: no
+    initial_value: 'true'
 
-display:
-  # Матрица родная ландшафтная 480x272. Проверено тестом всех комбинаций
-  # 24.09.2026: нормальная картинка только при INVON и MADCTL 0xC0, как в
-  # Arduino_GFX и в конфиге с devices.esphome.io. INVON дает invert_colors: true
-  # (это и так значение модели), 0xC0 дает rotation: 180, в модели зашит 0x00.
-  # Кадр 480x272x2 = 255 КБ по QSPI 26,67 МГц идет ~20 мс, отсюда 33 мс на кадр.
-  - platform: mipi_spi
-    id: lcd
-    model: JC4827W543
-    spi_id: quad_spi
-    rotation: 180
-    invert_colors: true
-    # Потолок NV3041A 32 МГц (Arduino_GFX), шина ESP32 делит 80 МГц, ближайшее
-    # ниже 26,67. На 40 МГц, выше паспорта, команды панели принимались через раз.
-    data_rate: 26.67MHz
-    # Буфер чистим сами через it.fill() в начале лямбды
-    auto_clear_enabled: false
-    update_interval: 33ms
-    lambda: |-
-      id(frame_counter)++;
-      uint32_t t0_us = micros();
-      uint32_t t = millis();
-      int W = it.get_width();
-      int H = it.get_height();
-      // it.fill чистит буфер одним куском. filled_rectangle на весь экран
-      // идет попиксельно (130 тысяч вызовов) и на S3 съедал больше половины кадра
-      it.fill(id(c_black));
-
-      if (id(display_mode) == 0) {
-        // ===== LOG CONSOLE =====
-        const int LINE_H = 8;
-        const int CHAR_W = 6;
-        const int FRAME_MS = 16;
-        const int GAP = 50;
-        const int CLOCK_GAP = 6;
-        auto &v = id(log_lines);
-        if ((int)v.size() > id(log_max)) {
-          uint32_t elapsed = t - id(scroll_start_ms);
-          float o = (float)elapsed * (float)LINE_H / (float)id(anim_ms);
-          if (o > (float)LINE_H) o = (float)LINE_H;
-          id(scroll_off) = o;
-          if (o >= (float)LINE_H) { v.erase(v.begin()); id(scroll_off) = 0.0f; }
-        }
-        int n = (int)v.size();
-        int yoff = (int)(id(scroll_off) + 0.5f);
-
-        char clk[32];
-        auto tn = id(homeassistant_time).now();
-        unsigned msec = (unsigned)(t % 1000);
-        if (tn.is_valid()) {
-          snprintf(clk, sizeof(clk), "%02d:%02d:%02d.%03u", tn.hour, tn.minute, tn.second, msec);
-        } else {
-          snprintf(clk, sizeof(clk), "--:--:--.%03u", msec);
-        }
-        int cw = (int)strlen(clk) * CHAR_W;
-        int line_w_top = W - cw - CLOCK_GAP;
-        if (line_w_top < 1) line_w_top = 1;
-
-        for (int i = 0; i < n; i++) {
-          int y = i * LINE_H - yoff;
-          if (y >= H) continue;
-          if (y + LINE_H <= 0) continue;
-          auto &s = v[i];
-          int w = (int)s.size() * CHAR_W;
-          int avail = (y < LINE_H) ? line_w_top : W;
-          if (w <= avail) {
-            it.printf(0, y, id(f_console), id(c_green), "%s", s.c_str());
-          } else {
-            int cycle = w + GAP;
-            int off_x = ((int)(t * 0.075f)) % cycle;
-            it.printf(-off_x, y, id(f_console), id(c_green), "%s", s.c_str());
-            it.printf(-off_x + cycle, y, id(f_console), id(c_green), "%s", s.c_str());
+script:
+  # Показать режим m (0..3, по кругу). save: запомнить в NVS как выбор человека.
+  - id: show_mode
+    mode: queued
+    parameters:
+      m: int
+      save: bool
+    then:
+      - lambda: |-
+          m = ((m % 4) + 4) % 4;
+          static const uint8_t PAGE[4] = {0, 0, 1, 2};   // p_raw, p_raw, p_dash, p_retro
+          static const char *NAME[4] = {"Консоль", "Радар", "Дашборд", "Терминал"};
+          id(g_booting) = false;
+          id(g_shown) = m;
+          id(lvgl_comp).show_page(PAGE[m], LV_SCREEN_LOAD_ANIM_NONE, 0);
+          if (save && id(g_mode) != m) {
+            id(g_mode) = m;
+            auto pref = global_preferences->make_preference<int32_t>(fnv1_hash("s3_disp_mode"), true);
+            int32_t v = m;
+            pref.save(&v);
+            global_preferences->sync();
           }
-        }
+          id(mode_sel).publish_state(NAME[m]);
+          ESP_LOGI("mode", "mode %d%s", m, save ? " (saved)" : "");
 
-        if (id(has_pending)) {
-          int y = n * LINE_H - yoff;
-          if (y < H && y + LINE_H > 0) {
-            auto &s = id(pending_line);
-            int w = (int)s.size() * CHAR_W;
-            int avail = (y < LINE_H) ? line_w_top : W;
-            if (w <= avail) {
-              it.printf(0, y, id(f_console), id(c_green), "%s", s.c_str());
-            } else {
-              int cycle = w + GAP;
-              int off_x = ((int)(t * 0.075f)) % cycle;
-              it.printf(-off_x, y, id(f_console), id(c_green), "%s", s.c_str());
-              it.printf(-off_x + cycle, y, id(f_console), id(c_green), "%s", s.c_str());
+  # Кадр консоли или радара на холсте raw_cv. Код перенесен с лямбды дисплея
+  # прошлой esp32-s3-disp: it.printf/line/circle заменены на функции ниже,
+  # рисующие через lv_draw в слой холста. Текст копируется (text_local), потому
+  # что слой отрисовывается целиком в lv_canvas_finish_layer, когда буферы
+  # snprintf уже переписаны.
+  - id: raw_draw
+    then:
+      - lambda: |-
+          if (id(g_shown) > 1) return;
+          id(frame_counter)++;
+          uint32_t t0_us = micros();
+          uint32_t t = millis();
+          const int W = 480, H = 272;
+          lv_obj_t *cv = (lv_obj_t *) id(raw_cv);
+          lv_canvas_fill_bg(cv, lv_color_black(), LV_OPA_COVER);
+          lv_layer_t layer;
+          lv_canvas_init_layer(cv, &layer);
+          lv_layer_t *LY = &layer;
+          const lv_area_t FULL = {0, 0, W - 1, H - 1};
+          const lv_font_t *FONT = id(f_console).get_lv_font();
+          const lv_color_t GREEN = lv_color_make(0, 255, 0), DIM = lv_color_make(0, 77, 0), BLACK = lv_color_black();
+          auto G = [](int v) { return lv_color_make(0, v, 0); };
+          auto line = [&](int x1, int y1, int x2, int y2, lv_color_t c) {
+            lv_draw_line_dsc_t d; lv_draw_line_dsc_init(&d);
+            d.p1.x = x1; d.p1.y = y1; d.p2.x = x2; d.p2.y = y2;
+            d.color = c; d.width = 1; d.opa = LV_OPA_COVER;
+            lv_draw_line(LY, &d);
+          };
+          auto tri = [&](int ax, int ay, int bx, int by, int qx, int qy, lv_color_t c) {
+            lv_draw_triangle_dsc_t d; lv_draw_triangle_dsc_init(&d);
+            d.p[0].x = ax; d.p[0].y = ay; d.p[1].x = bx; d.p[1].y = by; d.p[2].x = qx; d.p[2].y = qy;
+            d.color = c; d.opa = LV_OPA_COVER;
+            lv_draw_triangle(LY, &d);
+          };
+          auto rect = [&](int x, int y, int w, int h, lv_color_t c) {
+            if (w <= 0 || h <= 0) return;
+            lv_draw_rect_dsc_t d; lv_draw_rect_dsc_init(&d);
+            d.bg_color = c; d.bg_opa = LV_OPA_COVER;
+            lv_area_t a = {x, y, x + w - 1, y + h - 1};
+            lv_draw_rect(LY, &d, &a);
+          };
+          auto circle = [&](int x, int y, int r, lv_color_t c, bool fill) {
+            lv_draw_rect_dsc_t d; lv_draw_rect_dsc_init(&d);
+            d.radius = LV_RADIUS_CIRCLE;
+            if (fill) { d.bg_color = c; d.bg_opa = LV_OPA_COVER; }
+            else { d.bg_opa = LV_OPA_TRANSP; d.border_color = c; d.border_width = 1; d.border_opa = LV_OPA_COVER; }
+            lv_area_t a = {x - r, y - r, x + r, y + r};
+            lv_draw_rect(LY, &d, &a);
+          };
+          // align: 0 от x вправо, 1 x это правый край, 2 x это середина
+          auto text = [&](int x, int y, lv_color_t c, const char *s, int align) {
+            int w = (int) strlen(s) * 6;
+            if (align == 1) x -= w; else if (align == 2) x -= w / 2;
+            lv_draw_label_dsc_t d; lv_draw_label_dsc_init(&d);
+            d.font = FONT; d.color = c; d.text = s; d.text_local = 1;
+            lv_area_t a = {x, y, x + w + 5, y + 9};
+            lv_draw_label(LY, &d, &a);
+          };
+          auto clip = [&](int x, int y, int w, int h) {
+            lv_area_t r = {x, y, x + w - 1, y + h - 1};
+            lv_area_t prev = LY->_clip_area;
+            if (!lv_area_intersect(&LY->_clip_area, &prev, &r)) LY->_clip_area = {0, 0, -1, -1};
+            return prev;
+          };
+
+          if (id(g_shown) == 0) {
+            // ===== LOG CONSOLE =====
+            const int LINE_H = 8;
+            const int CHAR_W = 6;
+            const int GAP = 50;
+            const int CLOCK_GAP = 6;
+            auto &v = id(log_lines);
+            if ((int)v.size() > id(log_max)) {
+              uint32_t elapsed = t - id(scroll_start_ms);
+              float o = (float)elapsed * (float)LINE_H / (float)id(anim_ms);
+              if (o > (float)LINE_H) o = (float)LINE_H;
+              id(scroll_off) = o;
+              if (o >= (float)LINE_H) { v.erase(v.begin()); id(scroll_off) = 0.0f; }
             }
-          }
-        }
+            int n = (int)v.size();
+            int yoff = (int)(id(scroll_off) + 0.5f);
 
-        it.filled_rectangle(line_w_top, 0, W - line_w_top, LINE_H, id(c_black));
-        it.printf(W, 0, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", clk);
-      } else {
-        // ===== BLE RADAR =====
-        // Круг в левом квадрате 272x272, справа таблица 208 px.
-        // max_r 132: подписи в углах шрифтом 6x8 до круга не достают (проверено
-        // по дальним углам строк часов, даты, аптайма и памяти).
-        const int cx = 136;
-        const int cy = 136;
-        const int max_r = 132;
-        // Дистанция точки по RSSI: -40 дБм у центра (D_MIN), -100 у края (D_MAX)
-        const int D_MIN = 18;
-        const int D_MAX = 129;
+            char clk[32];
+            auto tn = id(homeassistant_time).now();
+            unsigned msec = (unsigned)(t % 1000);
+            if (tn.is_valid()) snprintf(clk, sizeof(clk), "%02d:%02d:%02d.%03u", tn.hour, tn.minute, tn.second, msec);
+            else snprintf(clk, sizeof(clk), "--:--:--.%03u", msec);
+            int cw = (int)strlen(clk) * CHAR_W;
+            int line_w_top = W - cw - CLOCK_GAP;
+            if (line_w_top < 1) line_w_top = 1;
 
-        it.line(cx - max_r, cy, cx + max_r, cy, id(c_dim));
-        it.line(cx, cy - max_r, cx, cy + max_r, id(c_dim));
+            auto draw_row = [&](const std::string &s, int y) {
+              if (y >= H || y + LINE_H <= 0) return;
+              int w = (int)s.size() * CHAR_W;
+              int avail = (y < LINE_H) ? line_w_top : W;
+              if (w <= avail) {
+                text(0, y, GREEN, s.c_str(), 0);
+              } else {
+                int cycle = w + GAP;
+                int off_x = ((int)(t * 0.075f)) % cycle;
+                text(-off_x, y, GREEN, s.c_str(), 0);
+                text(-off_x + cycle, y, GREEN, s.c_str(), 0);
+              }
+            };
+            for (int i = 0; i < n; i++) draw_row(v[i], i * LINE_H - yoff);
+            if (id(has_pending)) draw_row(id(pending_line), n * LINE_H - yoff);
 
-        float sw = (float)(t % 6000) / 6000.0f * 6.28318f;
-        const int TRAIL_SEG = 10;
-        const float SEG_ANGLE = 0.14f;
-        for (int i = TRAIL_SEG; i >= 1; i--) {
-          float a1 = sw - (float)i * SEG_ANGLE;
-          float a2 = sw - (float)(i - 1) * SEG_ANGLE;
-          int p1x = cx + (int)(cosf(a1) * (float)max_r);
-          int p1y = cy + (int)(sinf(a1) * (float)max_r);
-          int p2x = cx + (int)(cosf(a2) * (float)max_r);
-          int p2y = cy + (int)(sinf(a2) * (float)max_r);
-          // Gradient 240→12 (≈95%→5%) линейно по trail
-          int intensity = 12 + (TRAIL_SEG - i) * 26;
-          if (intensity > 240) intensity = 240;
-          if (intensity < 12) intensity = 12;
-          it.filled_triangle(cx, cy, p1x, p1y, p2x, p2y, Color(0, intensity, 0));
-        }
-        int sx0 = cx + (int)(cosf(sw) * (float)max_r);
-        int sy0 = cy + (int)(sinf(sw) * (float)max_r);
-        it.line(cx, cy, sx0, sy0, Color(140, 255, 140));
-
-        it.circle(cx, cy, 33, id(c_dim));
-        it.circle(cx, cy, 66, id(c_dim));
-        it.circle(cx, cy, 99, id(c_dim));
-        it.circle(cx, cy, max_r, id(c_green));
-
-        auto &addrs = id(dev_addr);
-        auto &names = id(dev_name);
-        auto &rssis = id(dev_rssi);
-        auto &rssis0 = id(dev_rssi0);
-        auto &seens = id(dev_seen);
-        auto &painted = id(dev_painted);
-
-        float prev = id(prev_sweep);
-        auto &dists = id(dev_dist);
-        if (dists.size() < addrs.size()) dists.resize(addrs.size(), 0);
-        for (size_t i = 0; i < addrs.size(); i++) {
-          uint32_t h = 0;
-          for (char c : addrs[i]) h = h * 31u + (uint8_t)c;
-          float ang = (float)(h % 360) * 0.0174533f;
-          bool crossed = false;
-          if (prev <= sw) {
-            if (ang > prev && ang <= sw) crossed = true;
+            rect(line_w_top, 0, W - line_w_top, LINE_H, BLACK);
+            text(W, 0, GREEN, clk, 1);
           } else {
-            if (ang > prev || ang <= sw) crossed = true;
+            // ===== BLE RADAR =====
+            // Круг в левом квадрате 272x272, справа таблица 208 px.
+            // max_r 132: подписи в углах до круга не достают.
+            const int cx = 136;
+            const int cy = 136;
+            const int max_r = 132;
+            // Дистанция точки по RSSI: -40 дБм у центра (D_MIN), -100 у края (D_MAX)
+            const int D_MIN = 18;
+            const int D_MAX = 129;
+
+            line(cx - max_r, cy, cx + max_r, cy, DIM);
+            line(cx, cy - max_r, cx, cy + max_r, DIM);
+
+            float sw = (float)(t % 6000) / 6000.0f * 6.28318f;
+            const int TRAIL_SEG = 10;
+            const float SEG_ANGLE = 0.14f;
+            for (int i = TRAIL_SEG; i >= 1; i--) {
+              float a1 = sw - (float)i * SEG_ANGLE;
+              float a2 = sw - (float)(i - 1) * SEG_ANGLE;
+              int p1x = cx + (int)(cosf(a1) * (float)max_r);
+              int p1y = cy + (int)(sinf(a1) * (float)max_r);
+              int p2x = cx + (int)(cosf(a2) * (float)max_r);
+              int p2y = cy + (int)(sinf(a2) * (float)max_r);
+              // яркость хвоста 12..240 линейно
+              int intensity = 12 + (TRAIL_SEG - i) * 26;
+              if (intensity > 240) intensity = 240;
+              if (intensity < 12) intensity = 12;
+              tri(cx, cy, p1x, p1y, p2x, p2y, G(intensity));
+            }
+            int sx0 = cx + (int)(cosf(sw) * (float)max_r);
+            int sy0 = cy + (int)(sinf(sw) * (float)max_r);
+            line(cx, cy, sx0, sy0, lv_color_make(140, 255, 140));
+
+            circle(cx, cy, 33, DIM, false);
+            circle(cx, cy, 66, DIM, false);
+            circle(cx, cy, 99, DIM, false);
+            circle(cx, cy, max_r, GREEN, false);
+
+            auto &addrs = id(dev_addr);
+            auto &names = id(dev_name);
+            auto &rssis = id(dev_rssi);
+            auto &rssis0 = id(dev_rssi0);
+            auto &painted = id(dev_painted);
+
+            float prev = id(prev_sweep);
+            auto &dists = id(dev_dist);
+            if (dists.size() < addrs.size()) dists.resize(addrs.size(), 0);
+            for (size_t i = 0; i < addrs.size(); i++) {
+              uint32_t h = 0;
+              for (char c : addrs[i]) h = h * 31u + (uint8_t)c;
+              float ang = (float)(h % 360) * 0.0174533f;
+              bool crossed = false;
+              if (prev <= sw) {
+                if (ang > prev && ang <= sw) crossed = true;
+              } else {
+                if (ang > prev || ang <= sw) crossed = true;
+              }
+              if (crossed) {
+                painted[i] = t;
+                int r = rssis[i];
+                int d = D_MIN + ((-40 - r) * (D_MAX - D_MIN)) / 60;
+                if (d < D_MIN) d = D_MIN;
+                if (d > D_MAX) d = D_MAX;
+                dists[i] = d;
+              }
+            }
+            id(prev_sweep) = sw;
+
+            auto &radar_idx = id(cache_radar_idx);
+            for (int idx_pos = 0; idx_pos < (int)radar_idx.size(); idx_pos++) {
+              size_t i = (size_t)radar_idx[idx_pos];
+              if (i >= addrs.size()) continue;
+              const char* label = nullptr;
+              if (strcasecmp(addrs[i].c_str(), "DE:AD:51:6E:27:C5") == 0) label = "ALEX";
+              else if (strcasecmp(addrs[i].c_str(), "CE:CD:12:23:1F:64") == 0) label = "IRA";
+              else if (strcasecmp(addrs[i].c_str(), "FD:D9:6C:D4:F9:F7") == 0) label = "LILA";
+              bool known = (label != nullptr);
+              if (painted[i] == 0 && !known) continue;
+              uint32_t age = (painted[i] == 0) ? 99999 : (t - painted[i]);
+              if (!known && age > 5000) continue;
+
+              int dist = (i < dists.size()) ? dists[i] : 0;
+              if (dist == 0) {
+                int r = rssis[i];
+                dist = D_MIN + ((-40 - r) * (D_MAX - D_MIN)) / 60;
+                if (dist < D_MIN) dist = D_MIN;
+                if (dist > D_MAX) dist = D_MAX;
+              }
+              uint32_t h = 0;
+              for (char c : addrs[i]) h = h * 31u + (uint8_t)c;
+              float ang = (float)(h % 360) * 0.0174533f;
+              int dx = cx + (int)(cosf(ang) * (float)dist);
+              int dy = cy + (int)(sinf(ang) * (float)dist);
+              int intensity;
+              int dot_r;
+              if (known) {
+                intensity = 240;
+                dot_r = (age < 200) ? 4 : 3;
+              } else {
+                intensity = 240 - (int)((float)age * 240.0f / 5000.0f);
+                if (intensity < 0) intensity = 0;
+                dot_r = (age < 200) ? 3 : 2;
+              }
+              circle(dx, dy, dot_r, G(intensity), true);
+              if (label) {
+                int rssi_val = (i < rssis.size()) ? rssis[i] : -99;
+                char rssi_s[12];
+                snprintf(rssi_s, sizeof(rssi_s), "R:%d", rssi_val);
+                int name_w = (int)strlen(label) * 6;
+                int rssi_w = (int)strlen(rssi_s) * 6;
+                int max_w = (name_w > rssi_w) ? name_w : rssi_w;
+                int lx = (dx > cx) ? dx + dot_r + 6 : dx - dot_r - 6 - max_w;
+                int ly = dy - 8;
+                text(lx, ly, G(intensity), label, 0);
+                text(lx, ly + 8, G(intensity), rssi_s, 0);
+              }
+            }
+
+            // ===== Sidebar (x=272..479) =====
+            // SCAN[272..302] | NAME[302..450] | RSSI[450..479], 27 строк по 9 px
+            const int sb_x = 272;
+            const int CW = 6;
+            const int row_h = 9;
+            const int sb_y_start = 12;
+            const int visible_rows = 27;
+            const int sb_y_end = sb_y_start + visible_rows * row_h;  // 255
+            const int col1_x = sb_x + 30;   // 302
+            const int col2_x = sb_x + 178;  // 450
+            const int scan_cell_l = sb_x;       const int scan_cell_w = col1_x - sb_x;       // 30
+            const int name_cell_l = col1_x;     const int name_cell_w = col2_x - col1_x;     // 148
+            const int rssi_cell_l = col2_x;     const int rssi_cell_w = W - col2_x;          // 30
+
+            const int hdr_w = 4 * CW;
+            text(scan_cell_l + (scan_cell_w - hdr_w) / 2, 2, GREEN, "SCAN", 0);
+            text(name_cell_l + (name_cell_w - hdr_w) / 2, 2, GREEN, "NAME", 0);
+            text(rssi_cell_l + (rssi_cell_w - hdr_w) / 2, 2, GREEN, "RSSI", 0);
+
+            int N = (int)addrs.size();
+            int skip = (N > visible_rows) ? (N - visible_rows) : 0;
+
+            lv_area_t outer = clip(sb_x, sb_y_start - 2, W - sb_x, sb_y_end - sb_y_start + 2);
+            for (int i = skip; i < N; i++) {
+              size_t k = (size_t)i;
+              int row_y = sb_y_start + (i - skip) * row_h;
+              if (row_y >= sb_y_end) continue;
+              std::string nm = names[k];
+              if (nm.empty()) nm = addrs[k];
+              uint16_t scan_id = (k < id(dev_scan_id).size()) ? id(dev_scan_id)[k] : 0;
+              char sc[8];
+              snprintf(sc, sizeof(sc), "%04X", scan_id);
+              int r0 = (k < rssis0.size()) ? rssis0[k] : rssis[k];
+
+              int scan_w = 4 * CW;
+              text(scan_cell_l + (scan_cell_w - scan_w) / 2, row_y, GREEN, sc, 0);
+
+              // NAME: 23 знака влезает, длиннее идет бегущей строкой
+              int name_x = name_cell_l + 4;
+              int name_max_chars = (name_cell_w - 8) / CW;
+              if ((int)nm.size() <= name_max_chars) {
+                text(name_x, row_y, GREEN, nm.c_str(), 0);
+              } else {
+                std::string padded = nm + "    ";
+                int cycle_px = (int)padded.size() * CW;
+                int off_px = (int)((t / 60) % (uint32_t)cycle_px);
+                lv_area_t mid = clip(name_x, row_y, name_cell_w - 8, row_h);
+                text(name_x - off_px, row_y, GREEN, padded.c_str(), 0);
+                text(name_x - off_px + cycle_px, row_y, GREEN, padded.c_str(), 0);
+                LY->_clip_area = mid;
+              }
+
+              // RSSI без " dB", в 30 px влезает только число
+              char rb[8];
+              snprintf(rb, sizeof(rb), "%d", r0);
+              int rssi_w = (int)strlen(rb) * CW;
+              text(rssi_cell_l + (rssi_cell_w - rssi_w) / 2, row_y, GREEN, rb, 0);
+            }
+            LY->_clip_area = outer;
+
+            const int bottom_y = H - 1;
+            line(sb_x - 2, 0, sb_x - 2, bottom_y, DIM);
+            line(W - 1, 0, W - 1, bottom_y, DIM);
+            line(sb_x - 2, 0, W - 1, 0, DIM);
+            line(sb_x - 2, sb_y_start - 2, W - 1, sb_y_start - 2, DIM);
+            line(sb_x - 2, sb_y_end + 1, W - 1, sb_y_end + 1, DIM);
+            line(sb_x - 2, bottom_y, W - 1, bottom_y, DIM);
+            line(col1_x, 0, col1_x, sb_y_end + 1, DIM);
+            line(col2_x, 0, col2_x, sb_y_end + 1, DIM);
+
+            // Углы левого квадрата: часы и FPS сверху слева, дата сверху справа,
+            // аптайм снизу слева, свободная память снизу справа
+            char clk[16];
+            auto tn = id(homeassistant_time).now();
+            if (tn.is_valid()) snprintf(clk, sizeof(clk), "%02d:%02d:%02d", tn.hour, tn.minute, tn.second);
+            else snprintf(clk, sizeof(clk), "--:--:--");
+            text(4, 3, GREEN, clk, 0);
+            char fps_s[16];
+            snprintf(fps_s, sizeof(fps_s), "FPS:%d", id(fps_value));
+            text(4, 11, GREEN, fps_s, 0);
+
+            char dt[24];
+            if (tn.is_valid()) snprintf(dt, sizeof(dt), "%04d.%02d.%02d", tn.year, tn.month, tn.day_of_month);
+            else snprintf(dt, sizeof(dt), "----.--.--");
+            text(sb_x - 8, 3, GREEN, dt, 1);
+
+            uint32_t up_s = t / 1000;
+            unsigned d = up_s / 86400, h = (up_s % 86400) / 3600, m = (up_s % 3600) / 60, ss = up_s % 60;
+            char upbuf[32];
+            if (d > 0) snprintf(upbuf, sizeof(upbuf), "Up %ud %02u:%02u", d, h, m);
+            else snprintf(upbuf, sizeof(upbuf), "Up %02u:%02u:%02u", h, m, ss);
+            text(4, H - 9, GREEN, upbuf, 0);
+            char mem[16];
+            snprintf(mem, sizeof(mem), "MEM %uK", (unsigned)(esp_get_free_heap_size() / 1024));
+            text(sb_x - 8, H - 9, GREEN, mem, 1);
+
+            char devc[24];
+            snprintf(devc, sizeof(devc), "Found: %u/min", (unsigned)id(cache_uniq60));
+            text(sb_x + (W - sb_x) / 2, sb_y_end + 5, GREEN, devc, 2);
           }
-          if (crossed) {
-            painted[i] = t;
-            int r = rssis[i];
-            int d = D_MIN + ((-40 - r) * (D_MAX - D_MIN)) / 60;
-            if (d < D_MIN) d = D_MIN;
-            if (d > D_MAX) d = D_MAX;
-            dists[i] = d;
+          LY->_clip_area = FULL;
+          lv_canvas_finish_layer(cv, &layer);
+          id(render_us) = micros() - t0_us;
+
+  # Полная инициализация NV3041A мимо драйвера, вручную кнопкой SW1: SWRESET,
+  # вендорская последовательность модели, PIXFMT, MADCTL 0xC0 (rotation 180),
+  # INVON, SLPOUT, DISPON, с паузами 150 мс как у Arduino_GFX (там 120).
+  # Транзакция как у драйвера: опкод 0x02, команда во втором байте адреса.
+  # Лямбда держит цикл ~330 мс, чтобы кадр не вклинился между командами.
+  - id: panel_reinit
+    mode: queued
+    then:
+      - lambda: |-
+          auto *d = id(lcd);
+          auto cmd = [d](uint8_t c, const uint8_t *data, size_t n) {
+            d->enable();
+            d->write_cmd_addr_data(8, 0x02, 24, (uint32_t) c << 8, data, n);
+            d->disable();
+          };
+          static const uint8_t VENDOR[][2] = {
+            {0xFF,0xA5},{0x41,0x03},{0x44,0x15},{0x45,0x15},{0x7D,0x03},{0xC1,0xBB},
+            {0xC2,0x05},{0xC3,0x10},{0xC6,0x3E},{0xC7,0x25},{0xC8,0x11},{0x7A,0x5F},
+            {0x6F,0x44},{0x78,0x70},{0xC9,0x00},{0x67,0x21},{0x51,0x0A},{0x52,0x76},
+            {0x53,0x0A},{0x54,0x76},{0x46,0x0A},{0x47,0x2A},{0x48,0x0A},{0x49,0x1A},
+            {0x56,0x43},{0x57,0x42},{0x58,0x3C},{0x59,0x64},{0x5A,0x41},{0x5B,0x3C},
+            {0x5C,0x02},{0x5D,0x3C},{0x5E,0x1F},{0x60,0x80},{0x61,0x3F},{0x62,0x21},
+            {0x63,0x07},{0x64,0xE0},{0x65,0x02},{0xCA,0x20},{0xCB,0x52},{0xCC,0x10},
+            {0xCD,0x42},{0xD0,0x20},{0xD1,0x52},{0xD2,0x10},{0xD3,0x42},{0xD4,0x0A},
+            {0xD5,0x32},{0x80,0x00},{0xA0,0x00},{0x81,0x07},{0xA1,0x06},{0x82,0x02},
+            {0xA2,0x01},{0x86,0x11},{0xA6,0x10},{0x87,0x27},{0xA7,0x27},{0x83,0x37},
+            {0xA3,0x37},{0x84,0x35},{0xA4,0x35},{0x85,0x3F},{0xA5,0x3F},{0x88,0x0B},
+            {0xA8,0x0B},{0x89,0x14},{0xA9,0x14},{0x8A,0x1A},{0xAA,0x1A},{0x8B,0x0A},
+            {0xAB,0x0A},{0x8C,0x14},{0xAC,0x08},{0x8D,0x17},{0xAD,0x07},{0x8E,0x16},
+            {0xAE,0x06},{0x8F,0x1B},{0xAF,0x07},{0x90,0x04},{0xB0,0x04},{0x91,0x0A},
+            {0xB1,0x0A},{0x92,0x16},{0xB2,0x15},{0xFF,0x00},
+          };
+          const uint8_t zero = 0x00, pixfmt = 0x55, madctl = 0xC0;
+          cmd(0x01, nullptr, 0);          // SWRESET
+          delay(150);
+          for (auto &p : VENDOR) cmd(p[0], &p[1], 1);
+          cmd(0x3A, &pixfmt, 1);          // 16 бит
+          cmd(0x36, &madctl, 1);          // MY|MX, rotation 180
+          cmd(0x21, nullptr, 0);          // INVON, пустой командой, как драйвер
+          cmd(0x11, &zero, 1);            // SLPOUT
+          delay(150);
+          cmd(0x29, &zero, 1);            // DISPON
+          delay(20);
+          ESP_LOGI("panel", "reinit done");
+
+  # ===================== дашборд =====================
+  # Радар и график с заливкой. Заливка веером треугольников от центра
+  # (радар) и трапециями из двух треугольников (график) через lv_draw_triangle.
+  - id: draw_charts
+    then:
+      - lambda: |-
+          auto line = [](lv_layer_t *l, float x1, float y1, float x2, float y2, uint32_t c, int w, lv_opa_t o) {
+            lv_draw_line_dsc_t d; lv_draw_line_dsc_init(&d);
+            d.p1.x = x1; d.p1.y = y1; d.p2.x = x2; d.p2.y = y2;
+            d.color = lv_color_hex(c); d.width = w; d.opa = o;
+            d.round_start = 1; d.round_end = 1;
+            lv_draw_line(l, &d);
+          };
+          auto tri = [](lv_layer_t *l, float ax, float ay, float bx, float by, float cx, float cy,
+                        uint32_t c, lv_opa_t o, uint32_t c2 = 0, lv_opa_t o2 = 0) {
+            lv_draw_triangle_dsc_t d; lv_draw_triangle_dsc_init(&d);
+            d.p[0].x = ax; d.p[0].y = ay; d.p[1].x = bx; d.p[1].y = by; d.p[2].x = cx; d.p[2].y = cy;
+            d.color = lv_color_hex(c); d.opa = o;
+            if (o2) {
+              d.grad.dir = LV_GRAD_DIR_VER; d.grad.stops_count = 2;
+              d.grad.stops[0].color = lv_color_hex(c);  d.grad.stops[0].opa = o;  d.grad.stops[0].frac = 0;
+              d.grad.stops[1].color = lv_color_hex(c2); d.grad.stops[1].opa = o2; d.grad.stops[1].frac = 255;
+            }
+            lv_draw_triangle(l, &d);
+          };
+          auto dot = [](lv_layer_t *l, float x, float y, int r, uint32_t c) {
+            lv_draw_rect_dsc_t d; lv_draw_rect_dsc_init(&d);
+            d.bg_color = lv_color_hex(c); d.bg_opa = LV_OPA_COVER; d.radius = LV_RADIUS_CIRCLE;
+            d.border_color = lv_color_hex(0xffffff); d.border_width = 1;
+            lv_area_t a = {(int32_t)(x - r), (int32_t)(y - r), (int32_t)(x + r), (int32_t)(y + r)};
+            lv_draw_rect(l, &d, &a);
+          };
+
+          // ---------- радар сети, холст 160x88, центр (62,44), r=28 ----------
+          {
+            lv_obj_t *cv = (lv_obj_t *) id(radar_cv);
+            lv_canvas_fill_bg(cv, lv_color_hex(0x0d1433), LV_OPA_COVER);
+            lv_layer_t l; lv_canvas_init_layer(cv, &l);
+            const float cx = 62, cy = 44, R = 28;
+            const int N = 6;
+            const auto &v = id(g_radar);   // 0..1: U, f, cos, I, нагрев розетки, плата счетчика
+            float ax[N], ay[N];
+            for (int i = 0; i < N; i++) {
+              float a = -M_PI / 2 + i * 2 * M_PI / N;
+              ax[i] = cosf(a); ay[i] = sinf(a);
+            }
+            for (int ring = 1; ring <= 4; ring++) {
+              float r = R * ring / 4;
+              for (int i = 0; i < N; i++) {
+                int j = (i + 1) % N;
+                line(&l, cx + ax[i] * r, cy + ay[i] * r, cx + ax[j] * r, cy + ay[j] * r, 0x3a4a86, 1, LV_OPA_70);
+              }
+            }
+            for (int i = 0; i < N; i++) line(&l, cx, cy, cx + ax[i] * R, cy + ay[i] * R, 0x3a4a86, 1, LV_OPA_70);
+            // три слоя заливки дают переход от оранжевого в центре к малиновому по краю
+            const float sc[3] = {1.0f, 0.72f, 0.42f};
+            const uint32_t col[3] = {0xd63fe0, 0xff5f8f, 0xffa040};
+            for (int k = 0; k < 3; k++)
+              for (int i = 0; i < N; i++) {
+                int j = (i + 1) % N;
+                float ri = R * v[i] * sc[k], rj = R * v[j] * sc[k];
+                tri(&l, cx, cy, cx + ax[i] * ri, cy + ay[i] * ri, cx + ax[j] * rj, cy + ay[j] * rj, col[k], LV_OPA_90);
+              }
+            for (int i = 0; i < N; i++) {
+              int j = (i + 1) % N;
+              line(&l, cx + ax[i] * R * v[i], cy + ay[i] * R * v[i], cx + ax[j] * R * v[j], cy + ay[j] * R * v[j], 0xffd0f0, 1, LV_OPA_COVER);
+            }
+            for (int i = 0; i < N; i++) dot(&l, cx + ax[i] * R * v[i], cy + ay[i] * R * v[i], 2, 0xff7ab8);
+            lv_canvas_finish_layer(cv, &l);
           }
-        }
-        id(prev_sweep) = sw;
 
-        auto &radar_idx = id(cache_radar_idx);
-        for (int idx_pos = 0; idx_pos < (int)radar_idx.size(); idx_pos++) {
-          size_t i = (size_t)radar_idx[idx_pos];
-          if (i >= addrs.size()) continue;
-          const char* label = nullptr;
-          if (strcasecmp(addrs[i].c_str(), "DE:AD:51:6E:27:C5") == 0) label = "ALEX";
-          else if (strcasecmp(addrs[i].c_str(), "CE:CD:12:23:1F:64") == 0) label = "IRA";
-          else if (strcasecmp(addrs[i].c_str(), "FD:D9:6C:D4:F9:F7") == 0) label = "LILA";
-          bool known = (label != nullptr);
-          if (painted[i] == 0 && !known) continue;
-          uint32_t age = (painted[i] == 0) ? 99999 : (t - painted[i]);
-          if (!known && age > 5000) continue;
-
-          int dist = (i < id(dev_dist).size()) ? id(dev_dist)[i] : 0;
-          if (dist == 0) {
-            int r = rssis[i];
-            dist = D_MIN + ((-40 - r) * (D_MAX - D_MIN)) / 60;
-            if (dist < D_MIN) dist = D_MIN;
-            if (dist > D_MAX) dist = D_MAX;
-          }
-          uint32_t h = 0;
-          for (char c : addrs[i]) h = h * 31u + (uint8_t)c;
-          float ang = (float)(h % 360) * 0.0174533f;
-          int dx = cx + (int)(cosf(ang) * (float)dist);
-          int dy = cy + (int)(sinf(ang) * (float)dist);
-          int intensity;
-          int dot_r;
-          if (known) {
-            intensity = 240;
-            dot_r = (age < 200) ? 4 : 3;
-          } else {
-            intensity = 240 - (int)((float)age * 240.0f / 5000.0f);
-            if (intensity < 0) intensity = 0;
-            dot_r = (age < 200) ? 3 : 2;
-          }
-          it.filled_circle(dx, dy, dot_r, Color(0, intensity, 0));
-          if (label) {
-            int rssi_val = (i < rssis.size()) ? rssis[i] : -99;
-            char rssi_s[12];
-            snprintf(rssi_s, sizeof(rssi_s), "R:%d", rssi_val);
-            int name_w = (int)strlen(label) * 6;
-            int rssi_w = (int)strlen(rssi_s) * 6;
-            int max_w = (name_w > rssi_w) ? name_w : rssi_w;
-            int lx = (dx > cx) ? dx + dot_r + 6 : dx - dot_r - 6 - max_w;
-            int ly = dy - 8;
-            it.printf(lx, ly, id(f_console), Color(0, intensity, 0), "%s", label);
-            it.printf(lx, ly + 8, id(f_console), Color(0, intensity, 0), "%s", rssi_s);
-          }
-        }
-
-        // ===== Sidebar (x=272..479) =====
-        // SCAN[272..302] | NAME[302..450] | RSSI[450..479], 27 строк по 9 px
-        const int sb_x = 272;
-        const int CW = 6;
-        const int row_h = 9;
-        const int sb_y_start = 12;
-        const int visible_rows = 27;
-        const int sb_y_end = sb_y_start + visible_rows * row_h;  // 255
-        const int col1_x = sb_x + 30;   // 302
-        const int col2_x = sb_x + 178;  // 450
-        const int scan_cell_l = sb_x;       const int scan_cell_w = col1_x - sb_x;       // 30
-        const int name_cell_l = col1_x;     const int name_cell_w = col2_x - col1_x;     // 148
-        const int rssi_cell_l = col2_x;     const int rssi_cell_w = W - col2_x;          // 30
-
-        const int hdr_w = 4 * CW;
-        it.printf(scan_cell_l + (scan_cell_w - hdr_w) / 2, 2, id(f_console), id(c_green), "SCAN");
-        it.printf(name_cell_l + (name_cell_w - hdr_w) / 2, 2, id(f_console), id(c_green), "NAME");
-        it.printf(rssi_cell_l + (rssi_cell_w - hdr_w) / 2, 2, id(f_console), id(c_green), "RSSI");
-
-        int N = (int)addrs.size();
-        int skip = (N > visible_rows) ? (N - visible_rows) : 0;
-
-        it.start_clipping(Rect(sb_x, sb_y_start - 2, W - sb_x, sb_y_end - sb_y_start + 2));
-        for (int i = skip; i < N; i++) {
-          size_t k = (size_t)i;
-          int row_y = sb_y_start + (i - skip) * row_h;
-          if (row_y >= sb_y_end) continue;
-          std::string nm = names[k];
-          if (nm.empty()) nm = addrs[k];
-          uint16_t scan_id = (k < id(dev_scan_id).size()) ? id(dev_scan_id)[k] : 0;
-          char sc[8];
-          snprintf(sc, sizeof(sc), "%04X", scan_id);
-          int r0 = (k < rssis0.size()) ? rssis0[k] : rssis[k];
-
-          int scan_w = 4 * CW;
-          it.printf(scan_cell_l + (scan_cell_w - scan_w) / 2, row_y, id(f_console), id(c_green), "%s", sc);
-
-          // NAME: 23 знака влезает, длиннее идет бегущей строкой
-          int name_x = name_cell_l + 4;
-          int name_max_chars = (name_cell_w - 8) / CW;
-          if ((int)nm.size() <= name_max_chars) {
-            it.printf(name_x, row_y, id(f_console), id(c_green), "%s", nm.c_str());
-          } else {
-            std::string padded = nm + "    ";
-            int cycle_px = (int)padded.size() * CW;
-            int off_px = (int)((t / 60) % (uint32_t)cycle_px);
-            it.start_clipping(Rect(name_x, row_y, name_cell_w - 8, row_h));
-            it.printf(name_x - off_px, row_y, id(f_console), id(c_green), "%s", padded.c_str());
-            it.printf(name_x - off_px + cycle_px, row_y, id(f_console), id(c_green), "%s", padded.c_str());
-            it.end_clipping();
+          // ---------- график, холст 224x60: сутки по часам / неделя / месяц по дням ----------
+          {
+            lv_obj_t *cv = (lv_obj_t *) id(area_cv);
+            lv_canvas_fill_bg(cv, lv_color_hex(0x0c1230), LV_OPA_COVER);
+            lv_layer_t l; lv_canvas_init_layer(cv, &l);
+            const int view = id(g_view);
+            std::vector<float> v;
+            if (view == 0) v = id(g_power);
+            else {
+              const auto &d = id(g_days);
+              int n = view == 1 ? 7 : 30;
+              int from = std::max(0, (int) d.size() - n);
+              v.assign(d.begin() + from, d.end());
+            }
+            const int N = v.size();
+            const float x0 = 4, bot = 58, top = 8;
+            const float dx = N > 1 ? 216.0f / (N - 1) : 0;
+            float vmax = view == 0 ? 0.5f : 1.0f;
+            for (float x : v) vmax = std::max(vmax, x * 1.15f);
+            for (int g = 1; g <= 4; g++) {
+              float y = bot - (bot - top) * g / 5;
+              line(&l, 0, y, 224, y, 0x26325f, 1, LV_OPA_60);
+            }
+            std::vector<float> px(N), py(N);
+            for (int i = 0; i < N; i++) { px[i] = x0 + i * dx; py[i] = bot - (bot - top) * v[i] / vmax; }
+            for (int i = 0; i + 1 < N; i++) {
+              tri(&l, px[i], py[i], px[i + 1], py[i + 1], px[i], bot, 0x9b6bff, LV_OPA_90, 0x2a1a70, LV_OPA_50);
+              tri(&l, px[i + 1], py[i + 1], px[i + 1], bot, px[i], bot, 0x9b6bff, LV_OPA_90, 0x2a1a70, LV_OPA_50);
+            }
+            for (int i = 0; i + 1 < N; i++) line(&l, px[i], py[i], px[i + 1], py[i + 1], 0xc9b8ff, 2, LV_OPA_COVER);
+            if (view == 1) for (int i = 0; i < N; i++) dot(&l, px[i], py[i], 2, 0x8a5cff);
+            // подписи: максимум и последняя точка, на подложке поверх сетки
+            lv_obj_t *lab[2] = {(lv_obj_t *) id(l_amax), (lv_obj_t *) id(l_anow)};
+            int imax = 0;
+            for (int i = 1; i < N; i++) if (v[i] > v[imax]) imax = i;
+            int idx[2] = {imax, N - 1};
+            for (int k = 0; k < 2; k++) {
+              if (N < 2 || (k == 0 && imax == N - 1)) { lv_label_set_text(lab[k], ""); continue; }
+              int i = idx[k];
+              line(&l, px[i], py[i], px[i], bot, 0xc9b8ff, 1, LV_OPA_50);
+              dot(&l, px[i], py[i], 3, 0x8a5cff);
+              char b[16];
+              if (view == 0) snprintf(b, sizeof b, v[i] >= 1 ? "%.2f" : "%.0f", v[i] >= 1 ? v[i] : v[i] * 1000);
+              else snprintf(b, sizeof b, v[i] >= 10 ? "%.0f" : "%.1f", v[i]);
+              lv_label_set_text(lab[k], b);
+              int lx = 6 + (int) px[i] - 14, ly = 20 + (int) py[i] - 13;
+              lx = std::max(0, std::min(lx, 236 - 30));
+              ly = std::max(16, ly);
+              lv_obj_set_pos(lab[k], lx, ly);
+            }
+            // подписи под графиком: 7 мест
+            static const char *DOW[7] = {"Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"};
+            lv_obj_t *hl[7] = {(lv_obj_t *) id(h0), (lv_obj_t *) id(h1), (lv_obj_t *) id(h2), (lv_obj_t *) id(h3),
+                               (lv_obj_t *) id(h4), (lv_obj_t *) id(h5), (lv_obj_t *) id(h6)};
+            const int dn = id(g_days).size();
+            for (int k = 0; k < 7; k++) {
+              int i;
+              char b[8] = "";
+              if (view == 0) {
+                i = k < 6 ? k * 4 : N - 1;
+                if (N >= 2 && i < N) snprintf(b, sizeof b, "%d", (id(g_first_hour) + i + (k == 6 ? 1 : 0)) % 24);
+              } else if (view == 1) {
+                i = k;
+                int day = dn - N + i;   // индекс дня в g_days
+                if (i < N) snprintf(b, sizeof b, "%s", DOW[((id(g_first_dow) + day) % 7 + 7) % 7]);
+              } else {
+                i = k < 6 ? k * 5 : N - 1;
+                if (N >= 2 && i < N) {
+                  // число месяца: от первого дня g_days вперед, с переходом через 28-31
+                  int day = dn - N + i;
+                  ESPTime t = id(homeassistant_time).now();
+                  int num = 0;
+                  if (t.is_valid()) {
+                    time_t ts = t.timestamp - (time_t) (dn - 1 - day) * 86400;
+                    struct tm tmv;
+                    localtime_r(&ts, &tmv);
+                    num = tmv.tm_mday;
+                  }
+                  snprintf(b, sizeof b, "%d", num);
+                }
+              }
+              lv_label_set_text(hl[k], b);
+              if (b[0] && i < N) lv_obj_set_x(hl[k], 6 + (int) px[i] - 10);
+            }
+            lv_canvas_finish_layer(cv, &l);
           }
 
-          // RSSI без " dB", в 30 px влезает только число
-          char rb[8];
-          snprintf(rb, sizeof(rb), "%d", r0);
-          int rssi_w = (int)strlen(rb) * CW;
-          it.printf(rssi_cell_l + (rssi_cell_w - rssi_w) / 2, row_y, id(f_console), id(c_green), "%s", rb);
-        }
-        it.end_clipping();
+  # Раскладывает текущие значения по виджетам. Текст и значения ставятся только
+  # при изменении, иначе LVGL перерисовывал бы панели каждые 2 секунды.
+  - id: dash_refresh
+    then:
+      - lambda: |-
+          auto set = [](lv_obj_t *o, const char *t) {
+            if (strcmp(lv_label_get_text(o), t) != 0) lv_label_set_text(o, t);
+          };
+          auto num = [&](lv_obj_t *o, const char *f, float v) {
+            char b[32];
+            if (std::isnan(v)) snprintf(b, sizeof b, "--"); else snprintf(b, sizeof b, f, v);
+            set(o, b);
+          };
+          auto bar = [](lv_obj_t *o, int32_t lo, int32_t hi, float v) {
+            int32_t x = std::isnan(v) ? lo : (int32_t) lroundf(v);
+            if (x < lo) x = lo;
+            if (x > hi) x = hi;
+            if (lv_bar_get_min_value(o) != lo || lv_bar_get_max_value(o) != hi) lv_bar_set_range(o, lo, hi);
+            if (lv_bar_get_value(o) != x) lv_bar_set_value(o, x, LV_ANIM_OFF);
+          };
+          auto chip = [](lv_obj_t *o, bool on, uint32_t c) {
+            lv_color_t bg = lv_color_hex(on ? c : 0x18224a);
+            lv_color_t fg = lv_color_hex(on ? 0xffffff : 0x8ea2d8);
+            if (!lv_color_eq(lv_obj_get_style_bg_color(o, LV_PART_MAIN), bg)) {
+              lv_obj_set_style_bg_color(o, bg, LV_PART_MAIN);
+              lv_obj_set_style_text_color(o, fg, LV_PART_MAIN);
+            }
+          };
+          auto z = [](float v) { return std::isnan(v) ? 0.0f : v; };
 
-        const int bottom_y = H - 1;
-        it.line(sb_x - 2, 0, sb_x - 2, bottom_y, id(c_dim));
-        it.line(W - 1, 0, W - 1, bottom_y, id(c_dim));
-        it.line(sb_x - 2, 0, W - 1, 0, id(c_dim));
-        it.line(sb_x - 2, sb_y_start - 2, W - 1, sb_y_start - 2, id(c_dim));
-        it.line(sb_x - 2, sb_y_end + 1, W - 1, sb_y_end + 1, id(c_dim));
-        it.line(sb_x - 2, bottom_y, W - 1, bottom_y, id(c_dim));
-        it.line(col1_x, 0, col1_x, sb_y_end + 1, id(c_dim));
-        it.line(col2_x, 0, col2_x, sb_y_end + 1, id(c_dim));
+          // ---- мощность сейчас
+          float p = id(ha_p_now).state;
+          if (!std::isnan(p) && p >= 1000) { num(((lv_obj_t *) id(l_pnow)), "%.2f", p / 1000); set(((lv_obj_t *) id(l_punit)), "кВт"); }
+          else { num(((lv_obj_t *) id(l_pnow)), "%.0f", p); set(((lv_obj_t *) id(l_punit)), "Вт"); }
+          lv_obj_align_to(((lv_obj_t *) id(l_punit)), ((lv_obj_t *) id(l_pnow)), LV_ALIGN_OUT_RIGHT_BOTTOM, 4, -5);
+          bool on_sockets = id(ha_line).state == "Розетки гаража";
+          float p_line = on_sockets ? z(id(ha_p_sock).state) : z(id(ha_p_chg).state);
+          bool charging = p_line > 300;
+          set(((lv_obj_t *) id(l_psub)), charging ? "заряжается авто" : "потребление");
 
-        // Углы левого квадрата: часы и FPS сверху слева, дата сверху справа,
-        // аптайм снизу слева, свободная память снизу справа
-        char clk[16];
-        auto tn = id(homeassistant_time).now();
-        if (tn.is_valid()) snprintf(clk, sizeof(clk), "%02d:%02d:%02d", tn.hour, tn.minute, tn.second);
-        else snprintf(clk, sizeof(clk), "--:--:--");
-        it.printf(4, 3, id(f_console), id(c_green), "%s", clk);
-        char fps_s[16];
-        snprintf(fps_s, sizeof(fps_s), "FPS:%d", id(fps_value));
-        it.printf(4, 11, id(f_console), id(c_green), "%s", fps_s);
+          // ---- сегодня
+          float ds = id(ha_d_sock).state, dl = id(ha_d_light).state, dc = id(ha_d_chg).state;
+          num(((lv_obj_t *) id(l_d_sock)), "%.1f", ds);
+          num(((lv_obj_t *) id(l_d_light)), "%.1f", dl);
+          num(((lv_obj_t *) id(l_d_chg)), "%.1f", dc);
+          num(((lv_obj_t *) id(l_d_all)), "%.1f", z(ds) + z(dl) + z(dc));
 
-        char dt[24];
-        if (tn.is_valid()) snprintf(dt, sizeof(dt), "%04d.%02d.%02d", tn.year, tn.month, tn.day_of_month);
-        else snprintf(dt, sizeof(dt), "----.--.--");
-        it.printf(sb_x - 8, 3, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", dt);
+          // ---- зарядка авто: сессия выбранной линии и окно
+          float sess = on_sockets ? id(ha_s_sock).state : id(ha_s_chg).state;
+          char b[40];
+          if (std::isnan(sess)) snprintf(b, sizeof b, "-- кВт·ч"); else snprintf(b, sizeof b, "%.1f кВт·ч", sess);
+          set(((lv_obj_t *) id(l_sess)), b);
+          int sh = atoi(id(ha_chg_start).state.c_str()), sm = 0, eh = atoi(id(ha_chg_end).state.c_str()), em = 0;
+          sscanf(id(ha_chg_start).state.c_str(), "%d:%d", &sh, &sm);
+          sscanf(id(ha_chg_end).state.c_str(), "%d:%d", &eh, &em);
+          snprintf(b, sizeof b, "%02d-%02d", sh, eh);
+          set(((lv_obj_t *) id(l_win)), b);
+          int pct = 0;
+          auto now = id(homeassistant_time).now();
+          if (now.is_valid() && id(ha_chg_on).state == "on") {
+            int s0 = sh * 60 + sm, e0 = eh * 60 + em, n0 = now.hour * 60 + now.minute;
+            int len = (e0 - s0 + 1440) % 1440, pos = (n0 - s0 + 1440) % 1440;
+            if (len > 0 && pos < len) pct = pos * 100 / len;
+          }
+          bar(((lv_obj_t *) id(b_win)), 0, 100, pct);
+          snprintf(b, sizeof b, id(ha_chg_on).state == "on" ? "%d%%" : "выкл", pct);
+          set(((lv_obj_t *) id(l_winpct)), b);
 
-        uint32_t up_s = t / 1000;
-        unsigned d = up_s / 86400, h = (up_s % 86400) / 3600, m = (up_s % 3600) / 60, ss = up_s % 60;
-        char upbuf[32];
-        if (d > 0) snprintf(upbuf, sizeof(upbuf), "Up %ud %02u:%02u", d, h, m);
-        else snprintf(upbuf, sizeof(upbuf), "Up %02u:%02u:%02u", h, m, ss);
-        it.printf(4, H - 9, id(f_console), id(c_green), "%s", upbuf);
-        char mem[16];
-        snprintf(mem, sizeof(mem), "MEM %uK", (unsigned)(esp_get_free_heap_size() / 1024));
-        it.printf(sb_x - 8, H - 9, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", mem);
+          // ---- фишки
+          chip(((lv_obj_t *) id(c_gate)), id(ha_gate).has_state() && id(ha_gate).state, 0xff7a1a);
+          const std::string &al = id(ha_alarm).state;
+          bool armed = al.rfind("armed", 0) == 0, trig = al == "triggered";
+          chip(((lv_obj_t *) id(c_alarm)), armed || trig, trig ? 0xff2d55 : 0x1e6bff);
+          chip(((lv_obj_t *) id(c_light)), id(ha_light).state == "on", 0xd99a00);
+          chip(((lv_obj_t *) id(c_motion)), id(ha_motion).has_state() && id(ha_motion).state, 0xb45cff);
 
-        char devc[24];
-        snprintf(devc, sizeof(devc), "Found: %u/min", (unsigned)id(cache_uniq60));
-        it.printf(sb_x + (W - sb_x) / 2, sb_y_end + 5, id(f_console), id(c_green), TextAlign::TOP_CENTER, "%s", devc);
-      }
-      id(render_us) = micros() - t0_us;
+          // ---- месяц и кольцевая
+          static const char *MON[12] = {"ЯНВАРЬ", "ФЕВРАЛЬ", "МАРТ", "АПРЕЛЬ", "МАЙ", "ИЮНЬ",
+                                        "ИЮЛЬ", "АВГУСТ", "СЕНТЯБРЬ", "ОКТЯБРЬ", "НОЯБРЬ", "ДЕКАБРЬ"};
+          if (now.is_valid()) set(((lv_obj_t *) id(l_month)), MON[now.month - 1]);
+          float ms = z(id(ha_m_sock).state), ml = z(id(ha_m_light).state), mc = z(id(ha_m_chg).state);
+          float mt = ms + ml + mc;
+          // итог месяца со счетчика ATORCH (он с 10.09.2026), учет по линиям моложе
+          // (с 22.09.2026) и дает только доли в кольцевой
+          const auto &MM = id(g_months);
+          float matorch = (now.is_valid() && (int) MM.size() >= now.month) ? MM[now.month - 1] : 0;
+          float mshow = matorch > 0 ? matorch : mt;
+          snprintf(b, sizeof b, "%.1f кВт·ч", mshow); set(((lv_obj_t *) id(l_mtot)), b);
+          num(((lv_obj_t *) id(l_dtot)), mshow >= 100 ? "%.0f" : "%.1f", mshow);
+          float fr[3] = {mt > 0 ? ms / mt : 0, mt > 0 ? ml / mt : 0, mt > 0 ? mc / mt : 0};
+          lv_obj_t *arcs[3] = {((lv_obj_t *) id(a_sock)), ((lv_obj_t *) id(a_light)), ((lv_obj_t *) id(a_chg))};
+          lv_obj_t *pcts[3] = {((lv_obj_t *) id(l_pc_sock)), ((lv_obj_t *) id(l_pc_light)), ((lv_obj_t *) id(l_pc_chg))};
+          float a0 = 0;
+          for (int i = 0; i < 3; i++) {
+            float span = fr[i] * 360;
+            int st = (int) lroundf(a0), en = (int) lroundf(a0 + span) - (span > 6 ? 3 : 0);
+            if (span < 1) { st = 0; en = 0; }
+            if (lv_arc_get_bg_angle_start(arcs[i]) != st || lv_arc_get_bg_angle_end(arcs[i]) != en)
+              lv_arc_set_bg_angles(arcs[i], st, en);
+            a0 += span;
+            snprintf(b, sizeof b, "%.0f%%", fr[i] * 100); set(pcts[i], b);
+          }
+
+          // ---- сеть: радар раз в 10 секунд, подпись напряжения сразу
+          float U = id(ha_volt).state, F = id(ha_freq).state, PF = id(ha_pf).state, I = id(ha_cur).state;
+          snprintf(b, sizeof b, std::isnan(U) ? "-- В" : "%.0f В", U); set(((lv_obj_t *) id(l_volt)), b);
+          auto cl = [](float v) { return std::isnan(v) ? 0.0f : std::min(1.0f, std::max(0.05f, v)); };
+          std::vector<float> r = {cl((U - 200) / 50), cl((F - 49) / 2), cl(PF / 100), cl(I / 16),
+                                  cl(id(ha_sock_t).state / 60), cl(id(ha_cpu_t).state / 60)};
+          if (++id(g_tick) % 5 == 0 && r != id(g_radar)) {
+            id(g_radar) = r;
+            id(draw_charts).execute();
+          }
+
+          // ---- климат
+          float t = id(ha_temp).state, h = id(ha_hum).state, pr = id(ha_press).state, st = id(ha_sock_t).state;
+          num(((lv_obj_t *) id(l_temp)), "%.1f°", t);  bar(((lv_obj_t *) id(b_temp)), 0, 100, (t + 5) * 2);
+          num(((lv_obj_t *) id(l_hum)), "%.0f%%", h);  bar(((lv_obj_t *) id(b_hum)), 0, 100, h);
+          num(((lv_obj_t *) id(l_press)), "%.0f гПа", pr); bar(((lv_obj_t *) id(b_press)), 0, 100, pr - 950);
+          num(((lv_obj_t *) id(l_sockt)), "%.0f°", st); bar(((lv_obj_t *) id(b_sockt)), 0, 100, st * 100 / 60);
+          float bm = NAN;
+          for (float v : {id(ha_bat1).state, id(ha_bat2).state, id(ha_bat3).state})
+            if (!std::isnan(v) && (std::isnan(bm) || v < bm)) bm = v;
+          num(((lv_obj_t *) id(l_bat)), "%.0f%%", bm); bar(((lv_obj_t *) id(b_bat)), 0, 100, bm);
+
+          // ---- вкладки графика
+          int view = id(g_view);
+          set(((lv_obj_t *) id(l_atitle)), view == 0 ? "МОЩНОСТЬ, кВт" : "ЭНЕРГИЯ, кВт·ч");
+          chip(((lv_obj_t *) id(t_day)), view == 0, 0x1e6bff);
+          chip(((lv_obj_t *) id(t_week)), view == 1, 0x1e6bff);
+          chip(((lv_obj_t *) id(t_month)), view == 2, 0x1e6bff);
+
+          // ---- столбики по месяцам
+          lv_obj_t *mb[12] = {((lv_obj_t *) id(m1)), ((lv_obj_t *) id(m2)), ((lv_obj_t *) id(m3)), ((lv_obj_t *) id(m4)), ((lv_obj_t *) id(m5)), ((lv_obj_t *) id(m6)), ((lv_obj_t *) id(m7)), ((lv_obj_t *) id(m8)), ((lv_obj_t *) id(m9)), ((lv_obj_t *) id(m10)), ((lv_obj_t *) id(m11)), ((lv_obj_t *) id(m12))};
+          lv_obj_t *mc_[12] = {((lv_obj_t *) id(k1)), ((lv_obj_t *) id(k2)), ((lv_obj_t *) id(k3)), ((lv_obj_t *) id(k4)), ((lv_obj_t *) id(k5)), ((lv_obj_t *) id(k6)), ((lv_obj_t *) id(k7)), ((lv_obj_t *) id(k8)), ((lv_obj_t *) id(k9)), ((lv_obj_t *) id(k10)), ((lv_obj_t *) id(k11)), ((lv_obj_t *) id(k12))};
+          auto &M = id(g_months);
+          float mmax = 10;
+          for (float v : M) mmax = std::max(mmax, v * 1.1f);
+          int cur = now.is_valid() ? now.month - 1 : -1;
+          for (int i = 0; i < 12; i++) {
+            float v = i < (int) M.size() ? M[i] : 0;
+            bar(mb[i], 0, (int32_t) (mmax * 10), v * 10);
+            chip(mc_[i], i == cur, 0x1e6bff);
+          }
+          // подписи над текущим и двумя предыдущими месяцами, если есть данные
+          lv_obj_t *mv[3] = {((lv_obj_t *) id(mv0)), ((lv_obj_t *) id(mv1)), ((lv_obj_t *) id(mv2))};
+          for (int k = 0; k < 3; k++) {
+            int i = cur - 2 + k;
+            float v = (i >= 0 && i < (int) M.size()) ? M[i] : 0;
+            if (i < 0 || v <= 0) { set(mv[k], ""); continue; }
+            snprintf(b, sizeof b, v >= 10 ? "%.0f" : "%.1f", v); set(mv[k], b);
+            int hpx = (int) (58 * v / mmax);
+            lv_obj_set_pos(mv[k], 12 + i * 18 - 5, 18 + 58 - hpx - 10);
+          }
+  # ===================== терминал =====================
+  # Строка журнала: время, что, состояние. До g_log_armed (15 с после
+  # загрузки) не пишет: это первые состояния, а не события.
+  - id: log_event
+    mode: queued
+    parameters:
+      what: string
+      state: string
+    then:
+      - lambda: |-
+          if (!id(g_log_armed)) return;
+          auto &L = id(g_log);
+          for (int i = 5; i > 0; i--) L[i] = L[i - 1];
+          auto t = id(homeassistant_time).now();
+          char ts[16];
+          if (t.is_valid()) snprintf(ts, sizeof ts, "%02d.%02d %02d:%02d", t.day_of_month, t.month, t.hour, t.minute);
+          else snprintf(ts, sizeof ts, "--.-- --:--");
+          snprintf(L[0].data(), L[0].size(), "%s|%s|%s", ts, what.c_str(), state.c_str());
+          id(g_log) = L;   // запись во флеш
+          id(retro_refresh).execute();
+
+  # Зарядка по мощности выбранной линии, с гистерезисом 300/100 Вт
+  - id: check_charge
+    then:
+      - lambda: |-
+          bool sockets = id(ha_line).state == "Розетки гаража";
+          float p = sockets ? id(ha_p_sock).state : id(ha_p_chg).state;
+          if (std::isnan(p)) return;
+          if (!id(g_charging) && p > 300) { id(g_charging) = true; id(log_event).execute("ЗАРЯДКА", "старт"); }
+          else if (id(g_charging) && p < 100) { id(g_charging) = false; id(log_event).execute("ЗАРЯДКА", "стоп"); }
+
+  - id: retro_refresh
+    then:
+      - lambda: |-
+          auto set = [](lv_obj_t *o, const char *t) {
+            if (strcmp(lv_label_get_text(o), t) != 0) lv_label_set_text(o, t);
+          };
+          auto blocks = [](float f, int n) {
+            if (std::isnan(f)) f = 0;
+            int k = (int) lroundf(std::max(0.0f, std::min(1.0f, f)) * n);
+            std::string s;
+            for (int i = 0; i < n; i++) s += i < k ? "█" : "░";
+            return s;
+          };
+          char b[48];
+          float p = id(ha_p_now).state, ds = id(ha_d_sock).state, dl = id(ha_d_light).state, dc = id(ha_d_chg).state;
+          float te = id(ha_temp).state, hu = id(ha_hum).state, U = id(ha_volt).state, F = id(ha_freq).state;
+          struct Row { lv_obj_t *val, *bar; const char *fmt; float v, show, frac; };
+          Row rows[8] = {
+            {(lv_obj_t *) id(v0), (lv_obj_t *) id(b0), p >= 1000 ? "%.2f кВт" : "%.0f Вт", p, p >= 1000 ? p / 1000 : p, p / 3500},
+            {(lv_obj_t *) id(v1), (lv_obj_t *) id(b1), "%.2f кВт·ч", ds, ds, ds / 5},
+            {(lv_obj_t *) id(v2), (lv_obj_t *) id(b2), "%.2f кВт·ч", dl, dl, dl / 1},
+            {(lv_obj_t *) id(v3), (lv_obj_t *) id(b3), "%.2f кВт·ч", dc, dc, dc / 20},
+            {(lv_obj_t *) id(v4), (lv_obj_t *) id(b4), "%.1f °C", te, te, (te + 5) / 50},
+            {(lv_obj_t *) id(v5), (lv_obj_t *) id(b5), "%.0f %%", hu, hu, hu / 100},
+            {(lv_obj_t *) id(v6), (lv_obj_t *) id(b6), "%.0f В", U, U, (U - 200) / 50},
+            {(lv_obj_t *) id(v7), (lv_obj_t *) id(b7), "%.2f Гц", F, F, (F - 49) / 2},
+          };
+          for (auto &r : rows) {
+            if (std::isnan(r.v)) snprintf(b, sizeof b, "--"); else snprintf(b, sizeof b, r.fmt, r.show);
+            set(r.val, b);
+            set(r.bar, blocks(r.frac, 28).c_str());
+          }
+          // журнал: поля через '|'
+          lv_obj_t *lt[6] = {(lv_obj_t *) id(e0t), (lv_obj_t *) id(e1t), (lv_obj_t *) id(e2t), (lv_obj_t *) id(e3t), (lv_obj_t *) id(e4t), (lv_obj_t *) id(e5t)};
+          lv_obj_t *lw[6] = {(lv_obj_t *) id(e0w), (lv_obj_t *) id(e1w), (lv_obj_t *) id(e2w), (lv_obj_t *) id(e3w), (lv_obj_t *) id(e4w), (lv_obj_t *) id(e5w)};
+          lv_obj_t *ls[6] = {(lv_obj_t *) id(e0s), (lv_obj_t *) id(e1s), (lv_obj_t *) id(e2s), (lv_obj_t *) id(e3s), (lv_obj_t *) id(e4s), (lv_obj_t *) id(e5s)};
+          const auto &L = id(g_log);
+          for (int i = 0; i < 6; i++) {
+            std::string line(L[i].data(), strnlen(L[i].data(), L[i].size()));
+            size_t a = line.find('|'), c = a == std::string::npos ? a : line.find('|', a + 1);
+            if (c == std::string::npos) { set(lt[i], ""); set(lw[i], ""); set(ls[i], ""); continue; }
+            set(lt[i], line.substr(0, a).c_str());
+            set(lw[i], line.substr(a + 1, c - a - 1).c_str());
+            set(ls[i], line.substr(c + 1).c_str());
+          }
+lvgl:
+  id: lvgl_comp
+  displays: [lcd]
+  rotation: 180
+  touchscreens: [ts]
+  buffer_size: 25%
+  default_font: fs
+  # цвет и шрифт текста задает каждая страница, подписи их наследуют
+  theme:
+    obj:
+      pad_all: 0
+      border_width: 0
+      radius: 0
+      bg_opa: TRANSP
+      scrollbar_mode: "OFF"
+      scrollable: false
+    bar:
+      pad_all: 0
+      scrollable: false
+  style_definitions:
+    - id: panel
+      bg_opa: COVER
+      bg_color: 0x0f1636
+      bg_grad_color: 0x0a0f26
+      bg_grad_dir: VER
+      radius: 10
+      border_width: 1
+      border_color: 0x27366e
+    - id: glow_blue
+      border_width: 2
+      border_color: 0x4a9bff
+      shadow_color: 0x2f7bff
+      shadow_width: 12
+      shadow_opa: 70%
+    - id: glow_violet
+      border_width: 2
+      border_color: 0xb45cff
+      shadow_color: 0x9b30ff
+      shadow_width: 12
+      shadow_opa: 70%
+    - id: dim
+      text_color: 0x8ea2d8
+    # подложка подписей на графике: закрывает линии сетки под текстом
+    - id: plate
+      bg_opa: COVER
+      bg_color: 0x0c1230
+      radius: 2
+      pad_top: 1
+      pad_bottom: 1
+    - id: chip
+      bg_opa: COVER
+      bg_color: 0x18224a
+      radius: 3
+      text_color: 0x8ea2d8
+      text_align: CENTER
+    - id: chip_on
+      bg_opa: COVER
+      bg_color: 0x1e6bff
+      radius: 3
+      text_color: 0xffffff
+      text_align: CENTER
+    # терминал: приглушенные подписи
+    - id: rdim
+      text_color: ${fg_dim}
+  pages:
+    # консоль и радар, первой: с нее плата стартует (консоль загрузки)
+    - id: p_raw
+      bg_opa: COVER
+      bg_color: 0x000000
+      scrollable: false
+      widgets:
+        - canvas:
+            id: raw_cv
+            x: 0
+            y: 0
+            width: 480
+            height: 272
+    - id: p_dash
+      text_color: 0xe6ecff
+      bg_opa: COVER
+      bg_color: 0x050918
+      bg_grad_color: 0x0c1438
+      bg_grad_dir: VER
+      scrollable: false
+      widgets:
+        # ================= ряд 1 =================
+        - obj:
+            x: 4
+            y: 4
+            width: 112
+            height: 64
+            styles: [panel]
+            scrollbar_mode: "OFF"
+            scrollable: false
+            bg_color: 0x2f86ff
+            bg_grad_color: 0x1238b8
+            bg_grad_dir: HOR
+            radius: 12
+            border_width: 0
+            shadow_color: 0x2f7bff
+            shadow_width: 14
+            shadow_opa: 70%
+            widgets:
+              - label: {x: 8, y: 5, text: "ГАРАЖ СЕЙЧАС", text_font: fs}
+              - label: {id: l_pnow, x: 7, y: 15, text: "--", text_font: fx}
+              - label: {id: l_punit, x: 76, y: 32, text: "Вт", text_font: fm}
+              - label: {id: l_psub, x: 8, y: 52, text: "", text_font: fs, text_color: 0xcfe0ff}
+
+        - obj:
+            x: 120
+            y: 4
+            width: 120
+            height: 64
+            styles: [panel]
+            scrollbar_mode: "OFF"
+            scrollable: false
+            widgets:
+              - label: {x: 0, y: 4, width: 120, text: "СЕГОДНЯ, кВт·ч", text_font: fs, text_align: CENTER, text_color: 0xaab8f0}
+              - label: {x: 10, y: 17, text: "Розетки", text_font: fs, styles: [dim]}
+              - label: {id: l_d_sock, x: 70, y: 17, width: 40, text: "--", text_font: fs, text_align: RIGHT}
+              - label: {x: 10, y: 28, text: "Свет", text_font: fs, styles: [dim]}
+              - label: {id: l_d_light, x: 70, y: 28, width: 40, text: "--", text_font: fs, text_align: RIGHT}
+              - label: {x: 10, y: 39, text: "Зарядка", text_font: fs, styles: [dim]}
+              - label: {id: l_d_chg, x: 70, y: 39, width: 40, text: "--", text_font: fs, text_align: RIGHT}
+              - obj: {x: 10, y: 49, width: 100, height: 1, bg_opa: COVER, bg_color: 0x27366e}
+              - label: {x: 10, y: 52, text: "ВСЕГО", text_font: fs}
+              - label: {id: l_d_all, x: 70, y: 52, width: 40, text: "--", text_font: fs, text_align: RIGHT}
+
+        - obj:
+            x: 244
+            y: 4
+            width: 120
+            height: 40
+            styles: [panel, glow_violet]
+            scrollbar_mode: "OFF"
+            scrollable: false
+            widgets:
+              - label: {x: 0, y: 5, width: 116, text: "ЗАРЯДКА АВТО", text_font: fs, text_align: CENTER, text_color: 0xaab8f0}
+              - label: {id: l_sess, x: 0, y: 17, width: 116, text: "--", text_font: fb, text_align: CENTER}
+
+        - obj:
+            x: 244
+            y: 48
+            width: 120
+            height: 20
+            styles: [panel]
+            scrollbar_mode: "OFF"
+            scrollable: false
+            radius: 8
+            widgets:
+              - label: {id: l_win, x: 6, y: 6, text: "--", text_font: fs, styles: [dim]}
+              - bar:
+                  id: b_win
+                  x: 40
+                  y: 6
+                  width: 74
+                  height: 8
+                  min_value: 0
+                  max_value: 100
+                  value: 0
+                  bg_opa: COVER
+                  bg_color: 0x1a2350
+                  radius: 4
+                  indicator:
+                    bg_color: 0xff9a3c
+                    bg_grad_color: 0xe040fb
+                    bg_grad_dir: HOR
+                    radius: 4
+              - label: {id: l_winpct, x: 40, y: 6, width: 74, text: "", text_font: fs, text_align: CENTER}
+
+        - obj:
+            x: 368
+            y: 4
+            width: 108
+            height: 64
+            styles: [panel]
+            scrollbar_mode: "OFF"
+            scrollable: false
+            widgets:
+              - label: {id: c_gate, x: 5, y: 5, width: 47, height: 12, text: "ВОРОТА", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: c_alarm, x: 56, y: 5, width: 47, height: 12, text: "ОХРАНА", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: c_light, x: 5, y: 20, width: 47, height: 12, text: "СВЕТ", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: c_motion, x: 56, y: 20, width: 47, height: 12, text: "ДВИЖ.", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: l_month, x: 0, y: 36, width: 108, text: "", text_font: fm, text_align: CENTER}
+              - label: {id: l_mtot, x: 0, y: 52, width: 102, text: "--", text_font: fs, text_align: RIGHT, styles: [dim]}
+
+        # ================= ряд 2 =================
+        - obj:
+            x: 4
+            y: 72
+            width: 128
+            height: 92
+            styles: [panel]
+            scrollbar_mode: "OFF"
+            scrollable: false
+            widgets:
+              # кольцевая из трех дуг, 0 градусов сверху (rotation 270)
+              - arc: &seg
+                  id: a_sock
+                  x: 6
+                  y: 14
+                  width: 64
+                  height: 64
+                  rotation: 270
+                  start_angle: 0
+                  end_angle: 0
+                  adjustable: false
+                  clickable: false
+                  arc_width: 9
+                  arc_color: 0xff9a3c
+                  arc_rounded: false
+                  indicator:
+                    arc_opa: TRANSP
+                  knob:
+                    bg_opa: TRANSP
+                    pad_all: 0
+              - arc:
+                  <<: *seg
+                  id: a_light
+                  start_angle: 0
+                  end_angle: 0
+                  arc_color: 0xe040fb
+              - arc:
+                  <<: *seg
+                  id: a_chg
+                  start_angle: 0
+                  end_angle: 0
+                  arc_color: 0x3f8cff
+              - label: {id: l_dtot, x: 6, y: 35, width: 64, text: "--", text_font: fb, text_align: CENTER}
+              - label: {x: 6, y: 51, width: 64, text: "кВт·ч", text_font: fs, text_align: CENTER, styles: [dim]}
+              - obj: {x: 76, y: 14, width: 7, height: 7, bg_opa: COVER, bg_color: 0xff9a3c, radius: 2}
+              - label: {id: l_pc_sock, x: 86, y: 14, text: "", text_font: fs}
+              - label: {x: 76, y: 24, text: "Розетки", text_font: fs, styles: [dim]}
+              - obj: {x: 76, y: 38, width: 7, height: 7, bg_opa: COVER, bg_color: 0xe040fb, radius: 2}
+              - label: {id: l_pc_light, x: 86, y: 38, text: "", text_font: fs}
+              - label: {x: 76, y: 48, text: "Свет", text_font: fs, styles: [dim]}
+              - obj: {x: 76, y: 62, width: 7, height: 7, bg_opa: COVER, bg_color: 0x3f8cff, radius: 2}
+              - label: {id: l_pc_chg, x: 86, y: 62, text: "", text_font: fs}
+              - label: {x: 76, y: 72, text: "Зарядка", text_font: fs, styles: [dim]}
+
+        - obj:
+            x: 136
+            y: 72
+            width: 164
+            height: 92
+            styles: [panel, glow_violet]
+            scrollbar_mode: "OFF"
+            scrollable: false
+            bg_color: 0x0d1433
+            bg_grad_dir: NONE
+            widgets:
+              - canvas:
+                  id: radar_cv
+                  x: 2
+                  y: 2
+                  width: 160
+                  height: 88
+              # подписи осей: центр радара в координатах панели (64,46), r=28
+              - label: {x: 34, y: 4, width: 60, text: "Напряж.", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {x: 91, y: 26, text: "Частота", text_font: fs, styles: [dim]}
+              - label: {x: 91, y: 58, text: "Косинус", text_font: fs, styles: [dim]}
+              - label: {x: 34, y: 80, width: 60, text: "Ток", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {x: 0, y: 58, width: 37, text: "Плата", text_font: fs, text_align: RIGHT, styles: [dim]}
+              - label: {x: 0, y: 26, width: 37, text: "Нагрев", text_font: fs, text_align: RIGHT, styles: [dim]}
+              - label: {x: 118, y: 5, width: 40, text: "СЕТЬ", text_font: fs, text_align: RIGHT, text_color: 0xaab8f0}
+              - label: {id: l_volt, x: 110, y: 72, width: 48, text: "--", text_font: fb, text_align: RIGHT}
+
+        - obj:
+            x: 304
+            y: 72
+            width: 172
+            height: 92
+            styles: [panel]
+            scrollbar_mode: "OFF"
+            scrollable: false
+            widgets:
+              - label: {x: 0, y: 4, width: 164, text: "КЛИМАТ", text_font: fs, text_align: RIGHT, text_color: 0xaab8f0}
+              - label: {x: 8, y: 14, text: "Температура", text_font: fs}
+              - label: {id: l_temp, x: 110, y: 14, width: 54, text: "--", text_font: fs, text_align: RIGHT}
+              - bar: &hbar
+                  id: b_temp
+                  x: 8
+                  y: 24
+                  width: 156
+                  height: 3
+                  min_value: 0
+                  max_value: 100
+                  value: 0
+                  bg_opa: COVER
+                  bg_color: 0x1a2350
+                  radius: 2
+                  indicator:
+                    bg_color: 0xff9a3c
+                    bg_grad_color: 0xe040fb
+                    bg_grad_dir: HOR
+                    radius: 2
+              - label: {x: 8, y: 29, text: "Влажность", text_font: fs}
+              - label: {id: l_hum, x: 110, y: 29, width: 54, text: "--", text_font: fs, text_align: RIGHT}
+              - bar: {<<: *hbar, id: b_hum, y: 39}
+              - label: {x: 8, y: 44, text: "Давление", text_font: fs}
+              - label: {id: l_press, x: 110, y: 44, width: 54, text: "--", text_font: fs, text_align: RIGHT}
+              - bar: {<<: *hbar, id: b_press, y: 54}
+              - label: {x: 8, y: 59, text: "Нагрев розетки", text_font: fs}
+              - label: {id: l_sockt, x: 110, y: 59, width: 54, text: "--", text_font: fs, text_align: RIGHT}
+              - bar: {<<: *hbar, id: b_sockt, y: 69}
+              - label: {x: 8, y: 74, text: "Батарейки мин.", text_font: fs}
+              - label: {id: l_bat, x: 110, y: 74, width: 54, text: "--", text_font: fs, text_align: RIGHT}
+              - bar: {<<: *hbar, id: b_bat, y: 84}
+
+        # ================= ряд 3 =================
+        - obj:
+            x: 4
+            y: 168
+            width: 232
+            height: 100
+            styles: [panel]
+            scrollbar_mode: "OFF"
+            scrollable: false
+            widgets:
+              - label: {x: 8, y: 5, text: "ГАРАЖ ПО МЕСЯЦАМ, кВт·ч", text_font: fs, styles: [dim]}
+              - bar: &vbar
+                  id: m1
+                  x: 12
+                  y: 18
+                  width: 10
+                  height: 58
+                  min_value: 0
+                  max_value: 100
+                  value: 0
+                  bg_opa: COVER
+                  bg_color: 0x151d42
+                  radius: 3
+                  indicator:
+                    bg_color: 0xe040fb
+                    bg_grad_color: 0xff9a3c
+                    bg_grad_dir: VER
+                    radius: 3
+              - bar: {<<: *vbar, id: m2, x: 30}
+              - bar: {<<: *vbar, id: m3, x: 48}
+              - bar: {<<: *vbar, id: m4, x: 66}
+              - bar: {<<: *vbar, id: m5, x: 84}
+              - bar: {<<: *vbar, id: m6, x: 102}
+              - bar: {<<: *vbar, id: m7, x: 120}
+              - bar: {<<: *vbar, id: m8, x: 138}
+              - bar: {<<: *vbar, id: m9, x: 156}
+              - bar: {<<: *vbar, id: m10, x: 174}
+              - bar: {<<: *vbar, id: m11, x: 192}
+              - bar: {<<: *vbar, id: m12, x: 210}
+              - label: {id: mv0, x: 0, y: 0, width: 20, text: "", text_font: fs, text_align: CENTER}
+              - label: {id: mv1, x: 0, y: 0, width: 20, text: "", text_font: fs, text_align: CENTER}
+              - label: {id: mv2, x: 0, y: 0, width: 20, text: "", text_font: fs, text_align: CENTER}
+              - label: {id: k1, x: 10, y: 82, width: 14, height: 11, text: "Я", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k2, x: 28, y: 82, width: 14, height: 11, text: "Ф", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k3, x: 46, y: 82, width: 14, height: 11, text: "М", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k4, x: 64, y: 82, width: 14, height: 11, text: "А", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k5, x: 82, y: 82, width: 14, height: 11, text: "М", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k6, x: 100, y: 82, width: 14, height: 11, text: "И", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k7, x: 118, y: 82, width: 14, height: 11, text: "И", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k8, x: 136, y: 82, width: 14, height: 11, text: "А", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k9, x: 154, y: 82, width: 14, height: 11, text: "С", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k10, x: 172, y: 82, width: 14, height: 11, text: "О", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k11, x: 190, y: 82, width: 14, height: 11, text: "Н", text_font: fs, pad_top: 2, styles: [chip]}
+              - label: {id: k12, x: 208, y: 82, width: 14, height: 11, text: "Д", text_font: fs, pad_top: 2, styles: [chip]}
+
+        - obj:
+            x: 240
+            y: 168
+            width: 236
+            height: 100
+            styles: [panel, glow_blue]
+            scrollbar_mode: "OFF"
+            scrollable: false
+            bg_color: 0x0c1230
+            bg_grad_dir: NONE
+            widgets:
+              - label: {id: l_atitle, x: 8, y: 5, text: "", text_font: fs, text_color: 0xaab8f0}
+              - label:
+                  id: t_day
+                  x: 96
+                  y: 3
+                  width: 38
+                  height: 12
+                  text: "СУТКИ"
+                  text_font: fs
+                  pad_top: 2
+                  clickable: true
+                  styles: [chip]
+                  on_click:
+                    - lambda: |-
+                        id(g_view) = 0;
+                        ESP_LOGI("dash", "tap: view 0");
+                    - script.execute: draw_charts
+                    - script.execute: dash_refresh
+              - label:
+                  id: t_week
+                  x: 137
+                  y: 3
+                  width: 44
+                  height: 12
+                  text: "НЕДЕЛЯ"
+                  text_font: fs
+                  pad_top: 2
+                  clickable: true
+                  styles: [chip]
+                  on_click:
+                    - lambda: |-
+                        id(g_view) = 1;
+                        ESP_LOGI("dash", "tap: view 1");
+                    - script.execute: draw_charts
+                    - script.execute: dash_refresh
+              - label:
+                  id: t_month
+                  x: 184
+                  y: 3
+                  width: 42
+                  height: 12
+                  text: "МЕСЯЦ"
+                  text_font: fs
+                  pad_top: 2
+                  clickable: true
+                  styles: [chip]
+                  on_click:
+                    - lambda: |-
+                        id(g_view) = 2;
+                        ESP_LOGI("dash", "tap: view 2");
+                    - script.execute: draw_charts
+                    - script.execute: dash_refresh
+              - canvas:
+                  id: area_cv
+                  x: 6
+                  y: 20
+                  width: 224
+                  height: 60
+              - label: {id: l_amax, x: 0, y: 20, width: 28, text: "", text_font: fs, text_align: CENTER, styles: [plate]}
+              - label: {id: l_anow, x: 0, y: 20, width: 28, text: "", text_font: fs, text_align: CENTER, styles: [plate]}
+              - label: {id: h0, x: 0, y: 85, width: 20, text: "", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {id: h1, x: 0, y: 85, width: 20, text: "", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {id: h2, x: 0, y: 85, width: 20, text: "", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {id: h3, x: 0, y: 85, width: 20, text: "", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {id: h4, x: 0, y: 85, width: 20, text: "", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {id: h5, x: 0, y: 85, width: 20, text: "", text_font: fs, text_align: CENTER, styles: [dim]}
+              - label: {id: h6, x: 0, y: 85, width: 20, text: "", text_font: fs, text_align: CENTER, styles: [dim]}
+    - id: p_retro
+      bg_opa: COVER
+      bg_color: 0x020802
+      text_color: ${fg}
+      text_font: fm
+      scrollable: false
+      widgets:
+        - obj: {x: 2, y: 2, width: 476, height: 268, radius: 4, border_width: 1, border_color: 0x0e4a05, scrollable: false}
+        - label: {x: 10, y: 8, text: "GARAGE.EXE  v1.0"}
+        - label: {id: l_clock, x: 250, y: 8, width: 220, text: "", text_align: RIGHT}
+        - label: {x: 10, y: 24, text: "════════════════════════════════════════════════════════════════════════════", text_font: fs, styles: [rdim]}
+
+        - label: {x: 10, y: 36, text: "МОЩНОСТЬ....", styles: [rdim]}
+        - label: {x: 10, y: 51, text: "РОЗЕТКИ.....", styles: [rdim]}
+        - label: {x: 10, y: 66, text: "СВЕТ........", styles: [rdim]}
+        - label: {x: 10, y: 81, text: "ЗАРЯДКА.....", styles: [rdim]}
+        - label: {x: 10, y: 96, text: "ТЕМПЕРАТУРА.", styles: [rdim]}
+        - label: {x: 10, y: 111, text: "ВЛАЖНОСТЬ...", styles: [rdim]}
+        - label: {x: 10, y: 126, text: "НАПРЯЖЕНИЕ..", styles: [rdim]}
+        - label: {x: 10, y: 141, text: "ЧАСТОТА.....", styles: [rdim]}
+        - label: {id: v0, x: 106, y: 36, width: 104, text: "", text_align: RIGHT}
+        - label: {id: v1, x: 106, y: 51, width: 104, text: "", text_align: RIGHT}
+        - label: {id: v2, x: 106, y: 66, width: 104, text: "", text_align: RIGHT}
+        - label: {id: v3, x: 106, y: 81, width: 104, text: "", text_align: RIGHT}
+        - label: {id: v4, x: 106, y: 96, width: 104, text: "", text_align: RIGHT}
+        - label: {id: v5, x: 106, y: 111, width: 104, text: "", text_align: RIGHT}
+        - label: {id: v6, x: 106, y: 126, width: 104, text: "", text_align: RIGHT}
+        - label: {id: v7, x: 106, y: 141, width: 104, text: "", text_align: RIGHT}
+        - label: {id: b0, x: 226, y: 36, text: ""}
+        - label: {id: b1, x: 226, y: 51, text: ""}
+        - label: {id: b2, x: 226, y: 66, text: ""}
+        - label: {id: b3, x: 226, y: 81, text: ""}
+        - label: {id: b4, x: 226, y: 96, text: ""}
+        - label: {id: b5, x: 226, y: 111, text: ""}
+        - label: {id: b6, x: 226, y: 126, text: ""}
+        - label: {id: b7, x: 226, y: 141, text: ""}
+
+        - label: {x: 10, y: 158, text: "════════════════════════════════════════════════════════════════════════════", text_font: fs, styles: [rdim]}
+        - label: {x: 10, y: 168, text: "ЖУРНАЛ"}
+        # журнал: время / что / состояние, новая строка ярче
+        - label: {id: e0t, x: 10, y: 184, text: ""}
+        - label: {id: e0w, x: 114, y: 184, text: ""}
+        - label: {id: e0s, x: 202, y: 184, text: ""}
+        - label: {id: e1t, x: 10, y: 197, text: "", styles: [rdim]}
+        - label: {id: e1w, x: 114, y: 197, text: "", styles: [rdim]}
+        - label: {id: e1s, x: 202, y: 197, text: "", styles: [rdim]}
+        - label: {id: e2t, x: 10, y: 210, text: "", styles: [rdim]}
+        - label: {id: e2w, x: 114, y: 210, text: "", styles: [rdim]}
+        - label: {id: e2s, x: 202, y: 210, text: "", styles: [rdim]}
+        - label: {id: e3t, x: 10, y: 223, text: "", styles: [rdim]}
+        - label: {id: e3w, x: 114, y: 223, text: "", styles: [rdim]}
+        - label: {id: e3s, x: 202, y: 223, text: "", styles: [rdim]}
+        - label: {id: e4t, x: 10, y: 236, text: "", styles: [rdim]}
+        - label: {id: e4w, x: 114, y: 236, text: "", styles: [rdim]}
+        - label: {id: e4s, x: 202, y: 236, text: "", styles: [rdim]}
+        - label: {id: e5t, x: 10, y: 249, text: "", styles: [rdim]}
+        - label: {id: e5w, x: 114, y: 249, text: "", styles: [rdim]}
+        - label: {id: e5s, x: 202, y: 249, text: "", styles: [rdim]}
+        - label: {id: l_cursor, x: 462, y: 252, text: "█"}
