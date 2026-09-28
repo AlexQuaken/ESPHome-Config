@@ -32,3 +32,5 @@ packages:
   base_sensors: !include packages/2common_sensors.yaml
   led: !include packages/3status_led_esp32.yaml
   esp32cam: !include packages/8esp32-cam.yaml
+  # диагностика сбоев, пробный запуск перед раскаткой на все платы (28.09.2026)
+  diag: !include packages/diag.yaml
