@@ -16,12 +16,13 @@
 # Раньше это были три отдельных файла на одну плату (esp32-s3-disp, -dash,
 # -retro), и на плате стоял тот, что залили последним. Объединены 28.09.2026.
 #
-# Как устроен экран. Все на LVGL: он несовместим с лямбдой дисплея, ESPHome
-# такое не собирает. Консоль и радар рисуются лямбдой на полноэкранном холсте
-# (страница p_raw, 480x272 в PSRAM) примерно 30 раз в секунду: лямбда прежняя, от
-# дисплея, только it в ней переходник, пишущий пиксели в буфер холста. Дашборд и
-# терминал это обычные страницы LVGL, обновляются раз в 2 секунды, в фоне тоже,
-# чтобы при переключении были свежими.
+# Как устроен экран. Дашборд и терминал это страницы LVGL, обновляются раз в
+# 2 секунды, в фоне тоже, чтобы при переключении были свежими. Лямбду дисплея
+# рядом с LVGL ESPHome не собирает, поэтому консоль и радар рисует скрипт
+# raw_draw прежней лямбдой от дисплея: it в ней переходник PanelIt, который
+# пишет пиксели в свой кадровый буфер в PSRAM, а готовый кадр уходит в панель
+# одним куском через draw_pixels_at. LVGL на это время на паузе. Через холст
+# LVGL было вдвое медленнее: LVGL второй раз перекладывал весь кадр, 10 FPS.
 #
 # Данные дашборда: текущие значения берутся из HA (platform homeassistant),
 # историю (24 часа мощности, 30 дней и 12 месяцев энергии) присылает действием
@@ -79,6 +80,8 @@ esphome:
             int32_t m;
             if (pref.load(&m) && m >= 0 && m <= 3) id(g_mode) = m;
             dash_snap::start(id(lvgl_comp).get_disp());
+            // консоль загрузки рисуется мимо LVGL
+            id(lvgl_comp).set_paused(true, false);
             id(log_lines).push_back("${board_name} booted");
             id(log_lines).push_back("Guition JC4827W543 480x272");
             ESP_LOGI("mode", "saved mode %d, shown after boot console", id(g_mode));
@@ -485,7 +488,7 @@ interval:
           }
   - interval: 100ms
     then:
-      - lambda: 'dash_snap::loop(id(lvgl_comp).get_disp());'
+      - lambda: 'if (id(g_shown) > 1) dash_snap::loop(id(lvgl_comp).get_disp());'
   - interval: 1s
     then:
       - lambda: |-
@@ -763,7 +766,14 @@ script:
           static const char *NAME[4] = {"Консоль", "Радар", "Дашборд", "Терминал"};
           id(g_booting) = false;
           id(g_shown) = m;
-          id(lvgl_comp).show_page(PAGE[m], LV_SCREEN_LOAD_ANIM_NONE, 0);
+          // консоль и радар пишут в панель сами, LVGL на это время спит
+          if (m <= 1) {
+            id(lvgl_comp).show_page(PAGE[m], LV_SCREEN_LOAD_ANIM_NONE, 0);
+            id(lvgl_comp).set_paused(true, false);
+          } else {
+            id(lvgl_comp).set_paused(false, false);
+            id(lvgl_comp).show_page(PAGE[m], LV_SCREEN_LOAD_ANIM_NONE, 0);
+          }
           if (save && id(g_mode) != m) {
             id(g_mode) = m;
             auto pref = global_preferences->make_preference<int32_t>(fnv1_hash("s3_disp_mode"), true);
@@ -774,43 +784,39 @@ script:
           id(mode_sel).publish_state(NAME[m]);
           ESP_LOGI("mode", "mode %d%s", m, save ? " (saved)" : "");
 
-  # Кадр консоли или радара на холсте raw_cv. Лямбда перенесена с дисплея прошлой
-  # esp32-s3-disp без изменений: it здесь не дисплей, а переходник CanvasIt,
-  # который пишет пиксели прямо в буфер холста (RGB565 в PSRAM). Штатное
-  # рисование LVGL (lv_draw_triangle, круги, сотня подписей) тянуло радар на 8 FPS.
+  # Кадр консоли или радара. Лямбда перенесена с дисплея прошлой esp32-s3-disp
+  # без изменений: it здесь не дисплей, а переходник PanelIt. Он пишет пиксели в
+  # кадровый буфер в PSRAM сразу в виде панели: повернутыми на 180 градусов (как
+  # rotation: 180 у LVGL) и RGB565 старшим байтом вперед, как ждет NV3041A.
+  # Такой буфер mipi_spi отправляет одним куском, без перекладки.
   - id: raw_draw
     then:
       - lambda: |-
           if (id(g_shown) > 1) return;
-          struct CanvasIt : public display::Display {
+          struct PanelIt : public display::Display {
             uint16_t *buf = nullptr;
-            uint32_t stride = 480;   // в пикселях
             void update() override {}
             display::DisplayType get_display_type() override { return display::DISPLAY_TYPE_COLOR; }
             int get_width_internal() override { return 480; }
             int get_height_internal() override { return 272; }
-            static uint16_t c565(Color c) { return lv_color_to_u16(lv_color_make(c.r, c.g, c.b)); }
+            static uint16_t c565(Color c) {
+              uint16_t v = ((c.r & 0xF8) << 8) | ((c.g & 0xFC) << 3) | (c.b >> 3);
+              return (v >> 8) | (v << 8);
+            }
             void draw_pixel_at(int x, int y, Color c) override {
               if ((unsigned) x >= 480u || (unsigned) y >= 272u) return;
               if (!this->get_clipping().inside(x, y)) return;
-              this->buf[y * this->stride + x] = c565(c);
+              this->buf[(271 - y) * 480 + (479 - x)] = c565(c);
             }
-            void fill(Color c) override {
-              uint16_t v = c565(c);
-              std::fill(this->buf, this->buf + this->stride * 272, v);
-            }
+            void fill(Color c) override { std::fill(this->buf, this->buf + 480 * 272, c565(c)); }
           };
-          static CanvasIt *cit = nullptr;
-          lv_obj_t *cv = (lv_obj_t *) id(raw_cv);
-          if (cit == nullptr) {
-            lv_draw_buf_t *db = lv_canvas_get_draw_buf(cv);
-            cit = new CanvasIt();
-            cit->buf = (uint16_t *) db->data;
-            cit->stride = db->header.stride / 2;
-            ESP_LOGI("raw", "canvas %ux%u stride %u cf %u", (unsigned) db->header.w, (unsigned) db->header.h,
-                     (unsigned) db->header.stride, (unsigned) db->header.cf);
+          static PanelIt *pit = nullptr;
+          if (pit == nullptr) {
+            pit = new PanelIt();
+            pit->buf = (uint16_t *) heap_caps_malloc(480 * 272 * 2, MALLOC_CAP_SPIRAM);
+            if (pit->buf == nullptr) { ESP_LOGE("raw", "no PSRAM for frame"); delete pit; pit = nullptr; return; }
           }
-          auto &it = *cit;
+          auto &it = *pit;
           id(frame_counter)++;
           uint32_t t0_us = micros();
           uint32_t t = millis();
@@ -1108,7 +1114,14 @@ script:
             it.printf(sb_x + (W - sb_x) / 2, sb_y_end + 5, id(f_console), id(c_green), TextAlign::TOP_CENTER, "%s", devc);
           }
           id(render_us) = micros() - t0_us;
-          lv_obj_invalidate(cv);
+          id(lcd).draw_pixels_at(0, 0, 480, 272, (const uint8_t *) pit->buf, display::COLOR_ORDER_RGB,
+                                 display::COLOR_BITNESS_565, true, 0, 0, 0);
+          // снимок экрана для :8080/screen.bmp: кадр обратно в вид глаза
+          if (dash_snap::req && dash_snap::fb != nullptr) {
+            for (int i = 0; i < 480 * 272; i++) dash_snap::fb[i] = pit->buf[480 * 272 - 1 - i];
+            dash_snap::req = false;
+            dash_snap::ready = true;
+          }
 
   # Полная инициализация NV3041A мимо драйвера, вручную кнопкой SW1: SWRESET,
   # вендорская последовательность модели, PIXFMT, MADCTL 0xC0 (rotation 180),
@@ -1549,6 +1562,8 @@ lvgl:
   rotation: 180
   touchscreens: [ts]
   buffer_size: 25%
+  # в консоли и радаре LVGL на паузе, тап не должен его будить
+  resume_on_input: false
   default_font: fs
   # Цвет подписей по умолчанию светлый, для дашборда. Без него подписи внутри
   # панелей берут темный цвет карточки из штатной темы LVGL. У терминала свой
@@ -1614,18 +1629,11 @@ lvgl:
     - id: rdim
       text_color: ${fg_dim}
   pages:
-    # консоль и радар, первой: с нее плата стартует (консоль загрузки)
+    # пустая черная под консолью и радаром (их рисует raw_draw мимо LVGL)
     - id: p_raw
       bg_opa: COVER
       bg_color: 0x000000
       scrollable: false
-      widgets:
-        - canvas:
-            id: raw_cv
-            x: 0
-            y: 0
-            width: 480
-            height: 272
     - id: p_dash
       bg_opa: COVER
       bg_color: 0x050918
