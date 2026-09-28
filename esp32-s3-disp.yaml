@@ -15,6 +15,27 @@
 substitutions:
   board_name: 'esp32-s3-disp'
   static_ip: '192.168.0.221'
+  # ID платы в таблице ESP: первый свободный номер выше 20 (21 у t-display, 22 у C6)
+  number: '23'
+  # подстановки для общих пакетов, те же, что дает 1wifi_api_ota_logger
+  update_interval: !secret update_interval
+  mifit_alex: !secret mifit_alex
+  mifit_ira: !secret mifit_ira
+  mifit_lila: !secret mifit_lila
+  alex_ble: !secret alex_ble
+  ira_ble: !secret ira_ble
+  lila_ble: !secret lila_ble
+
+# Общие пакеты, как у остальных плат. 1wifi_api_ota_logger сюда не подключен
+# намеренно: Wi-Fi, API (с сервисами консоли) и OTA у этой платы свои и по сети и
+# паролям с пакетом совпадают, а слияние задвоило бы блоки. ble_common тоже нет:
+# сканер свой, с окном 30% под одно радио S3, BLE-присутствие работает поверх него.
+packages:
+  base_sensors: !include packages/2common_sensors.yaml
+  ble_alex: !include packages/ble_alex.yaml
+  ble_ira: !include packages/ble_ira.yaml
+  ble_lila: !include packages/ble_lila.yaml
+  diag: !include packages/diag.yaml
 
 esphome:
   name: ${board_name}
@@ -184,9 +205,7 @@ logger:
           id(pending_time) = now;
           id(has_pending) = true;
 
-time:
-  - platform: homeassistant
-    id: homeassistant_time
+# time (homeassistant_time) приходит из packages/2common_sensors.yaml
 
 output:
   - platform: ledc
