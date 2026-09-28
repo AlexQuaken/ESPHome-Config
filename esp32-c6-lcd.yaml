@@ -17,11 +17,11 @@ substitutions:
 esphome:
   name: ${board_name}
   on_boot:
-    priority: -100
-    then:
-      - lambda: |-
-          id(log_lines).push_back("${board_name} booted");
-          id(log_lines).push_back("display OK");
+    - priority: -100
+      then:
+        - lambda: |-
+            id(log_lines).push_back("${board_name} booted");
+            id(log_lines).push_back("display OK");
 
 esp32:
   board: esp32-c6-devkitc-1
@@ -36,6 +36,7 @@ packages:
   ble_ira: !include packages/ble_ira.yaml
   ble_lila: !include packages/ble_lila.yaml
   ble_radar: !include packages/ble_radar.yaml
+  diag: !include packages/diag.yaml
 
 # Встроенный RGB LED на C6 (GPIO8) — вместо обычного status_led
 light:
