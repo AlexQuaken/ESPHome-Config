@@ -1,11 +1,17 @@
 # Guition JC4827W543C (ESP32-S3-WROOM-1 N4R8, 4.3" IPS 480x272, NV3041A по QSPI,
-# тач GT911). Экран гаража, одна прошивка на четыре режима:
+# тач GT911). Экран гаража, одна прошивка на пять режимов:
 #   0 консоль   лог платы строками, как на esp32-p4-disp
 #   1 радар     BLE-устройства вокруг, свои браслеты подписаны
 #   2 дашборд   неоновый KPI гаража (шаблон 002 exceltable.com)
 #   3 терминал  ретро GARAGE.EXE, полосы из блоков и журнал событий
+#   4 статусы   «Неоновые статусы» с календарем энергии и пин-панелью охраны
+#               (garage_status_ui.h, выбран 28.09.2026 из 40 макетов)
 #
-# Тап по экрану или кнопка BOOT переключают режим по кругу. Режим пишется в NVS сразу
+# Тап по экрану или кнопка BOOT переключают режим по кругу. В режиме 4 тап
+# работает как кнопки: СВЕТ переключает свет, ЗАРЯДКА линию зарядки авто,
+# ОХРАНА ставит на охрану, а снимает только через пин-панель (код в secrets,
+# минута на ввод), тап по графику мощности открывает календарь на 5 минут.
+# Сменить режим оттуда: удержать палец 1,5 с, BOOT или селект в HA. Режим пишется в NVS сразу
 # (не раз в минуту, как globals) и после перезагрузки включается сам, когда
 # консоль загрузки отработает: плата подключилась к HA и прошло еще 5 секунд.
 # Тап во время загрузки переключает сразу. Из HA режим ставится селектом
@@ -50,6 +56,9 @@ substitutions:
   alex_ble: !secret alex_ble
   ira_ble: !secret ira_ble
   lila_ble: !secret lila_ble
+  # статусы: пин снятия с охраны (только на плате, в HA охрана без кода) и тариф
+  alarm_pin: !secret garage_alarm_pin
+  tariff: '4.32'
   # терминал: ядовито-зеленый, с 25.09.2026 (до этого был янтарь 0xffb000)
   fg: '0x39ff14'
   fg_dim: '0x1c9a0a'
@@ -71,6 +80,7 @@ esphome:
   merge_warnings: false
   includes:
     - dash_snapshot.h
+    - garage_status_ui.h
   on_boot:
     - priority: -100
       then:
@@ -78,8 +88,19 @@ esphome:
             // режим из NVS, пишется в show_mode
             auto pref = global_preferences->make_preference<int32_t>(fnv1_hash("s3_disp_mode"), true);
             int32_t m;
-            if (pref.load(&m) && m >= 0 && m <= 3) id(g_mode) = m;
+            if (pref.load(&m) && m >= 0 && m <= 4) id(g_mode) = m;
             dash_snap::start(id(lvgl_comp).get_disp());
+            // статусы: интерфейс строится кодом на странице p_status
+            gs::EV = &id(g_ev);
+            gs::EV_BASE = &id(g_ev_base);
+            gs::LAST = &id(g_last);
+            gs::PIN = "${alarm_pin}";
+            gs::TARIFF = ${tariff};
+            gs::cb_arm = []() { id(gs_arm).execute(); };
+            gs::cb_disarm = []() { id(gs_disarm).execute(); };
+            gs::cb_light = []() { id(gs_light).execute(); };
+            gs::cb_charge = []() { id(gs_charge).execute(); };
+            gs::init(id(p_status)->obj, id(fs)->get_lv_font(), id(fm)->get_lv_font(), id(fb)->get_lv_font());
             // консоль загрузки рисуется мимо LVGL
             id(lvgl_comp).set_paused(true, false);
             id(log_lines).push_back("${board_name} booted");
@@ -89,6 +110,7 @@ esphome:
         - script.execute: draw_charts
         - script.execute: dash_refresh
         - script.execute: retro_refresh
+        - script.execute: gs_refresh
         - wait_until:
             condition:
               api.connected:
@@ -157,8 +179,31 @@ api:
             id(g_first_day) = first_day;
             ESP_LOGI("dash", "history: %u hours, %u months, %u days", (unsigned) power.size(),
                      (unsigned) months.size(), (unsigned) days.size());
+            gs::H_VER++;
         - script.execute: draw_charts
         - script.execute: dash_refresh
+        - script.execute: gs_refresh
+    # События статусов за 72 часа, разово из истории HA: lane 0 ворота, 1 свет,
+    # 2 охрана, 3 движение; ts время события (unix). last время последнего события
+    # по каждой дорожке, даже если оно старше 72 часов. Дальше плата пишет сама.
+    - action: seed_events
+      variables:
+        lane: int[]
+        ts: int[]
+        last: int[]
+      then:
+        - lambda: |-
+            auto t = id(homeassistant_time).now();
+            if (!t.is_valid()) { ESP_LOGW("gs", "seed_events: no time yet"); return; }
+            uint32_t now = t.timestamp;
+            id(g_ev).fill(0);
+            id(g_ev_base) = now / 3600;
+            size_t n = std::min(lane.size(), ts.size());
+            for (size_t i = 0; i < n; i++) gs::ev_add(lane[i], (uint32_t) ts[i], now);
+            for (size_t k = 0; k < 4 && k < last.size(); k++) id(g_last)[k] = (uint32_t) last[k];
+            gs::EV_VER++;
+            ESP_LOGI("gs", "seeded %u events", (unsigned) n);
+        - script.execute: gs_refresh
     - action: console_log
       variables:
         line: string
@@ -172,7 +217,7 @@ api:
     - action: console_clear
       then:
         - lambda: 'id(log_lines).clear();'
-    # 0 консоль, 1 радар, 2 дашборд, 3 терминал; запоминается как тап
+    # 0 консоль, 1 радар, 2 дашборд, 3 терминал, 4 статусы; запоминается как тап
     - action: set_display_mode
       variables:
         mode: int
@@ -308,14 +353,20 @@ touchscreen:
       mirror_y: true
     # Смена режима по отпусканию пальца. Координаты берутся у LVGL (последняя
     # точка нажатия, как видит глаз): в дашборде панель графика отдана вкладкам.
+    on_touch:
+      then:
+        - lambda: 'id(g_touch_ms) = millis();'
     on_release:
       then:
         - lambda: |-
             lv_point_t p = {0, 0};
             lv_indev_t *ind = lv_indev_get_next(nullptr);
             if (ind != nullptr) lv_indev_get_point(ind, &p);
-            ESP_LOGI("touch", "tap x=%d y=%d mode=%d", (int) p.x, (int) p.y, id(g_shown));
+            uint32_t held = millis() - id(g_touch_ms);
+            ESP_LOGI("touch", "tap x=%d y=%d mode=%d held=%ums", (int) p.x, (int) p.y, id(g_shown), (unsigned) held);
             if (id(g_shown) == 2 && p.x >= 240 && p.y >= 168) return;
+            // статусы: короткий тап это кнопки экрана, режим меняет только удержание
+            if (id(g_shown) == 4 && (held < 1500 || gs::pin_is_open())) return;
             id(show_mode).execute(id(g_shown) + 1, true);
 
 # Кнопка BOOT (GPIO0, слева на обороте платы): короткое нажатие меняет режим, как
@@ -353,13 +404,17 @@ binary_sensor:
     id: ha_gate
     entity_id: binary_sensor.garage_gate
     on_state:
-      - lambda: 'id(log_event).execute("ВОРОТА", x ? "открыты" : "закрыты");'
+      - lambda: |-
+          id(log_event).execute("ВОРОТА", x ? "открыты" : "закрыты");
+          if (x) id(gs_event).execute(0);
   - platform: homeassistant
     internal: true
     id: ha_motion
     entity_id: binary_sensor.garage_motion_any
     on_state:
-      - lambda: 'id(log_event).execute("ДВИЖЕНИЕ", x ? "есть" : "нет");'
+      - lambda: |-
+          id(log_event).execute("ДВИЖЕНИЕ", x ? "есть" : "нет");
+          if (x) id(gs_event).execute(3);
   # по нему HA понимает, что плата вышла на связь, и сразу шлет историю дашборду
   - platform: status
     name: Status
@@ -386,6 +441,7 @@ sensor:
   - {platform: homeassistant, internal: true, id: ha_bat1, entity_id: sensor.garage_climate_battery}
   - {platform: homeassistant, internal: true, id: ha_bat2, entity_id: sensor.garage_gate_battery}
   - {platform: homeassistant, internal: true, id: ha_bat3, entity_id: sensor.garage_motion_battery}
+  - {platform: homeassistant, internal: true, id: ha_light_to, entity_id: input_number.garage_light_timeout}
   - platform: homeassistant
     internal: true
     id: ha_p_sock
@@ -404,6 +460,13 @@ text_sensor:
   - {platform: homeassistant, internal: true, id: ha_chg_on, entity_id: input_boolean.garage_charge_enabled}
   - {platform: homeassistant, internal: true, id: ha_chg_start, entity_id: input_datetime.garage_charge_start}
   - {platform: homeassistant, internal: true, id: ha_chg_end, entity_id: input_datetime.garage_charge_end}
+  # сама линия зарядки авто: ее переключает тап по панели ЗАРЯДКА в статусах
+  - platform: homeassistant
+    internal: true
+    id: ha_chg_sw
+    entity_id: switch.zariadka_avto
+    on_value:
+      - script.execute: gs_refresh
   - platform: homeassistant
     internal: true
     id: ha_light
@@ -412,6 +475,8 @@ text_sensor:
       - lambda: |-
           if (x == "on") id(log_event).execute("СВЕТ", "вкл");
           else if (x == "off") id(log_event).execute("СВЕТ", "выкл");
+          if (x == "on") id(gs_event).execute(1);
+          id(gs_refresh).execute();
   - platform: homeassistant
     internal: true
     id: ha_alarm
@@ -422,12 +487,14 @@ text_sensor:
                           x == "arming" ? "ставится" : x == "pending" ? "ожидание" :
                           x == "triggered" ? "ТРЕВОГА" : nullptr;
           if (s) id(log_event).execute("ОХРАНА", s);
+          if (x.rfind("armed", 0) == 0 || x == "disarmed" || x == "triggered") id(gs_event).execute(2);
+          id(gs_refresh).execute();
 
 select:
   - platform: template
     name: ${board_name} Display Mode
     id: mode_sel
-    options: ["Консоль", "Радар", "Дашборд", "Терминал"]
+    options: ["Консоль", "Радар", "Дашборд", "Терминал", "Статусы"]
     optimistic: true
     set_action:
       - lambda: |-
@@ -486,11 +553,13 @@ interval:
     then:
       - script.execute: dash_refresh
       - script.execute: retro_refresh
+      - script.execute: gs_refresh
   - interval: 500ms
     then:
       - lambda: |-
           // курсор и часы терминала; текст часов меняется раз в секунду
           id(g_cursor) = !id(g_cursor);
+          if (id(g_shown) == 4) gs::tick(id(homeassistant_time).now());
           lv_obj_set_style_text_opa((lv_obj_t *) id(l_cursor), id(g_cursor) ? LV_OPA_COVER : LV_OPA_TRANSP, LV_PART_MAIN);
           auto t = id(homeassistant_time).now();
           if (t.is_valid()) {
@@ -579,7 +648,7 @@ font:
     id: fs
     size: 8
     bpp: 1
-    glyphs: &glyphs " !%()+,-./0123456789:;°·ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюя═█░▒"
+    glyphs: &glyphs " !%()+,-./0123456789:;°·≈ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюя═█░▒"
   # em у этого шрифта 16 пикселей (1600 единиц, 100 на пиксель), ячейка 8x14.
   # При size: 14 он сжимался в 0.875 и буквы ломались, родной размер 16.
   - file: "fonts/PxPlus_IBM_VGA_8x14.ttf"
@@ -764,6 +833,23 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'true'
+  # ---- статусы: события 72 часа (72 часовых ведра x 4 дорожки, последнее это
+  # текущий час; g_ev_base его номер от эпохи) и время последнего события
+  # по дорожке. Во флеше, чтобы перезагрузка не обнуляла ленту.
+  - id: g_ev
+    type: std::array<uint16_t, 288>
+    restore_value: yes
+  - id: g_ev_base
+    type: uint32_t
+    restore_value: yes
+    initial_value: '0'
+  - id: g_last
+    type: std::array<uint32_t, 4>
+    restore_value: yes
+  - id: g_touch_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
 
 script:
   # Показать режим m (0..3, по кругу). save: запомнить в NVS как выбор человека.
@@ -774,11 +860,14 @@ script:
       save: bool
     then:
       - lambda: |-
-          m = ((m % 4) + 4) % 4;
-          static const uint8_t PAGE[4] = {0, 0, 1, 2};   // p_raw, p_raw, p_dash, p_retro
-          static const char *NAME[4] = {"Консоль", "Радар", "Дашборд", "Терминал"};
+          m = ((m % 5) + 5) % 5;
+          static const uint8_t PAGE[5] = {0, 0, 1, 2, 3};   // p_raw, p_raw, p_dash, p_retro, p_status
+          static const char *NAME[5] = {"Консоль", "Радар", "Дашборд", "Терминал", "Статусы"};
           id(g_booting) = false;
           id(g_shown) = m;
+          // из статусов уходим с главного экрана: календарь и пин-панель закрыть
+          gs::pin_close();
+          gs::CUR_PAGE = 0;
           // консоль и радар пишут в панель сами, LVGL на это время спит
           if (m <= 1) {
             id(lvgl_comp).show_page(PAGE[m], LV_SCREEN_LOAD_ANIM_NONE, 0);
@@ -1526,6 +1615,79 @@ script:
           if (!id(g_charging) && p > 300) { id(g_charging) = true; id(log_event).execute("ЗАРЯДКА", "старт"); }
           else if (id(g_charging) && p < 100) { id(g_charging) = false; id(log_event).execute("ЗАРЯДКА", "стоп"); }
 
+  # Статусы: данные из HA в интерфейс. Рисует только когда режим на экране.
+  - id: gs_refresh
+    then:
+      - lambda: |-
+          if (id(g_shown) != 4) return;
+          gs::State st;
+          st.gate_open = id(ha_gate).state;
+          st.motion = id(ha_motion).state;
+          st.light_on = id(ha_light).state == "on";
+          st.alarm = id(ha_alarm).state;
+          st.charge_on = id(ha_chg_sw).state == "on";
+          float lt = id(ha_light_to).state;
+          st.light_timeout = std::isnan(lt) ? 5 : (int) lroundf(lt);
+          st.p_now = id(ha_p_now).state;
+          st.volt = id(ha_volt).state;
+          st.p_chg = id(ha_line).state == "Розетки гаража" ? id(ha_p_sock).state : id(ha_p_chg).state;
+          st.d_sock = id(ha_d_sock).state;
+          st.d_light = id(ha_d_light).state;
+          st.d_chg = id(ha_d_chg).state;
+          st.m_sock = id(ha_m_sock).state;
+          st.m_light = id(ha_m_light).state;
+          st.m_chg = id(ha_m_chg).state;
+          st.sched_on = id(ha_chg_on).state == "on";
+          auto hm = [](const std::string &v, const char *def) { return v.size() >= 5 ? v.substr(0, 5) : std::string(def); };
+          st.sched_start = hm(id(ha_chg_start).state, "23:00");
+          st.sched_end = hm(id(ha_chg_end).state, "07:00");
+          st.line_name = id(ha_line).state;
+          st.now = id(homeassistant_time).now();
+          st.time_ok = st.now.is_valid();
+          gs::H_POWER = id(g_power);
+          gs::H_MONTHS = id(g_months);
+          gs::H_DAYS = id(g_days);
+          gs::H_FIRST_HOUR = id(g_first_hour);
+          gs::refresh(st);
+
+  # событие в ленту статусов (после загрузки, первые состояния не события)
+  - id: gs_event
+    mode: queued
+    parameters:
+      lane: int
+    then:
+      - lambda: |-
+          if (!id(g_log_armed)) return;
+          auto t = id(homeassistant_time).now();
+          if (!t.is_valid()) return;
+          gs::ev_live(lane, t.timestamp);
+
+  # команды касаний статусов; нужен allow_service_calls у платы в HA
+  - id: gs_charge
+    then:
+      - homeassistant.action:
+          action: switch.toggle
+          data:
+            entity_id: switch.zariadka_avto
+  - id: gs_light
+    then:
+      - homeassistant.action:
+          action: switch.toggle
+          data:
+            entity_id: switch.svet_garazh
+  - id: gs_arm
+    then:
+      - homeassistant.action:
+          action: alarm_control_panel.alarm_arm_away
+          data:
+            entity_id: alarm_control_panel.shliuz_4_alarm
+  - id: gs_disarm
+    then:
+      - homeassistant.action:
+          action: alarm_control_panel.alarm_disarm
+          data:
+            entity_id: alarm_control_panel.shliuz_4_alarm
+
   - id: retro_refresh
     then:
       - lambda: |-
@@ -2071,3 +2233,8 @@ lvgl:
         - label: {id: e5w, x: 114, y: 249, text: "", styles: [rdim]}
         - label: {id: e5s, x: 202, y: 249, text: "", styles: [rdim]}
         - label: {id: l_cursor, x: 462, y: 252, text: "█", styles: [rfg]}
+    # статусы: пустая страница, все виджеты строит gs::init (garage_status_ui.h)
+    - id: p_status
+      bg_opa: COVER
+      bg_color: 0x060414
+      scrollable: false
