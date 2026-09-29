@@ -100,7 +100,7 @@ static void ev_live(int lane, uint32_t now_epoch) {
 }
 
 // колбэки команд касаний (ставит YAML)
-static std::function<void()> cb_arm, cb_disarm, cb_light, cb_charge;
+static std::function<void()> cb_arm, cb_disarm, cb_light, cb_charge, cb_flash_stop;
 static std::string PIN = "0000";
 static float TARIFF = 4.32f;  // грн за кВт·ч, условный
 
@@ -1336,6 +1336,27 @@ static void pin_open() {
   pin_draw_cd(60);
   lv_obj_remove_flag(pin_layer, LV_OBJ_FLAG_HIDDEN);
   lv_obj_move_foreground(pin_layer);
+}
+
+// ------------------------------------------------------------------ мигание охраны
+// Пока экран мигает, поверх всего лежит прозрачный слой на lv_layer_top: первый тап
+// попадает в него, гасит мигание и не нажимает кнопку под пальцем.
+static lv_obj_t *flash_layer = nullptr;
+static void on_flash(lv_event_t *e) {
+  auto c = lv_event_get_code(e);
+  if (c == LV_EVENT_PRESSED && cb_flash_stop) cb_flash_stop();
+  if (c == LV_EVENT_RELEASED || c == LV_EVENT_PRESS_LOST) lv_obj_add_flag(flash_layer, LV_OBJ_FLAG_HIDDEN);
+}
+static void flash_guard(bool on) {
+  if (flash_layer == nullptr) {
+    flash_layer = obj(lv_layer_top(), 0, 0, 480, 272);
+    lv_obj_add_flag(flash_layer, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(flash_layer, on_flash, LV_EVENT_ALL, nullptr);
+    lv_obj_add_flag(flash_layer, LV_OBJ_FLAG_HIDDEN);
+  }
+  // включаем сразу; выключаем тоже сразу, кроме случая, когда палец еще на слое
+  if (on) lv_obj_remove_flag(flash_layer, LV_OBJ_FLAG_HIDDEN);
+  else if (!lv_obj_has_state(flash_layer, LV_STATE_PRESSED)) lv_obj_add_flag(flash_layer, LV_OBJ_FLAG_HIDDEN);
 }
 
 // ------------------------------------------------------------------ навигация, обновление
