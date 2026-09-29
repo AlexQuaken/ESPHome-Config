@@ -1409,7 +1409,8 @@ static void refresh(const State &st) {
   set_text(T[0].sub, dm(last_of(0)).c_str());
   bool armed = st.alarm.rfind("armed", 0) == 0, trig = st.alarm == "triggered";
   const char *at = armed ? "ВКЛЮЧЕНА" : trig ? "ТРЕВОГА" : st.alarm == "disarmed" ? "СНЯТА" :
-                   st.alarm == "arming" ? "ВЗВОД" : st.alarm == "pending" ? "ОЖИДАНИЕ" : "НЕТ СВЯЗИ";
+                   st.alarm == "arming" ? "ВЗВОД" : st.alarm == "pending" ? "ОЖИДАНИЕ" :
+                   st.alarm.empty() ? "--" : "НЕТ СВЯЗИ";  // пусто: HA еще не прислал состояние после загрузки
   set_text(T[1].val, at);
   set_text(T[1].sub, dm(last_of(2)).c_str());
   tile_style(T[1], armed || trig, trig ? 0xff2d55 : 0xe628be, trig ? 0xff7a1a : 0xff8232, MAGENTA, true);
