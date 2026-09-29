@@ -1544,3 +1544,14 @@ lvgl:
       bg_opa: COVER
       bg_color: 0x000000
       scrollable: false
+      widgets:
+        # Скрытый холст 1x1 держит LV_USE_CANVAS в сборке: ESPHome включает
+        # холст в lv_conf только при canvas в YAML, а статусы рисуют холстами
+        # из C++. Без него сборка падает (lv_canvas_create не объявлен).
+        - canvas:
+            id: gs_keep_canvas
+            x: 0
+            y: 0
+            width: 1
+            height: 1
+            hidden: true
