@@ -15,9 +15,11 @@
 # действие set_display_mode (0..3). Режим пишется в NVS сразу и после
 # перезагрузки включается сам, когда консоль загрузки отработает.
 #
-# Пока шлюз гаража ставится на охрану (arming, он пищит), экран минуту мигает
-# аппаратной инверсией панели дважды в секунду. Гаснет само через минуту, при
-# снятии с охраны или от первого тапа (этот тап кнопки не нажимает).
+# Ворота открыли на охране (пульт HA в pending, идет отсчет 60 секунд до
+# сирены): экран мигает аппаратной инверсией панели дважды в секунду. Гаснет
+# при снятии, по концу отсчета или от первого тапа (этот тап кнопки не нажимает).
+# Охрана это manual-пульт HA alarm_control_panel.garazh_okhrana, снимают его
+# BLE-метки Alex, Иры и Лили (garage_tag_* ниже) или пин на экране.
 #
 # Раньше это были три отдельных файла на одну плату (esp32-s3-disp, -dash,
 # -retro), и на плате стоял тот, что залили последним. Объединены 28.09.2026.
@@ -67,11 +69,11 @@ substitutions:
 # намеренно: Wi-Fi, API (со своими действиями) и OTA у этой платы свои и по сети и
 # паролям с пакетом совпадают, а слияние задвоило бы блоки. ble_common тоже нет:
 # сканер свой, с окном 30% под одно радио S3, BLE-присутствие работает поверх него.
+# ble_alex/ira/lila тоже нет (с 30.09.2026): экран стоит в гараже, и его метки не
+# должны попадать в домашнее присутствие (group.ble_* по префиксу <кто>_ble_).
+# Свои метки garage_tag_* ниже, по ним HA снимает гараж с охраны.
 packages:
   base_sensors: !include packages/2common_sensors.yaml
-  ble_alex: !include packages/ble_alex.yaml
-  ble_ira: !include packages/ble_ira.yaml
-  ble_lila: !include packages/ble_lila.yaml
   diag: !include packages/diag.yaml
 
 esphome:
@@ -415,6 +417,25 @@ binary_sensor:
       - lambda: |-
           id(log_event).execute("ДВИЖЕНИЕ", x ? "есть" : "нет");
           if (x) id(gs_event).execute(3);
+  # BLE-метки для снятия гаража с охраны (packages/garage_home.yaml в HA).
+  # Имена свои, не <кто>_ble_: в домашние группы присутствия они не попадают.
+  # timeout 30 с вместо 5 минут: уехавший хозяин должен пропасть быстро, иначе
+  # его «висящая» метка сняла бы охрану тому, кто откроет ворота следом.
+  - platform: ble_presence
+    mac_address: ${mifit_alex}
+    name: Garage Tag Alex
+    id: tag_alex
+    timeout: 30s
+  - platform: ble_presence
+    mac_address: ${mifit_ira}
+    name: Garage Tag Ira
+    id: tag_ira
+    timeout: 30s
+  - platform: ble_presence
+    mac_address: ${mifit_lila}
+    name: Garage Tag Lila
+    id: tag_lila
+    timeout: 30s
   # по нему HA понимает, что плата вышла на связь, и сразу шлет историю дашборду
   - platform: status
     name: Status
@@ -480,21 +501,22 @@ text_sensor:
   - platform: homeassistant
     internal: true
     id: ha_alarm
-    entity_id: alarm_control_panel.shliuz_4_alarm
+    # manual-пульт HA, с 30.09.2026 вместо родной охраны Шлюза 4
+    entity_id: alarm_control_panel.garazh_okhrana
     on_value:
       - lambda: |-
           const char *s = x.rfind("armed", 0) == 0 ? "под охраной" : x == "disarmed" ? "снята" :
-                          x == "arming" ? "ставится" : x == "pending" ? "ожидание" :
+                          x == "arming" ? "ставится" : x == "pending" ? "отсчет" :
                           x == "triggered" ? "ТРЕВОГА" : nullptr;
           if (s) id(log_event).execute("ОХРАНА", s);
           if (x.rfind("armed", 0) == 0 || x == "disarmed" || x == "triggered") id(gs_event).execute(2);
-          // шлюз пищит, пока ставится на охрану: минуту мигать экраном
-          if (id(g_log_armed) && (x == "arming" || x == "pending" || x == "triggered") && id(g_flash_until) == 0) {
+          // ворота открыли на охране, идет отсчет до сирены: мигать экраном
+          if (id(g_log_armed) && x == "pending" && id(g_flash_until) == 0) {
             id(g_flash_until) = millis() + 60000;
             gs::flash_guard(true);
             ESP_LOGI("flash", "alarm %s, screen flashes", x.c_str());
           }
-          if (x == "disarmed" && id(g_flash_until) != 0) id(flash_stop).execute();
+          if (x != "pending" && id(g_flash_until) != 0) id(flash_stop).execute();
           id(gs_refresh).execute();
 
 select:
@@ -1392,13 +1414,13 @@ script:
       - homeassistant.action:
           action: alarm_control_panel.alarm_arm_away
           data:
-            entity_id: alarm_control_panel.shliuz_4_alarm
+            entity_id: alarm_control_panel.garazh_okhrana
   - id: gs_disarm
     then:
       - homeassistant.action:
           action: alarm_control_panel.alarm_disarm
           data:
-            entity_id: alarm_control_panel.shliuz_4_alarm
+            entity_id: alarm_control_panel.garazh_okhrana
 
   - id: retro_refresh
     then:
