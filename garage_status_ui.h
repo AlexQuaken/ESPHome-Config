@@ -290,6 +290,7 @@ static lv_obj_t *cg_box, *cg_title, *cg_tog, *cg_knob, *cg_state, *cg_win, *cg_s
 static const uint32_t LANE_C[4] = {PINK, AMBER, MAGENTA, PURPLE};
 static const char *LANE_N[4] = {"ВОРОТА", "СВЕТ", "ОХРАНА", "ДВИЖЕНИЕ"};
 static int CUR_PAGE = 0;  // 0 главный, 1 календарь
+static uint32_t pending_ms = 0;  // millis() начала отсчета до сирены, 0 = отсчета нет
 static uint32_t cal_open_ms = 0, pin_open_ms = 0;
 static State S;
 // TZ в libc платы не выставлен (localtime_r дает UTC), местное время считаем
@@ -1284,7 +1285,7 @@ static void build_pin(lv_obj_t *scr) {
   glow(p, PURPLE, 24, 170);
   // слева: заголовок, щит, точки кода, отсчет
   lbl(p, 14, 12, FM, TEXT, "СНЯТИЕ С ОХРАНЫ");
-  lbl(p, 14, 30, FS, SUB, "гараж, шлюз 4");
+  lbl(p, 14, 30, FS, SUB, "домашний гараж");
   lv_obj_t *sh = canvas(p, 14, 48, 20, 20);
   icon(sh, 1, MAGENTA);
   lbl(p, 40, 53, FS, SUB, "введите пин-код");
@@ -1393,6 +1394,12 @@ static void tick(const esphome::ESPTime &t) {
     set_text(l_clock, b);
   }
   uint32_t now = esphome::millis();
+  if (pending_ms) {
+    int left = 60 - (int) ((now - pending_ms) / 1000);
+    char b[24];
+    snprintf(b, sizeof b, "до сирены %d с", left < 0 ? 0 : left);
+    set_text(T[1].sub, b);
+  }
   if (CUR_PAGE != 0) {
     int left = 300 - (int) ((now - cal_open_ms) / 1000);
     if (left <= 0) show_page(0);
@@ -1428,13 +1435,18 @@ static void refresh(const State &st) {
   // плитки
   set_text(T[0].val, st.gate_open ? "ОТКРЫТЫ" : "ЗАКРЫТЫ");
   set_text(T[0].sub, dm(last_of(0)).c_str());
-  bool armed = st.alarm.rfind("armed", 0) == 0, trig = st.alarm == "triggered";
+  bool armed = st.alarm.rfind("armed", 0) == 0, trig = st.alarm == "triggered", pend = st.alarm == "pending";
   const char *at = armed ? "ВКЛЮЧЕНА" : trig ? "ТРЕВОГА" : st.alarm == "disarmed" ? "СНЯТА" :
-                   st.alarm == "arming" ? "ВЗВОД" : st.alarm == "pending" ? "ОЖИДАНИЕ" :
+                   st.alarm == "arming" ? "ВЗВОД" : pend ? "ОТСЧЕТ" :
                    st.alarm.empty() ? "--" : "НЕТ СВЯЗИ";  // пусто: HA еще не прислал состояние после загрузки
   set_text(T[1].val, at);
-  set_text(T[1].sub, dm(last_of(2)).c_str());
-  tile_style(T[1], armed || trig, trig ? 0xff2d55 : 0xe628be, trig ? 0xff7a1a : 0xff8232, MAGENTA, true);
+  // отсчет до сирены плата считает сама от момента перехода в pending, подпись
+  // обновляет tick() раз в секунду
+  if (pend && pending_ms == 0) pending_ms = esphome::millis();
+  if (!pend) pending_ms = 0;
+  if (!pend) set_text(T[1].sub, dm(last_of(2)).c_str());
+  bool hot = armed || trig || pend;
+  tile_style(T[1], hot, (trig || pend) ? 0xff2d55 : 0xe628be, (trig || pend) ? 0xff7a1a : 0xff8232, MAGENTA, true);
   set_text(T[2].val, st.light_on ? "ВКЛ" : "ВЫКЛ");
   snprintf(b, sizeof b, "таймер %d мин", st.light_timeout);
   set_text(T[2].sub, b);
