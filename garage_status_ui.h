@@ -101,7 +101,8 @@ static void ev_live(int lane, uint32_t now_epoch) {
 
 // колбэки команд касаний (ставит YAML)
 static std::function<void()> cb_arm, cb_disarm, cb_light, cb_charge, cb_flash_stop;
-static std::string PIN = "0000";
+// пин-коды снятия с охраны, подходит любой (из secrets через YAML)
+static std::vector<std::string> PINS;
 static float TARIFF = 4.32f;  // грн за кВт·ч, условный
 
 // ------------------------------------------------------------------ помощники LVGL
@@ -1258,7 +1259,7 @@ static void on_key(lv_event_t *e) {
   pin_buf.push_back('0' + k);
   pin_dots(MAGENTA);
   if (pin_buf.size() == 4) {
-    if (pin_buf == PIN) {
+    if (std::find(PINS.begin(), PINS.end(), pin_buf) != PINS.end()) {
       set_text(p_msg, "код принят");
       set_color(p_msg, CYAN);
       if (cb_disarm) cb_disarm();
