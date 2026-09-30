@@ -60,6 +60,8 @@ substitutions:
   lila_ble: !secret lila_ble
   # статусы: пин снятия с охраны (только на плате, в HA охрана без кода) и тариф
   alarm_pin: !secret garage_alarm_pin
+  # второй пин, с 30.09.2026, снимает так же
+  alarm_pin2: !secret garage_alarm_pin2
   tariff: '4.32'
   # терминал: ядовито-зеленый, с 25.09.2026 (до этого был янтарь 0xffb000)
   fg: '0x39ff14'
@@ -97,7 +99,7 @@ esphome:
             gs::EV_BASE = &id(g_ev_base);
             gs::LAST = &id(g_last);
             gs::JLOG = &id(g_log);
-            gs::PIN = "${alarm_pin}";
+            gs::PINS = {"${alarm_pin}", "${alarm_pin2}"};
             gs::TARIFF = ${tariff};
             gs::cb_arm = []() { id(gs_arm).execute(); };
             gs::cb_disarm = []() { id(gs_disarm).execute(); };
