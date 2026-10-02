@@ -137,9 +137,14 @@ inline float rate_bar_h(int i, int minutes) {
 }
 
 // ---------------------------------------------------------------- загрузка
-// Экран загрузки в духе dmesg и systemd. Строки про BLE, NVS, датчики и Wi-Fi
-// настоящие, строки про ЭБУ, зажигание и подвеску это декорация: к проводке
-// мотоцикла плата не подключена.
+// Экран загрузки в духе dmesg и systemd. Настоящие строки: память, NVS, BLE,
+// датчики, Wi-Fi. Остальное это декорация, но собранная из руководства
+// 350 EXC-F SIX DAYS 2025 (en): разъем диагностики и OCU под сиденьем,
+// выходы OCU A..E, Li-ion HJTZ5S 2,0 А·ч, генератор 14 В 200 Вт, главный
+// предохранитель 20 А, свеча NGK LMAR9AI-10, холостой 1950-2050 об/мин,
+// обучение положения заслонки, датчик передачи, карты STANDARD/ADVANCED,
+// TC и QS, лампа MIL, WP XPLOR и WP PDS. К проводке мотоцикла плата не
+// подключена, сами проверки она не делает.
 
 enum BootStyle { B_KERN = 0, B_OK = 1, B_HEAD = 2, B_WARN = 3, B_END = -1 };
 
@@ -154,58 +159,74 @@ struct BootCtx {
 
 // Время появления строки k, мс от старта экрана загрузки.
 inline uint32_t boot_at(int k) {
-  static const uint16_t AT[] = {0,    150,  320,  450,  600,  820,  1000, 1250,
-                                1700, 2050, 2350, 2600, 2850, 3100, 3350, 3500,
-                                3650, 3800, 3950, 4500, 4900, 5300, 5700};
+  static const uint16_t AT[] = {
+      0,     400,   800,   1200,  1700,  2300,  3000,  3700,  4600,  5600,
+      6300,  6900,  7600,  8200,  8600,  9000,  9500,  11000, 11500, 12200,
+      12900, 13500, 14100, 14600, 15200, 15900, 16600, 17200, 17500, 17800,
+      18100, 18400, 19100, 19800, 20500, 21200};
   const int n = sizeof(AT) / sizeof(AT[0]);
   return k < n ? AT[k] : 0xFFFFFFFFu;
 }
 
 inline int boot_line(int k, const BootCtx &c, char *t, size_t n) {
   switch (k) {
-    case 0: snprintf(t, n, "KTM TPMS-OS 1.0  //  350 EXC-F"); return B_HEAD;
-    case 1: snprintf(t, n, "Booting SIX DAYS kernel..."); return B_KERN;
-    case 2: snprintf(t, n, "cpu: Xtensa LX7 x2 @ 240 MHz"); return B_KERN;
+    case 0: snprintf(t, n, "KTM 350 EXC-F SIX DAYS"); return B_HEAD;
+    case 1: snprintf(t, n, "tpms-os 1.1 on esp32-s3"); return B_KERN;
+    case 2: snprintf(t, n, "cpu: Xtensa LX7 x2 240 MHz"); return B_KERN;
     case 3: snprintf(t, n, "mem: %uK heap, %uK psram", (unsigned) c.heap_kb, (unsigned) c.psram_kb); return B_KERN;
     case 4: snprintf(t, n, "nvs: %d thresholds restored", N * 2); return B_KERN;
     case 5: snprintf(t, n, "Started BLE 5 scanner"); return B_OK;
-    case 6: snprintf(t, n, "can0: K-line init 10400 baud"); return B_KERN;
-    case 7: snprintf(t, n, "ecu: KTM EMS handshake 0x7E0"); return B_KERN;
-    case 8: snprintf(t, n, "Ignition circuit check"); return B_OK;
-    case 9: snprintf(t, n, "Fuel pump prime 2.0 s"); return B_OK;
-    case 10: snprintf(t, n, "Lambda probe heater"); return B_OK;
-    case 11: snprintf(t, n, "WP suspension telemetry"); return B_OK;
-    case 12: snprintf(t, n, "Mounted TUbliss chambers"); return B_OK;
-    case 13: snprintf(t, n, "tpms: %d sensors registered", N); return B_KERN;
-    case 14:
-    case 15:
-    case 16:
-    case 17: {
-      const int i = k - 14;
-      snprintf(t, n, "tpms: S%d %02X%02X%02X %.1f-%.1f bar", i + 1, MAC[i][3], MAC[i][4], MAC[i][5],
+    case 6: snprintf(t, n, "diag: connector under seat"); return B_KERN;
+    case 7: snprintf(t, n, "diag: wake ECU, K-line 10.4k"); return B_KERN;
+    case 8: snprintf(t, n, "ecu: EMS link up, read DTC"); return B_KERN;
+    case 9: snprintf(t, n, "Fault memory: 0 DTC stored"); return B_OK;
+    case 10: snprintf(t, n, "bat: Li-ion HJTZ5S 12V 2.0Ah"); return B_KERN;
+    case 11: snprintf(t, n, "alt: 14 V, 200 W"); return B_KERN;
+    case 12: snprintf(t, n, "ocu: e-fuses+relays online"); return B_KERN;
+    case 13: snprintf(t, n, "OCU A  ignition"); return B_OK;
+    case 14: snprintf(t, n, "OCU B  light"); return B_OK;
+    case 15: snprintf(t, n, "OCU C  brake light + horn"); return B_OK;
+    case 16: snprintf(t, n, "OCU D  fuel pump prime"); return B_OK;
+    case 17: snprintf(t, n, "OCU E  radiator fan"); return B_OK;
+    case 18: snprintf(t, n, "Main fuse 20 A"); return B_OK;
+    case 19: snprintf(t, n, "ign: digital, NGK LMAR9AI-10"); return B_KERN;
+    case 20: snprintf(t, n, "efi: throttle pos. taught"); return B_KERN;
+    case 21: snprintf(t, n, "efi: idle 1950-2050 rpm"); return B_KERN;
+    case 22: snprintf(t, n, "sens: intake air temp"); return B_OK;
+    case 23: snprintf(t, n, "sens: gear position"); return B_OK;
+    case 24: snprintf(t, n, "map: STANDARD | ADVANCED"); return B_KERN;
+    case 25: snprintf(t, n, "TC + QS switch ready"); return B_OK;
+    case 26: snprintf(t, n, "MIL lamp self-test"); return B_OK;
+    case 27: snprintf(t, n, "susp: WP XPLOR / WP PDS"); return B_KERN;
+    case 28: snprintf(t, n, "tpms: %d sensors registered", N); return B_KERN;
+    case 29:
+    case 30:
+    case 31:
+    case 32: {
+      const int i = k - 29;
+      snprintf(t, n, "tpms: S%d %02X%02X%02X %.1f-%.1f", i + 1, MAC[i][3], MAC[i][4], MAC[i][5],
                c.lo[i], c.hi[i]);
       return B_KERN;
     }
-    case 18:
+    case 33:
       if (c.on_air > 0) {
         snprintf(t, n, "tpms: %d/%d sensors on air", c.on_air, N);
         return B_OK;
       }
-      snprintf(t, n, "tpms: sensors asleep, waiting");
+      snprintf(t, n, "tpms: sensors asleep, wait");
       return B_WARN;
-    case 19:
+    case 34:
       if (c.wifi_up) {
-        snprintf(t, n, "wlan0: up %s, sync on", c.ip);
+        snprintf(t, n, "wlan0 up %s", c.ip);
         return B_OK;
       }
       snprintf(t, n, "wlan0: no carrier, offline");
       return B_WARN;
-    case 20: snprintf(t, n, "Reached target Ride"); return B_OK;
-    case 21: snprintf(t, n, ">>>  READY TO RACE  <<<"); return B_HEAD;
+    case 35: snprintf(t, n, ">>>   READY TO RACE   <<<"); return B_HEAD;
     default: return B_END;
   }
 }
 
-static const uint32_t BOOT_TOTAL_MS = 7000;
+static const uint32_t BOOT_TOTAL_MS = 23500;
 
 }  // namespace tpms
