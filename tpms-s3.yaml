@@ -1,0 +1,537 @@
+# tpms-s3 — LilyGO T-Display-S3 (MAC a0:f2:62:e1:43:ec), монитор давления
+# в шинах на 4 BLE-колпачка AIYATO BLE TPMS (формат TPMSII, разбор в tpms_s3.h).
+#
+# Плата слушает датчики сама, без телефона и без сети. Дома цепляется к Wi-Fi
+# и отдает в HA давление, температуру, батарею, тревоги и пороги. Вне дома
+# просто работает дальше: reboot_timeout у wifi и api выключен, иначе пакет
+# 1wifi_api_ota_logger перезагружал бы плату каждые 3 минуты без сети.
+#
+# Экран 2x2, по плитке на датчик. В плитке давление в барах, температура,
+# батарея, пороги и сколько прошло с последнего пакета. Нет пакетов дольше
+# stale_min минут, плитка серая. Давление вне порогов, плитка мигает красным
+# и подсветка уходит на 100 %.
+#
+# Кнопки (экран USB-разъемом влево):
+#   KEY (GPIO14) коротко   вне настроек: подтвердить тревоги (мигание стоп)
+#                          в настройках: следующий порог
+#   KEY долго (>0,8 с)     вход в настройки / выход из них
+#   BOOT (GPIO0) коротко   в настройках: +0,1 бар
+#   BOOT долго (>0,8 с)    в настройках: -0,1 бар
+# Из настроек плата сама выходит через 30 с без нажатий. Пороги хранятся во
+# флеше (restore_value) и правятся также из HA.
+#
+# Истории и выгрузки пока нет, это следующий шаг.
+
+substitutions:
+  board_name: 'tpms-s3'
+  static_ip: '192.168.0.222'
+  # Подписи плиток. Порядок как в tpms::MAC: позиции 80, 81, 82, 83.
+  name_0: 'КОЛЕСО 1'
+  name_1: 'КОЛЕСО 2'
+  name_2: 'КОЛЕСО 3'
+  name_3: 'КОЛЕСО 4'
+  # Пороги по умолчанию, действуют только до первой правки.
+  lo_default: '1.8'
+  hi_default: '3.2'
+  stale_min: '15'
+
+esphome:
+  name: ${board_name}
+  includes:
+    - tpms_s3.h
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger.yaml
+
+wifi:
+  reboot_timeout: 0s
+  # Точка доступа при потере сети тут только мешает: вне дома сети нет почти
+  # всегда, и AP висела бы постоянно, отъедая эфир у BLE.
+  ap: !remove
+
+api:
+  reboot_timeout: 0s
+
+logger:
+  hardware_uart: USB_CDC
+
+esp32_ble_tracker:
+  scan_parameters:
+    # Все данные датчика лежат в самом объявлении, запрос scan response не нужен.
+    active: false
+    interval: 100ms
+    window: 90ms
+    continuous: true
+  on_ble_advertise:
+    - then:
+        - lambda: |-
+            for (auto &md : x.get_manufacturer_datas()) {
+              int i = tpms::parse(md.data);
+              if (i < 0) continue;
+              auto &w = tpms::W[i];
+              ESP_LOGD("tpms", "#%d %.3f bar %.1f C bat %d%% al %d rssi %d",
+                       i, w.bar, w.temp, w.batt, w.sensor_alarm, x.get_rssi());
+              // В HA не чаще раза в минуту, если давление не сдвинулось
+              // на 0,02 бар: датчик на колесе вещает раз в несколько секунд.
+              uint32_t now = millis();
+              if (std::isnan(w.pub_bar) || fabsf(w.bar - w.pub_bar) >= 0.02f ||
+                  now - w.pub_ms > 60000) {
+                w.pub_bar = w.bar;
+                w.pub_ms = now;
+                sensor::Sensor *P[4] = {id(p0), id(p1), id(p2), id(p3)};
+                sensor::Sensor *T[4] = {id(t0), id(t1), id(t2), id(t3)};
+                sensor::Sensor *B[4] = {id(b0), id(b1), id(b2), id(b3)};
+                P[i]->publish_state(w.bar);
+                T[i]->publish_state(w.temp);
+                B[i]->publish_state(w.batt);
+              }
+            }
+
+globals:
+  - id: set_mode
+    type: bool
+    initial_value: 'false'
+  # Порог в настройках: 0..7, датчик = field / 2, четный мин, нечетный макс
+  - id: set_field
+    type: int
+    initial_value: '0'
+  - id: set_touch_ms
+    type: uint32_t
+    initial_value: '0'
+
+script:
+  - id: bump_threshold
+    parameters:
+      delta: float
+    then:
+      - lambda: |-
+          number::Number *L[4] = {id(lo0), id(lo1), id(lo2), id(lo3)};
+          number::Number *H[4] = {id(hi0), id(hi1), id(hi2), id(hi3)};
+          int f = id(set_field);
+          number::Number *n = (f % 2 == 0) ? L[f / 2] : H[f / 2];
+          float v = roundf((n->state + delta) * 10.0f) / 10.0f;
+          if (v < 0.0f) v = 0.0f;
+          if (v > 10.0f) v = 10.0f;
+          n->make_call().set_value(v).perform();
+          id(set_touch_ms) = millis();
+
+binary_sensor:
+  - platform: gpio
+    id: btn_key
+    internal: true
+    pin:
+      number: GPIO14
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    on_click:
+      - min_length: 30ms
+        max_length: 600ms
+        then:
+          - lambda: |-
+              if (id(set_mode)) {
+                id(set_field) = (id(set_field) + 1) % 8;
+                id(set_touch_ms) = millis();
+              } else {
+                for (int i = 0; i < tpms::N; i++)
+                  if (tpms::W[i].alarm) tpms::W[i].acked = true;
+              }
+      - min_length: 800ms
+        max_length: 5s
+        then:
+          - lambda: |-
+              id(set_mode) = !id(set_mode);
+              id(set_field) = 0;
+              id(set_touch_ms) = millis();
+
+  - platform: gpio
+    id: btn_boot
+    internal: true
+    pin:
+      number: GPIO0
+      inverted: true
+      ignore_strapping_warning: true
+      mode:
+        input: true
+        pullup: true
+    on_click:
+      - min_length: 30ms
+        max_length: 600ms
+        then:
+          - if:
+              condition:
+                lambda: 'return id(set_mode);'
+              then:
+                - script.execute:
+                    id: bump_threshold
+                    delta: 0.1
+      - min_length: 800ms
+        max_length: 5s
+        then:
+          - if:
+              condition:
+                lambda: 'return id(set_mode);'
+              then:
+                - script.execute:
+                    id: bump_threshold
+                    delta: -0.1
+
+  - platform: template
+    id: al0
+    name: ${name_0} тревога
+    device_class: problem
+  - platform: template
+    id: al1
+    name: ${name_1} тревога
+    device_class: problem
+  - platform: template
+    id: al2
+    name: ${name_2} тревога
+    device_class: problem
+  - platform: template
+    id: al3
+    name: ${name_3} тревога
+    device_class: problem
+
+sensor:
+  - platform: template
+    id: p0
+    name: ${name_0} давление
+    unit_of_measurement: bar
+    device_class: pressure
+    accuracy_decimals: 2
+    update_interval: never
+  - platform: template
+    id: p1
+    name: ${name_1} давление
+    unit_of_measurement: bar
+    device_class: pressure
+    accuracy_decimals: 2
+    update_interval: never
+  - platform: template
+    id: p2
+    name: ${name_2} давление
+    unit_of_measurement: bar
+    device_class: pressure
+    accuracy_decimals: 2
+    update_interval: never
+  - platform: template
+    id: p3
+    name: ${name_3} давление
+    unit_of_measurement: bar
+    device_class: pressure
+    accuracy_decimals: 2
+    update_interval: never
+  - platform: template
+    id: t0
+    name: ${name_0} температура
+    unit_of_measurement: °C
+    device_class: temperature
+    accuracy_decimals: 1
+    update_interval: never
+  - platform: template
+    id: t1
+    name: ${name_1} температура
+    unit_of_measurement: °C
+    device_class: temperature
+    accuracy_decimals: 1
+    update_interval: never
+  - platform: template
+    id: t2
+    name: ${name_2} температура
+    unit_of_measurement: °C
+    device_class: temperature
+    accuracy_decimals: 1
+    update_interval: never
+  - platform: template
+    id: t3
+    name: ${name_3} температура
+    unit_of_measurement: °C
+    device_class: temperature
+    accuracy_decimals: 1
+    update_interval: never
+  - platform: template
+    id: b0
+    name: ${name_0} батарея
+    unit_of_measurement: '%'
+    device_class: battery
+    accuracy_decimals: 0
+    update_interval: never
+  - platform: template
+    id: b1
+    name: ${name_1} батарея
+    unit_of_measurement: '%'
+    device_class: battery
+    accuracy_decimals: 0
+    update_interval: never
+  - platform: template
+    id: b2
+    name: ${name_2} батарея
+    unit_of_measurement: '%'
+    device_class: battery
+    accuracy_decimals: 0
+    update_interval: never
+  - platform: template
+    id: b3
+    name: ${name_3} батарея
+    unit_of_measurement: '%'
+    device_class: battery
+    accuracy_decimals: 0
+    update_interval: never
+
+number:
+  - platform: template
+    id: lo0
+    name: ${name_0} мин
+    optimistic: true
+    restore_value: true
+    initial_value: ${lo_default}
+    min_value: 0
+    max_value: 10
+    step: 0.1
+    unit_of_measurement: bar
+    mode: box
+  - platform: template
+    id: hi0
+    name: ${name_0} макс
+    optimistic: true
+    restore_value: true
+    initial_value: ${hi_default}
+    min_value: 0
+    max_value: 10
+    step: 0.1
+    unit_of_measurement: bar
+    mode: box
+  - platform: template
+    id: lo1
+    name: ${name_1} мин
+    optimistic: true
+    restore_value: true
+    initial_value: ${lo_default}
+    min_value: 0
+    max_value: 10
+    step: 0.1
+    unit_of_measurement: bar
+    mode: box
+  - platform: template
+    id: hi1
+    name: ${name_1} макс
+    optimistic: true
+    restore_value: true
+    initial_value: ${hi_default}
+    min_value: 0
+    max_value: 10
+    step: 0.1
+    unit_of_measurement: bar
+    mode: box
+  - platform: template
+    id: lo2
+    name: ${name_2} мин
+    optimistic: true
+    restore_value: true
+    initial_value: ${lo_default}
+    min_value: 0
+    max_value: 10
+    step: 0.1
+    unit_of_measurement: bar
+    mode: box
+  - platform: template
+    id: hi2
+    name: ${name_2} макс
+    optimistic: true
+    restore_value: true
+    initial_value: ${hi_default}
+    min_value: 0
+    max_value: 10
+    step: 0.1
+    unit_of_measurement: bar
+    mode: box
+  - platform: template
+    id: lo3
+    name: ${name_3} мин
+    optimistic: true
+    restore_value: true
+    initial_value: ${lo_default}
+    min_value: 0
+    max_value: 10
+    step: 0.1
+    unit_of_measurement: bar
+    mode: box
+  - platform: template
+    id: hi3
+    name: ${name_3} макс
+    optimistic: true
+    restore_value: true
+    initial_value: ${hi_default}
+    min_value: 0
+    max_value: 10
+    step: 0.1
+    unit_of_measurement: bar
+    mode: box
+
+interval:
+  # Раз в секунду: тревоги и автовыход из настроек.
+  - interval: 1s
+    then:
+      - lambda: |-
+          number::Number *L[4] = {id(lo0), id(lo1), id(lo2), id(lo3)};
+          number::Number *H[4] = {id(hi0), id(hi1), id(hi2), id(hi3)};
+          binary_sensor::BinarySensor *A[4] = {id(al0), id(al1), id(al2), id(al3)};
+          const uint32_t stale = ${stale_min} * 60000UL;
+          bool loud = false;
+          for (int i = 0; i < tpms::N; i++) {
+            auto &w = tpms::W[i];
+            bool a = tpms::fresh(i, stale) &&
+                     (w.bar < L[i]->state || w.bar > H[i]->state || w.sensor_alarm);
+            if (a && !w.alarm) {
+              w.acked = false;
+              ESP_LOGW("tpms", "#%d тревога: %.2f bar, пороги %.1f..%.1f",
+                       i, w.bar, L[i]->state, H[i]->state);
+            }
+            w.alarm = a;
+            if (!A[i]->has_state() || A[i]->state != a) A[i]->publish_state(a);
+            if (a && !w.acked) loud = true;
+          }
+          // Неподтвержденная тревога: подсветка на 100 %, чтобы видно было днем.
+          if (loud && id(backlight).current_values.get_brightness() < 0.99f) {
+            auto call = id(backlight).turn_on();
+            call.set_brightness(1.0f);
+            call.perform();
+          }
+          if (id(set_mode) && millis() - id(set_touch_ms) > 30000) id(set_mode) = false;
+
+spi:
+  - id: display_bus
+    type: octal
+    clk_pin: GPIO8
+    data_pins: [GPIO39, GPIO40, GPIO41, GPIO42, GPIO45, GPIO46, GPIO47, GPIO48]
+
+output:
+  - platform: ledc
+    pin: GPIO38
+    id: backlight_pwm
+    frequency: 5000Hz
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: ${board_name} подсветка
+    id: backlight
+    restore_mode: RESTORE_DEFAULT_ON
+    default_transition_length: 300ms
+
+font:
+  - file: "fonts/ArchivoBlack-Regular.ttf"
+    id: f_big
+    size: 40
+    bpp: 4
+    glyphs: '0123456789.-'
+  - file: "gfonts://Roboto Condensed@700"
+    id: f_mid
+    size: 22
+    bpp: 4
+    glyphs: '0123456789.,:-+%°/ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ'
+  - file: "gfonts://Roboto Condensed@700"
+    id: f_small
+    size: 14
+    bpp: 4
+    glyphs: '0123456789.,:-+%°/ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ'
+
+color:
+  - id: c_bg
+    hex: '000000'
+  - id: c_tile
+    hex: '14181C'
+  - id: c_ok
+    hex: '3CF07A'
+  - id: c_text
+    hex: 'D8DEE4'
+  - id: c_dim
+    hex: '7A848E'
+  - id: c_grey
+    hex: '4A525A'
+  - id: c_red
+    hex: 'E0242A'
+  - id: c_darkred
+    hex: '5A0E10'
+  - id: c_amber
+    hex: 'FFB000'
+  - id: c_white
+    hex: 'FFFFFF'
+
+display:
+  - platform: mipi_spi
+    model: T-DISPLAY-S3
+    id: lcd
+    spi_id: display_bus
+    # 320x170, USB-разъем слева. Картинка вверх ногами, значит ставить 90.
+    rotation: 270
+    data_rate: 20MHz
+    update_interval: 250ms
+    lambda: |-
+      number::Number *L[4] = {id(lo0), id(lo1), id(lo2), id(lo3)};
+      number::Number *H[4] = {id(hi0), id(hi1), id(hi2), id(hi3)};
+      const char *NAME[4] = {"${name_0}", "${name_1}", "${name_2}", "${name_3}"};
+      const uint32_t stale = ${stale_min} * 60000UL;
+      const uint32_t now = millis();
+      const bool blink = (now / 400) % 2;
+      const int TW = 159, TH = 84;
+      it.fill(id(c_bg));
+
+      for (int i = 0; i < tpms::N; i++) {
+        const auto &w = tpms::W[i];
+        const int x = (i % 2) * 161, y = (i / 2) * 86;
+        const bool fr = tpms::fresh(i, stale);
+        Color bg = id(c_tile), fg = id(c_ok), lab = id(c_text), sub = id(c_dim);
+        if (!fr) { fg = id(c_grey); }
+        else if (w.alarm) {
+          bg = (!w.acked && blink) ? id(c_red) : id(c_darkred);
+          fg = id(c_white); lab = id(c_white); sub = id(c_white);
+        }
+        it.filled_rectangle(x, y, TW, TH, bg);
+        it.print(x + 5, y + 3, id(f_small), lab, NAME[i]);
+
+        if (id(set_mode)) {
+          // Настройки: мин и макс крупно, выбранный порог на янтарной подложке.
+          for (int k = 0; k < 2; k++) {
+            const bool sel = id(set_field) == i * 2 + k;
+            const int ly = y + 24 + k * 29;
+            if (sel) it.filled_rectangle(x + 3, ly - 1, TW - 6, 27, id(c_amber));
+            const Color c = sel ? id(c_bg) : id(c_text);
+            it.print(x + 8, ly, id(f_mid), c, k == 0 ? "мин" : "макс");
+            it.printf(x + TW - 8, ly, id(f_mid), c, TextAlign::TOP_RIGHT, "%.1f",
+                      k == 0 ? L[i]->state : H[i]->state);
+          }
+          continue;
+        }
+
+        if (w.seen) {
+          it.printf(x + TW - 5, y + 3, id(f_small), sub, TextAlign::TOP_RIGHT,
+                    "%.0f° %d%%", w.temp, w.batt);
+          it.printf(x + TW / 2, y + 44, id(f_big), fg, TextAlign::CENTER, "%.2f", w.bar);
+          const uint32_t s = (now - w.last_ms) / 1000;
+          if (s < 60) it.printf(x + TW - 5, y + TH - 3, id(f_small), sub, TextAlign::BOTTOM_RIGHT, "%uс", (unsigned) s);
+          else if (s < 3600) it.printf(x + TW - 5, y + TH - 3, id(f_small), sub, TextAlign::BOTTOM_RIGHT, "%uм", (unsigned) (s / 60));
+          else it.printf(x + TW - 5, y + TH - 3, id(f_small), sub, TextAlign::BOTTOM_RIGHT, "%uч", (unsigned) (s / 3600));
+        } else {
+          it.print(x + TW / 2, y + 44, id(f_big), id(c_grey), TextAlign::CENTER, "-.--");
+        }
+        it.printf(x + 5, y + TH - 3, id(f_small), sub, TextAlign::BOTTOM_LEFT,
+                  "%.1f-%.1f", L[i]->state, H[i]->state);
+      }
+
+      if (id(set_mode)) {
+        it.filled_rectangle(0, 82, 320, 6, id(c_amber));
+      }
