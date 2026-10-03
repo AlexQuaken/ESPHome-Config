@@ -106,6 +106,7 @@ esphome:
             gs::cb_light = []() { id(gs_light).execute(); };
             gs::cb_charge = []() { id(gs_charge).execute(); };
             gs::cb_flash_stop = []() { id(flash_stop).execute(); };
+            gs::cb_cam = []() { id(show_cam).execute(); };
             gs::init(id(p_status)->obj, id(fs)->get_lv_font(), id(fm)->get_lv_font(), id(fb)->get_lv_font());
             // консоль загрузки рисуется мимо LVGL
             id(lvgl_comp).set_paused(true, false);
@@ -372,6 +373,13 @@ touchscreen:
     on_touch:
       then:
         - lambda: 'if (id(g_flash_until) != 0 && id(g_shown) <= 1) id(flash_stop).execute();'
+    # Камеру закрываем по отпусканию, а не по касанию: LVGL на паузе и касание не
+    # видел, а если вернуть его, пока палец на стекле, отпускание станет кликом по
+    # плитке под пальцем (свет, охрана). Касание, открывшее камеру, сюда не
+    # попадает: клик LVGL по плитке ВОРОТА случается уже после этого отпускания.
+    on_release:
+      then:
+        - lambda: 'if (id(g_shown) == 4) id(show_mode).execute(3, false);'
 
 # Кнопка BOOT (GPIO0, слева на обороте платы): короткое нажатие меняет режим, как
 # тап; удержание 3-10 с переинициализирует панель. SW1 на верхнем торце это
@@ -480,6 +488,7 @@ sensor:
 
 text_sensor:
   - {platform: homeassistant, internal: true, id: ha_line, entity_id: input_select.garage_charge_line}
+  - {platform: homeassistant, internal: true, id: ha_lock, entity_id: lock.door_lock_garage}
   - {platform: homeassistant, internal: true, id: ha_chg_on, entity_id: input_boolean.garage_charge_enabled}
   - {platform: homeassistant, internal: true, id: ha_chg_start, entity_id: input_datetime.garage_charge_start}
   - {platform: homeassistant, internal: true, id: ha_chg_end, entity_id: input_datetime.garage_charge_end}
@@ -608,7 +617,7 @@ interval:
           id(panel_invert).execute(id(g_flash_inv));
   - interval: 100ms
     then:
-      - lambda: 'if (id(g_shown) > 1) dash_snap::loop(id(lvgl_comp).get_disp());'
+      - lambda: 'if (id(g_shown) == 2 || id(g_shown) == 3) dash_snap::loop(id(lvgl_comp).get_disp());'
   - interval: 1s
     then:
       - lambda: |-
@@ -672,6 +681,41 @@ interval:
           }
           id(cache_uniq60) = uniq;
 
+# ---- Камера гаража на экране (режим 4, с 03.10.2026) ----
+# Тап по плитке ВОРОТА в статусах открывает кадр с камеры Reolink у ворот. Видео
+# H.264 плата не декодирует, поэтому это кадры JPEG через HA camera_proxy, по
+# одному: следующий запрашивается сразу после предыдущего. Замер 03.10.2026:
+# поток fluent 640x480, 43 КБ, HA отдает за 0,63-0,76 с, итого около 1 кадра в
+# секунду. Напрямую с камеры не быстрее (она отвечает только по HTTPS, 0,65 с).
+# Кадр сжимается до 362x272 (4:3) и рисуется по центру мимо LVGL, как консоль.
+# verify_ssl: false, чтобы не тянуть набор сертификатов: слот OTA 1,75 МБ.
+http_request:
+  verify_ssl: false
+  timeout: 6s
+
+online_image:
+  - id: cam_img
+    url: "http://192.168.0.6:8123/api/camera_proxy/camera.garage_fluent"
+    format: JPEG
+    type: RGB565
+    resize: 362x272
+    buffer_size: 65536
+    update_interval: never
+    request_headers:
+      Authorization: !secret ha_bearer
+    on_download_finished:
+      then:
+        - lambda: |-
+            id(g_cam_ms) = millis() - id(g_cam_t0);
+            id(g_cam_frames)++;
+            id(g_cam_new) = true;
+        - script.execute: cam_next
+    on_error:
+      then:
+        - lambda: 'id(g_cam_err)++;'
+        - delay: 1s
+        - script.execute: cam_next
+
 font:
   # Консоль и радар: Atari Portfolio 6x8 из пака int10h, в пиксель попадает
   # только при size: 8. Строка 8 px: 80 знаков x 34 строки. Только ASCII.
@@ -731,6 +775,35 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'true'
+  # ---- камера (режим 4): до какого millis держать, счетчики, новый кадр
+  - id: g_cam_until
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: g_cam_t0
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: g_cam_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: g_cam_frames
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: g_cam_err
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: g_cam_new
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: g_cam_drawn
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
   # ---- консоль
   - id: log_lines
     type: std::vector<std::string>
@@ -917,10 +990,45 @@ script:
   # программно не делать: ориентацию задает панель (MADCTL), draw_pixels_at уже
   # в ее координатах. 28.09.2026 я повернул кадр еще и программно, и консоль с
   # радаром встали вверх ногами.
+  # Камера гаража, режим 4. В NVS не пишется и в круг кнопки BOOT не входит,
+  # открывается тапом по плитке ВОРОТА. Закрывается тапом, сама через минуту или
+  # при отсчете на вход (status_screen и show_mode уводят на статусы).
+  - id: show_cam
+    mode: restart
+    then:
+      - lambda: |-
+          gs::pin_close();
+          gs::CUR_PAGE = 0;
+          id(g_shown) = 4;
+          id(g_cam_until) = millis() + 60000;
+          id(g_cam_drawn) = 0;
+          id(lvgl_comp).show_page(0, LV_SCREEN_LOAD_ANIM_NONE, 0);
+          id(lvgl_comp).set_paused(true, false);
+          ESP_LOGI("cam", "camera view on");
+      - script.execute: cam_next
+
+  # Следующий кадр, пока камера на экране. Зовется из on_download_finished и on_error.
+  - id: cam_next
+    mode: restart
+    then:
+      - delay: 50ms
+      - lambda: |-
+          if (id(g_shown) != 4) return;
+          id(g_cam_t0) = millis();
+          id(cam_img).update();
+
   - id: raw_draw
     then:
       - lambda: |-
-          if (id(g_shown) > 1) return;
+          if (id(g_shown) > 1 && id(g_shown) != 4) return;
+          if (id(g_shown) == 4) {
+            // камера: срок вышел, назад на статусы
+            if ((int32_t) (millis() - id(g_cam_until)) > 0) { id(show_mode).execute(3, false); return; }
+            // перерисовка только на новый кадр или раз в секунду ради часов
+            if (!id(g_cam_new) && millis() - id(g_cam_drawn) < 1000) return;
+            id(g_cam_new) = false;
+            id(g_cam_drawn) = millis();
+          }
           struct PanelIt : public display::Display {
             uint16_t *buf = nullptr;
             void update() override {}
@@ -953,6 +1061,20 @@ script:
           // it.fill чистит буфер одним куском. filled_rectangle на весь экран
           // идет попиксельно (130 тысяч вызовов) и на S3 съедал больше половины кадра
           it.fill(id(c_black));
+          if (id(g_shown) == 4) {
+            // ===== КАМЕРА ГАРАЖА =====
+            it.image(59, 0, id(cam_img));
+            auto t4 = id(homeassistant_time).now();
+            if (t4.is_valid()) it.printf(29, 8, id(f_console), id(c_green), TextAlign::TOP_CENTER, "%02d:%02d:%02d", t4.hour, t4.minute, t4.second);
+            it.printf(29, 24, id(f_console), id(c_green), TextAlign::TOP_CENTER, "CAMERA");
+            if (id(g_cam_frames) == 0) it.printf(240, 132, id(f_console), id(c_green), TextAlign::TOP_CENTER, "LOADING...");
+            it.printf(29, 256, id(f_console), id(c_green), TextAlign::TOP_CENTER, "%u ms", (unsigned) id(g_cam_ms));
+            it.printf(450, 8, id(f_console), id(c_green), TextAlign::TOP_CENTER, "GATE");
+            it.printf(450, 20, id(f_console), id(c_green), TextAlign::TOP_CENTER, "%s", id(ha_gate).state ? "OPEN" : "CLOSED");
+            it.printf(450, 44, id(f_console), id(c_green), TextAlign::TOP_CENTER, "LOCK");
+            it.printf(450, 56, id(f_console), id(c_green), TextAlign::TOP_CENTER, "%s", id(ha_lock).state == "locked" ? "LOCKED" : (id(ha_lock).state == "unlocked" ? "OPEN" : "?"));
+            it.printf(450, 256, id(f_console), id(c_green), TextAlign::TOP_CENTER, "TAP=EXIT");
+          } else {
 
           if (id(g_shown) == 0) {
             // ===== LOG CONSOLE =====
@@ -1241,6 +1363,7 @@ script:
             snprintf(devc, sizeof(devc), "Found: %u/min", (unsigned)id(cache_uniq60));
             it.printf(sb_x + (W - sb_x) / 2, sb_y_end + 5, id(f_console), id(c_green), TextAlign::TOP_CENTER, "%s", devc);
           }
+          }  // конец ветки консоли и радара
           id(render_us) = micros() - t0_us;
           id(lcd).draw_pixels_at(0, 0, 480, 272, (const uint8_t *) pit->buf, display::COLOR_ORDER_RGB,
                                  display::COLOR_BITNESS_565, true, 0, 0, 0);
