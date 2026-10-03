@@ -550,6 +550,7 @@ esp32_ble:
   enable_on_boot: true
 
 esp32_ble_tracker:
+  id: ble_trk
   # На P4 окно было равно интервалу: BLE жил на C6, Wi-Fi не делил эфир.
   # У S3 радио одно, при 100% скана Wi-Fi и API начинают отваливаться.
   scan_parameters:
@@ -700,7 +701,9 @@ http_request:
 
 online_image:
   - id: cam_img
-    url: "http://192.168.0.6:8123/api/camera_proxy/camera.garage_fluent"
+    # 320x240 ужимает сам HA (turbojpeg, ровно половина от 640x480): вдвое меньше
+    # данных по Wi-Fi и вчетверо меньше пикселей на разбор. С 640x480 кадр шел 2,6 с.
+    url: "http://192.168.0.6:8123/api/camera_proxy/camera.garage_fluent?width=320&height=240"
     format: JPEG
     type: RGB565
     resize: 362x272
@@ -809,6 +812,11 @@ globals:
     type: uint32_t
     restore_value: no
     initial_value: '0'
+  # сканер BLE остановлен на время камеры: радио одно, Wi-Fi без него быстрее
+  - id: g_ble_paused
+    type: bool
+    restore_value: no
+    initial_value: 'false'
   # ---- консоль
   - id: log_lines
     type: std::vector<std::string>
@@ -987,6 +995,14 @@ script:
           }
           id(mode_sel).publish_state(NAME[m]);
           ESP_LOGI("mode", "mode %d%s", m, save ? " (saved)" : "");
+      # ушли с камеры: вернуть сканер BLE
+      - if:
+          condition:
+            lambda: 'return id(g_ble_paused);'
+          then:
+            - lambda: 'id(g_ble_paused) = false;'
+            - esp32_ble_tracker.start_scan:
+                continuous: true
 
   # Кадр консоли или радара. Лямбда перенесена с дисплея прошлой esp32-s3-disp
   # без изменений: it здесь не дисплей, а переходник PanelIt. Он пишет пиксели в
@@ -1010,6 +1026,12 @@ script:
           id(lvgl_comp).show_page(0, LV_SCREEN_LOAD_ANIM_NONE, 0);
           id(lvgl_comp).set_paused(true, false);
           ESP_LOGI("cam", "camera view on");
+          id(g_ble_paused) = true;
+      # Радио у S3 одно на Wi-Fi и BLE. На минуту показа камеры сканер стоит,
+      # обратно его включает show_mode при любом уходе с камеры (тап, таймаут,
+      # отсчет на вход). Метки на это время не видны, но вход на охране камеру
+      # закрывает сразу, и к снятию меткой сканер уже работает.
+      - esp32_ble_tracker.stop_scan:
       - script.execute: cam_next
 
   # Следующий кадр, пока камера на экране. Зовется из on_download_finished и on_error.
