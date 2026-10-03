@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <vector>
 #include "esp_heap_caps.h"
 #include "esphome/core/hal.h"
@@ -50,6 +51,7 @@ struct Wheel {
   bool sensor_alarm = false;
   bool seen = false;
   uint32_t last_ms = 0;
+  time_t last_epoch = 0;  // настенное время пакета, 0 пока часы не синхронизированы
   uint32_t packets = 0;
   float gap_s = NAN;    // сглаженный интервал между пакетами
   float bar_min = NAN;  // минимум и максимум с включения
