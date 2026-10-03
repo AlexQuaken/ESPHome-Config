@@ -12,33 +12,34 @@
 # настоящими узлами и цифрами из руководства 350 EXC-F SIX DAYS 2025: к
 # проводке плата не подключена. Любая кнопка пропускает загрузку.
 #
-# Экраны по кругу коротким BOOT: домашний, сетка 2x2, четыре экрана датчиков.
+# Экраны по кругу короткими нажатиями: домашний, сетка 2x2, четыре экрана
+# датчиков. Все подписи пиксельным PxPlus IBM VGA 8x16 (x1, x2, x3 от
+# родного размера 16, иначе буквы ломаются), давление шрифтом ArchivoBlack.
 #
-# Домашний: бледный 350 EXC-F SIX DAYS на фоне (images/ktm_bg.png, сделан из
-# студийного снимка ktm.com), часы с секундами и шкалой секунд, дата, радар
-# BLE с бегущим лучом и отметками датчиков (дальность по RSSI, яркость по
-# свежести пакета), строка статуса с временем последнего пакета, внизу четыре
-# ячейки: давление, возраст пакета, полоска свежести, вспышка рамки на пакет.
-# Время берется из HA, запасное SNTP. Без синхронизации (включили вне дома)
-# вместо часов прочерки и аптайм: своих часов с батарейкой у платы нет.
+# Домашний: серый 350 EXC-F SIX DAYS на фоне (images/ktm_bg.png, сделан из
+# студийного снимка ktm.com), время ЧЧ:ММ:СС, дата цифрами и день недели,
+# есть ли домашняя сеть (нужна только часам и HA, датчики идут по BLE),
+# строка BLE с временем последнего пакета, внизу четыре ячейки: давление,
+# пороги, возраст пакета, температура, полоска свежести, вспышка рамки на
+# каждый пакет. Время из HA, запасное SNTP. Включили вне дома, значит вместо
+# часов прочерки и аптайм: своих часов с батарейкой у платы нет.
 #
 # Сетка 2x2: по плитке на датчик, давление, за ним график последних 15 минут,
 # температура, батарея, пороги и сколько прошло с последнего пакета.
 # Нет пакетов дольше stale_min минут, плитка серая. Давление вне порогов,
 # плитка мигает красным и подсветка уходит на 100 %.
 #
-# Экран датчика: график за час с
-# линиями порогов, минимум и максимум с включения, скорость изменения
-# давления в бар/ч за 10 минут (минус это утечка, янтарным при быстрее
-# leak_bar_h), RSSI и средний интервал между пакетами.
+# Экран датчика: график за час с линиями порогов, минимум и максимум с
+# включения, скорость изменения давления в бар/ч за 10 минут (минус это
+# утечка, янтарным при быстрее leak_bar_h), RSSI и интервал между пакетами.
 #
-# Кнопки (экран USB-разъемом влево), логика как в часах:
-#   KEY (GPIO14) коротко   вне настроек: подтвердить тревоги (мигание стоп)
-#                          в настройках: следующий порог
-#   KEY долго (>0,8 с)     вход в настройки / выход из них
-#   BOOT (GPIO0) коротко   вне настроек: следующий экран по кругу
-#                          в настройках: +0,1 бар
-#   BOOT долго (>0,8 с)    в настройках: -0,1 бар
+# Кнопки (KEY = GPIO14, BOOT = GPIO0):
+#   коротко KEY / BOOT     вне настроек: экран вперед / назад, заодно
+#                          подтверждают тревогу (мигание стоп)
+#                          в настройках: +0,1 / -0,1 бар
+#   долго (>0,8 с) любая   вход в настройки, дальше каждое долгое нажатие
+#                          переходит к следующему порогу (1 мин, 1 макс,
+#                          2 мин ... 4 макс), после последнего выход
 # Из настроек плата сама выходит через 30 с без нажатий. Пороги хранятся во
 # флеше (restore_value) и правятся также из HA.
 #
@@ -49,13 +50,22 @@ substitutions:
   # .222 занят телефоном Bison на мотоцикле, не путать
   static_ip: '192.168.0.233'
   # Подписи плиток. Порядок как в tpms::MAC: позиции 80, 81, 82, 83.
-  name_0: 'КОЛЕСО 1'
-  name_1: 'КОЛЕСО 2'
+  # 1 и 2 стоят на сердечниках TUbliss, 3 и 4 на покрышках.
+  # Имена входят в ключ сохранения порогов: сменишь имя, и пороги вернутся
+  # к значениям по умолчанию ниже.
+  name_0: 'TUBLISS 1'
+  name_1: 'TUBLISS 2'
   name_2: 'КОЛЕСО 3'
   name_3: 'КОЛЕСО 4'
   # Пороги по умолчанию, действуют только до первой правки.
-  lo_default: '1.8'
-  hi_default: '3.2'
+  lo_0: '6.4'
+  hi_0: '9.0'
+  lo_1: '6.4'
+  hi_1: '9.0'
+  lo_2: '0.4'
+  hi_2: '1.2'
+  lo_3: '0.4'
+  hi_3: '1.2'
   stale_min: '15'
   # Падение быстрее этого (бар/ч) подсвечивается на экране датчика.
   leak_bar_h: '0.3'
@@ -177,6 +187,35 @@ image:
     resize: 320x170
 
 script:
+  # Короткое: в настройках +-0,1 бар, иначе экран вперед/назад.
+  # Любое короткое заодно подтверждает тревоги и пропускает загрузку.
+  - id: short_press
+    parameters:
+      dir: int
+    then:
+      - lambda: |-
+          if (!id(boot_done)) { id(boot_done) = true; return; }
+          for (int i = 0; i < tpms::N; i++)
+            if (tpms::W[i].alarm) tpms::W[i].acked = true;
+          if (id(set_mode)) {
+            id(bump_threshold).execute(dir * 0.1f);
+          } else {
+            id(view) = (id(view) + dir + 6) % 6;
+          }
+  # Долгое: вход в настройки, следующий порог, после восьмого выход.
+  - id: long_press
+    then:
+      - lambda: |-
+          if (!id(boot_done)) { id(boot_done) = true; return; }
+          if (!id(set_mode)) {
+            id(set_mode) = true;
+            id(set_field) = 0;
+          } else if (id(set_field) < 7) {
+            id(set_field)++;
+          } else {
+            id(set_mode) = false;
+          }
+          id(set_touch_ms) = millis();
   - id: bump_threshold
     parameters:
       delta: float
@@ -206,23 +245,13 @@ binary_sensor:
       - min_length: 30ms
         max_length: 600ms
         then:
-          - lambda: |-
-              if (!id(boot_done)) { id(boot_done) = true; return; }
-              if (id(set_mode)) {
-                id(set_field) = (id(set_field) + 1) % 8;
-                id(set_touch_ms) = millis();
-              } else {
-                for (int i = 0; i < tpms::N; i++)
-                  if (tpms::W[i].alarm) tpms::W[i].acked = true;
-              }
+          - script.execute:
+              id: short_press
+              dir: 1
       - min_length: 800ms
         max_length: 5s
         then:
-          - lambda: |-
-              if (!id(boot_done)) { id(boot_done) = true; return; }
-              id(set_mode) = !id(set_mode);
-              id(set_field) = 0;
-              id(set_touch_ms) = millis();
+          - script.execute: long_press
 
   - platform: gpio
     id: btn_boot
@@ -238,31 +267,13 @@ binary_sensor:
       - min_length: 30ms
         max_length: 600ms
         then:
-          - if:
-              condition:
-                lambda: 'return !id(boot_done);'
-              then:
-                - lambda: 'id(boot_done) = true;'
-              else:
-                - if:
-                    condition:
-                      lambda: 'return id(set_mode);'
-                    then:
-                      - script.execute:
-                          id: bump_threshold
-                          delta: 0.1
-                    else:
-                      - lambda: 'id(view) = (id(view) + 1) % 6;'
+          - script.execute:
+              id: short_press
+              dir: -1
       - min_length: 800ms
         max_length: 5s
         then:
-          - if:
-              condition:
-                lambda: 'return id(set_mode);'
-              then:
-                - script.execute:
-                    id: bump_threshold
-                    delta: -0.1
+          - script.execute: long_press
 
   - platform: template
     id: al0
@@ -373,7 +384,7 @@ number:
     name: ${name_0} мин
     optimistic: true
     restore_value: true
-    initial_value: ${lo_default}
+    initial_value: ${lo_0}
     min_value: 0
     max_value: 10
     step: 0.1
@@ -384,7 +395,7 @@ number:
     name: ${name_0} макс
     optimistic: true
     restore_value: true
-    initial_value: ${hi_default}
+    initial_value: ${hi_0}
     min_value: 0
     max_value: 10
     step: 0.1
@@ -395,7 +406,7 @@ number:
     name: ${name_1} мин
     optimistic: true
     restore_value: true
-    initial_value: ${lo_default}
+    initial_value: ${lo_1}
     min_value: 0
     max_value: 10
     step: 0.1
@@ -406,7 +417,7 @@ number:
     name: ${name_1} макс
     optimistic: true
     restore_value: true
-    initial_value: ${hi_default}
+    initial_value: ${hi_1}
     min_value: 0
     max_value: 10
     step: 0.1
@@ -417,7 +428,7 @@ number:
     name: ${name_2} мин
     optimistic: true
     restore_value: true
-    initial_value: ${lo_default}
+    initial_value: ${lo_2}
     min_value: 0
     max_value: 10
     step: 0.1
@@ -428,7 +439,7 @@ number:
     name: ${name_2} макс
     optimistic: true
     restore_value: true
-    initial_value: ${hi_default}
+    initial_value: ${hi_2}
     min_value: 0
     max_value: 10
     step: 0.1
@@ -439,7 +450,7 @@ number:
     name: ${name_3} мин
     optimistic: true
     restore_value: true
-    initial_value: ${lo_default}
+    initial_value: ${lo_3}
     min_value: 0
     max_value: 10
     step: 0.1
@@ -450,7 +461,7 @@ number:
     name: ${name_3} макс
     optimistic: true
     restore_value: true
-    initial_value: ${hi_default}
+    initial_value: ${hi_3}
     min_value: 0
     max_value: 10
     step: 0.1
@@ -512,33 +523,39 @@ light:
     default_transition_length: 300ms
 
 font:
-  # PxPlus 8x14: родной размер 16, на 14 буквы ломаются
+  # PxPlus: родной размер 16, кратные 32 и 48 дают ровный пиксель x2 и x3.
+  # На других размерах буквы ломаются.
   - file: "fonts/PxPlus_IBM_VGA_8x14.ttf"
     id: f_con
     size: 16
     bpp: 1
-    glyphs: ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_abcdefghijklmnopqrstuvwxyz{|}~'
+    glyphs: ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~'
+  - file: "fonts/PxPlus_IBM_VGA_8x16.ttf"
+    id: f_px1
+    size: 16
+    bpp: 1
+    glyphs: ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~°абвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ'
+  - file: "fonts/PxPlus_IBM_VGA_8x16.ttf"
+    id: f_px2
+    size: 32
+    bpp: 1
+    glyphs: '0123456789.,:-+ минакс'
+  - file: "fonts/PxPlus_IBM_VGA_8x16.ttf"
+    id: f_px3
+    size: 48
+    bpp: 1
+    glyphs: '0123456789:-'
+  # Давление: на экране датчика и в сетке крупно, в ячейках домашнего мельче
   - file: "fonts/ArchivoBlack-Regular.ttf"
     id: f_big
     size: 40
     bpp: 4
-    glyphs: '0123456789.:-'
-  # Давление в ячейках домашнего экрана
+    glyphs: '0123456789.-'
   - file: "fonts/ArchivoBlack-Regular.ttf"
     id: f_num
     size: 26
     bpp: 4
     glyphs: '0123456789.-'
-  - file: "gfonts://Roboto Condensed@700"
-    id: f_mid
-    size: 22
-    bpp: 4
-    glyphs: '0123456789.,:-+%°/ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ'
-  - file: "gfonts://Roboto Condensed@700"
-    id: f_small
-    size: 14
-    bpp: 4
-    glyphs: '0123456789.,:-+%°/ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ'
 
 color:
   - id: c_bg
@@ -694,87 +711,49 @@ display:
 
       // ------------------------------------------------------- домашний экран
       if (id(view) == 0 && !id(set_mode)) {
-        static const char *WD[7] = {"вс", "пн", "вт", "ср", "чт", "пт", "сб"};
-        static const char *MON[12] = {"января", "февраля", "марта", "апреля", "мая", "июня",
-                                      "июля", "августа", "сентября", "октября", "ноября", "декабря"};
+        static const char *WD[7] = {"воскресенье", "понедельник", "вторник", "среда",
+                                    "четверг", "пятница", "суббота"};
         it.image(0, 0, id(img_bg));
         auto tn = id(ha_time).now();
         if (!tn.is_valid()) tn = id(sntp_time).now();
 
-        // Часы: ЧЧ:ММ крупно, секунды оранжевым, под ними шкала из 60 рисок.
-        int x1, y1, cw, ch;
+        // Время и дата одним пиксельным шрифтом: время x3, дата x1 справа.
         if (tn.is_valid()) {
-          char hm[8]; snprintf(hm, sizeof(hm), "%02d:%02d", tn.hour, tn.minute);
-          it.get_text_bounds(4, 0, hm, id(f_big), TextAlign::TOP_LEFT, &x1, &y1, &cw, &ch);
-          it.print(4, 0, id(f_big), id(c_white), hm);
-          it.printf(8 + cw, 3, id(f_mid), id(c_ktm), "%02d", tn.second);
-          for (int k = 0; k < 60; k++) {
-            const int xx = 5 + k * 3;
-            const int hh = (k % 5 == 0) ? 5 : 3;
-            it.vertical_line(xx, 49 - hh, hh, k <= tn.second ? id(c_ktm) : id(c_grid));
-          }
-          it.printf(4, 52, id(f_small), id(c_text), "%s, %d %s %d", WD[(tn.day_of_week + 6) % 7],
-                    tn.day_of_month, MON[tn.month - 1], tn.year);
+          it.printf(4, 0, id(f_px3), id(c_white), "%02d:%02d:%02d", tn.hour, tn.minute, tn.second);
+          it.printf(204, 4, id(f_px1), id(c_text), "%02d.%02d.%04d", tn.day_of_month, tn.month, tn.year);
+          it.print(204, 21, id(f_px1), id(c_dim), WD[(tn.day_of_week + 6) % 7]);
         } else {
-          it.print(4, 0, id(f_big), id(c_grey), "--:--");
+          it.print(4, 0, id(f_px3), id(c_grey), "--:--:--");
           const uint32_t up = now / 1000;
-          it.printf(4, 52, id(f_small), id(c_amber), "нет времени, аптайм %u:%02u:%02u",
+          it.print(204, 4, id(f_px1), id(c_amber), "нет времени");
+          it.printf(204, 21, id(f_px1), id(c_dim), "up %u:%02u:%02u",
                     (unsigned) (up / 3600), (unsigned) (up / 60 % 60), (unsigned) (up % 60));
         }
-
-        // Радар BLE: кольца, бегущий луч со шлейфом, отметки датчиков.
-        // Угол отметки задан номером датчика, дальность по RSSI (ближе
-        // к центру сильнее сигнал), яркость по возрасту последнего пакета.
-        const int RX = 284, RY = 36, RR = 32;
-        it.circle(RX, RY, RR, id(c_grid));
-        it.circle(RX, RY, RR * 2 / 3, id(c_grid));
-        it.circle(RX, RY, RR / 3, id(c_grid));
-        it.horizontal_line(RX - RR, RY, RR * 2 + 1, id(c_grid));
-        it.vertical_line(RX, RY - RR, RR * 2 + 1, id(c_grid));
-        const float sweep = (now % 3000) / 3000.0f * 6.2832f;
-        for (int k = 5; k >= 0; k--) {
-          const float a = sweep - k * 0.09f;
-          const float f = 1.0f - k / 6.0f;
-          it.line(RX, RY, RX + (int) (cosf(a) * RR), RY + (int) (sinf(a) * RR),
-                  Color((uint8_t) (255 * f), (uint8_t) (102 * f), 0));
-        }
-        for (int i = 0; i < tpms::N; i++) {
-          const auto &w = tpms::W[i];
-          if (!tpms::fresh(i, stale)) continue;
-          const float a = (45 + 90 * i) * 0.017453f;
-          float d = (-(float) w.rssi - 40.0f) / 60.0f;
-          if (d < 0.15f) d = 0.15f;
-          if (d > 0.95f) d = 0.95f;
-          const int bx = RX + (int) (cosf(a) * d * RR), by = RY + (int) (sinf(a) * d * RR);
-          const uint32_t age = now - w.last_ms;
-          const float diff = fmodf(sweep - a + 12.566f, 6.2832f);
-          const bool lit = diff < 0.5f;
-          const Color c = w.alarm ? id(c_red) : (age < 1500 ? id(c_white) : (lit ? id(c_ok) : id(c_spark)));
-          it.filled_circle(bx, by, (age < 1500 || lit) ? 3 : 2, c);
-        }
-
-        // Строка статуса: последний пакет с настенным временем, счетчик, сеть.
-        const int li = id(last_pkt_idx);
+        // Сеть нужна только для часов и HA, датчики идут по BLE без нее.
         const bool wf = wifi::global_wifi_component->is_connected();
+        it.print(204, 38, id(f_px1), wf ? id(c_dim) : id(c_grey), wf ? "сеть: дом" : "сеть: нет");
+
+        // Строка BLE: последний пакет от датчиков с настенным временем.
+        const int li = id(last_pkt_idx);
         if (li >= 0) {
           char a[12]; age_str(li, a, sizeof(a));
           const auto &w = tpms::W[li];
           if (w.last_epoch) {
             struct tm lt; time_t e = w.last_epoch; localtime_r(&e, &lt);
-            it.printf(4, 69, id(f_small), id(c_dim), "пакет %02d:%02d:%02d от %d (%s)  RX %u  %s",
-                      lt.tm_hour, lt.tm_min, lt.tm_sec, li + 1, a, (unsigned) id(rx_total), wf ? "WIFI" : "OFFLINE");
+            it.printf(4, 54, id(f_px1), id(c_text), "BLE %02d:%02d:%02d от %d, %s назад",
+                      lt.tm_hour, lt.tm_min, lt.tm_sec, li + 1, a);
           } else {
-            it.printf(4, 69, id(f_small), id(c_dim), "пакет от %d %s назад  RX %u  %s",
-                      li + 1, a, (unsigned) id(rx_total), wf ? "WIFI" : "OFFLINE");
+            it.printf(4, 54, id(f_px1), id(c_text), "BLE пакет от %d, %s назад", li + 1, a);
           }
         } else {
-          it.printf(4, 69, id(f_small), id(c_dim), "датчики спят, ждем пакет  %s", wf ? "WIFI" : "OFFLINE");
+          it.print(4, 54, id(f_px1), id(c_dim), "BLE: датчики молчат, ждем");
         }
+        it.printf(316, 54, id(f_px1), id(c_dim), TextAlign::TOP_RIGHT, "RX %u", (unsigned) id(rx_total));
 
         // Четыре ячейки внизу, прозрачные: мотоцикл просвечивает сквозь них.
         for (int i = 0; i < tpms::N; i++) {
           const auto &w = tpms::W[i];
-          const int x = 1 + i * 80, y = 88, cw2 = 78, chh = 81;
+          const int x = 1 + i * 80, y = 73, cw2 = 78, chh = 97;
           const bool fr = tpms::fresh(i, stale);
           const uint32_t age = now - w.last_ms;
           if (w.alarm && fr) {
@@ -784,23 +763,24 @@ display:
           const bool flash = w.seen && age < 500;
           it.rectangle(x, y, cw2, chh, flash ? id(c_ktm) : id(c_grid));
           if (flash) it.rectangle(x + 1, y + 1, cw2 - 2, chh - 2, id(c_ktm));
-          it.printf(x + 4, y + 2, id(f_small), id(c_text), "%d", i + 1);
+          it.print(x + cw2 / 2, y + 3, id(f_px1), id(c_text), TextAlign::TOP_CENTER, NAME[i]);
+          it.printf(x + cw2 / 2, y + 58, id(f_px1), id(c_dim), TextAlign::TOP_CENTER,
+                    "%.1f-%.1f", L[i]->state, H[i]->state);
           if (w.seen) {
-            it.printf(x + cw2 - 4, y + 2, id(f_small), id(c_dim), TextAlign::TOP_RIGHT, "%.0f°", w.temp);
             const Color fg = !fr ? id(c_grey) : (w.alarm ? id(c_white) : id(c_ok));
-            it.printf(x + cw2 / 2, y + 38, id(f_num), fg, TextAlign::CENTER, "%.2f", w.bar);
+            it.printf(x + cw2 / 2, y + 39, id(f_num), fg, TextAlign::CENTER, "%.2f", w.bar);
             char a[12]; age_str(i, a, sizeof(a));
-            it.print(x + 4, y + chh - 9, id(f_small), id(c_dim), TextAlign::BOTTOM_LEFT, a);
-            it.printf(x + cw2 - 4, y + chh - 9, id(f_small), id(c_dim), TextAlign::BOTTOM_RIGHT, "%d%%", w.batt);
+            it.print(x + 4, y + 75, id(f_px1), id(c_text), a);
+            it.printf(x + cw2 - 4, y + 75, id(f_px1), id(c_dim), TextAlign::TOP_RIGHT, "%.0f°", w.temp);
             // Полоска свежести: полная сразу после пакета, к stale_min пустая.
             float fr01 = 1.0f - (float) age / (float) stale;
             if (fr01 < 0) fr01 = 0;
             const int bw = (int) ((cw2 - 8) * fr01);
-            it.filled_rectangle(x + 4, y + chh - 6, cw2 - 8, 3, id(c_tile));
-            if (bw > 0) it.filled_rectangle(x + 4, y + chh - 6, bw, 3, fr01 > 0.5f ? id(c_ok) : id(c_amber));
+            it.filled_rectangle(x + 4, y + chh - 5, cw2 - 8, 2, id(c_tile));
+            if (bw > 0) it.filled_rectangle(x + 4, y + chh - 5, bw, 2, fr01 > 0.5f ? id(c_ok) : id(c_amber));
           } else {
-            it.print(x + cw2 / 2, y + 38, id(f_num), id(c_grey), TextAlign::CENTER, "-.--");
-            it.print(x + cw2 / 2, y + chh - 9, id(f_small), id(c_grey), TextAlign::BOTTOM_CENTER, "спит");
+            it.print(x + cw2 / 2, y + 39, id(f_num), id(c_grey), TextAlign::CENTER, "-.--");
+            it.print(x + cw2 / 2, y + 75, id(f_px1), id(c_grey), TextAlign::TOP_CENTER, "спит");
           }
         }
         return;
@@ -814,32 +794,32 @@ display:
         Color fg = !fr ? id(c_grey) : (w.alarm ? id(c_red) : id(c_ok));
         // Шапка
         it.filled_rectangle(0, 0, 320, 18, w.alarm && !w.acked && blink ? id(c_red) : id(c_ktm));
-        it.printf(4, 1, id(f_small), id(c_bg), "%d/4  %s", i + 1, NAME[i]);
-        it.printf(316, 1, id(f_small), id(c_bg), TextAlign::TOP_RIGHT, "%02X:%02X:%02X:%02X:%02X:%02X",
+        it.printf(4, 1, id(f_px1), id(c_bg), "%d/4  %s", i + 1, NAME[i]);
+        it.printf(316, 1, id(f_px1), id(c_bg), TextAlign::TOP_RIGHT, "%02X:%02X:%02X:%02X:%02X:%02X",
                   tpms::MAC[i][0], tpms::MAC[i][1], tpms::MAC[i][2],
                   tpms::MAC[i][3], tpms::MAC[i][4], tpms::MAC[i][5]);
         if (!w.seen) {
-          it.print(160, 50, id(f_mid), id(c_grey), TextAlign::CENTER, "нет пакетов с включения");
-          it.print(160, 80, id(f_small), id(c_dim), TextAlign::CENTER, "датчик спит без давления");
+          it.print(160, 50, id(f_px1), id(c_grey), TextAlign::CENTER, "нет пакетов с включения");
+          it.print(160, 80, id(f_px1), id(c_dim), TextAlign::CENTER, "датчик спит без давления");
         } else {
           it.printf(4, 20, id(f_big), fg, "%.2f", w.bar);
           char a[12]; age_str(i, a, sizeof(a));
           // Правая колонка
           const int cx = 172;
-          it.printf(cx, 21, id(f_small), id(c_text), "%.1f°C   бат %d%%", w.temp, w.batt);
+          it.printf(cx, 21, id(f_px1), id(c_text), "%.1f°C   бат %d%%", w.temp, w.batt);
           if (w.last_epoch) {
             struct tm lt; time_t e = w.last_epoch; localtime_r(&e, &lt);
-            it.printf(cx, 37, id(f_small), id(c_dim), "%02d:%02d:%02d, %s назад", lt.tm_hour, lt.tm_min, lt.tm_sec, a);
+            it.printf(cx, 37, id(f_px1), id(c_dim), "%02d:%02d:%02d  %s", lt.tm_hour, lt.tm_min, lt.tm_sec, a);
           } else {
-            it.printf(cx, 37, id(f_small), id(c_dim), "%s назад", a);
+            it.printf(cx, 37, id(f_px1), id(c_dim), "%s назад", a);
           }
-          if (!std::isnan(w.gap_s)) it.printf(cx, 53, id(f_small), id(c_dim), "раз в %.0f с  RSSI %d", w.gap_s, w.rssi);
-          else it.printf(cx, 53, id(f_small), id(c_dim), "пакетов %u  RSSI %d", (unsigned) w.packets, w.rssi);
+          if (!std::isnan(w.gap_s)) it.printf(cx, 53, id(f_px1), id(c_dim), "раз в %.0fс %ddBm", w.gap_s, w.rssi);
+          else it.printf(cx, 53, id(f_px1), id(c_dim), "пак %u %ddBm", (unsigned) w.packets, w.rssi);
           const float r = tpms::rate_bar_h(i, 10);
-          if (std::isnan(r)) it.print(cx, 69, id(f_small), id(c_dim), "тренд: копим 10 мин");
-          else it.printf(cx, 69, id(f_small), r < -${leak_bar_h} ? id(c_amber) : id(c_dim),
-                         "тренд %+.2f бар/ч", r);
-          it.printf(4, 69, id(f_small), id(c_dim), "мин %.2f  макс %.2f", w.bar_min, w.bar_max);
+          if (std::isnan(r)) it.print(cx, 69, id(f_px1), id(c_dim), "тренд: копим 10м");
+          else it.printf(cx, 69, id(f_px1), r < -${leak_bar_h} ? id(c_amber) : id(c_dim),
+                         "тренд %+.2f б/ч", r);
+          it.printf(4, 69, id(f_px1), id(c_dim), "мин %.2f  макс %.2f", w.bar_min, w.bar_max);
         }
         // График за час
         const int gy = 88, gh = 82;
@@ -847,10 +827,10 @@ display:
         float mn, mx;
         graph(i, 1, gy + 1, 318, gh - 2, tpms::HIST, id(c_ok), true, mn, mx);
         if (!std::isnan(mn)) {
-          it.printf(3, gy + 2, id(f_small), id(c_dim), "%.2f", mx);
-          it.printf(3, gy + gh - 2, id(f_small), id(c_dim), TextAlign::BOTTOM_LEFT, "%.2f", mn);
+          it.printf(3, gy + 2, id(f_px1), id(c_dim), "%.2f", mx);
+          it.printf(3, gy + gh - 2, id(f_px1), id(c_dim), TextAlign::BOTTOM_LEFT, "%.2f", mn);
         }
-        it.print(317, gy + gh - 2, id(f_small), id(c_dim), TextAlign::BOTTOM_RIGHT, "1 час");
+        it.print(317, gy + gh - 2, id(f_px1), id(c_dim), TextAlign::BOTTOM_RIGHT, "1 час");
         return;
       }
 
@@ -867,17 +847,17 @@ display:
           fg = id(c_white); lab = id(c_white); sub = id(c_white); sp = id(c_thr);
         }
         it.filled_rectangle(x, y, TW, TH, bg);
-        it.print(x + 5, y + 3, id(f_small), lab, NAME[i]);
+        it.print(x + 5, y + 3, id(f_px1), lab, NAME[i]);
 
         if (id(set_mode)) {
           // Настройки: мин и макс крупно, выбранный порог на янтарной подложке.
           for (int k = 0; k < 2; k++) {
             const bool sel = id(set_field) == i * 2 + k;
-            const int ly = y + 24 + k * 29;
-            if (sel) it.filled_rectangle(x + 3, ly - 1, TW - 6, 27, blink ? id(c_amber) : id(c_ktm));
+            const int ly = y + 19 + k * 32;
+            if (sel) it.filled_rectangle(x + 3, ly, TW - 6, 32, blink ? id(c_amber) : id(c_ktm));
             const Color c = sel ? id(c_bg) : id(c_text);
-            it.print(x + 8, ly, id(f_mid), c, k == 0 ? "мин" : "макс");
-            it.printf(x + TW - 8, ly, id(f_mid), c, TextAlign::TOP_RIGHT, "%.1f",
+            it.print(x + 8, ly, id(f_px2), c, k == 0 ? "мин" : "макс");
+            it.printf(x + TW - 8, ly, id(f_px2), c, TextAlign::TOP_RIGHT, "%.1f",
                       k == 0 ? L[i]->state : H[i]->state);
           }
           continue;
@@ -887,15 +867,15 @@ display:
           // График последних 15 минут подложкой под цифрой.
           float mn, mx;
           graph(i, x + 4, y + 20, TW - 8, 46, 90, sp, false, mn, mx);
-          it.printf(x + TW - 5, y + 3, id(f_small), sub, TextAlign::TOP_RIGHT,
+          it.printf(x + TW - 5, y + 3, id(f_px1), sub, TextAlign::TOP_RIGHT,
                     "%.0f° %d%%", w.temp, w.batt);
           it.printf(x + TW / 2, y + 44, id(f_big), fg, TextAlign::CENTER, "%.2f", w.bar);
           char a[12]; age_str(i, a, sizeof(a));
-          it.print(x + TW - 5, y + TH - 3, id(f_small), sub, TextAlign::BOTTOM_RIGHT, a);
+          it.print(x + TW - 5, y + TH - 3, id(f_px1), sub, TextAlign::BOTTOM_RIGHT, a);
         } else {
           it.print(x + TW / 2, y + 44, id(f_big), id(c_grey), TextAlign::CENTER, "-.--");
         }
-        it.printf(x + 5, y + TH - 3, id(f_small), sub, TextAlign::BOTTOM_LEFT,
+        it.printf(x + 5, y + TH - 3, id(f_px1), sub, TextAlign::BOTTOM_LEFT,
                   "%.1f-%.1f", L[i]->state, H[i]->state);
       }
 
