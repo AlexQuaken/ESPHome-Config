@@ -100,7 +100,7 @@ static void ev_live(int lane, uint32_t now_epoch) {
 }
 
 // колбэки команд касаний (ставит YAML)
-static std::function<void()> cb_arm, cb_disarm, cb_light, cb_charge, cb_flash_stop;
+static std::function<void()> cb_arm, cb_disarm, cb_light, cb_charge, cb_flash_stop, cb_cam;
 // пин-коды снятия с охраны, подходит любой (из secrets через YAML)
 static std::vector<std::string> PINS;
 static float TARIFF = 4.32f;  // грн за кВт·ч, условный
@@ -335,7 +335,10 @@ static uint32_t alarm_press_ms = 0;
 static void on_tile(lv_event_t *e) {
   int i = (int) (intptr_t) lv_event_get_user_data(e);
   if (lv_event_get_code(e) != LV_EVENT_SHORT_CLICKED) return;
-  if (i == 1) {
+  if (i == 0) {
+    // ВОРОТА: картинка с камеры гаража (режим 4 прошивки, рисует raw_draw)
+    if (cb_cam) cb_cam();
+  } else if (i == 1) {
     bool armed = S.alarm.rfind("armed", 0) == 0 || S.alarm == "triggered" || S.alarm == "pending";
     if (armed) pin_open();
     else if (cb_arm) cb_arm();
@@ -382,7 +385,7 @@ static void build_main(lv_obj_t *scr) {
     t.sub = lbl(t.box, 7, 41, FS, SUB, "");
     t.ico = canvas(t.box, TW - 24, 4, 20, 20);
     t.ring = nullptr;
-    if (i == 1 || i == 2) {
+    if (i == 0 || i == 1 || i == 2) {
       t.ring = obj(t.box, TW - 25, 2, 21, 21);
       lv_obj_set_style_radius(t.ring, LV_RADIUS_CIRCLE, 0);
       border(t.ring, SUB, 1);
