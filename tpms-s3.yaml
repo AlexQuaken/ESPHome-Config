@@ -17,11 +17,12 @@
 # родного размера 16, иначе буквы ломаются), давление шрифтом ArchivoBlack.
 #
 # Домашний: серый 350 EXC-F SIX DAYS на фоне (images/ktm_bg.png, сделан из
-# картинки заставки KTM юзера из com.alex.ktmsplash на Bison), время ЧЧ:ММ:СС, дата цифрами и день недели,
+# картинки заставки KTM юзера из com.alex.ktmsplash на Bison),
+# время ЧЧ:ММ:СС, дата цифрами и день недели,
 # есть ли домашняя сеть (нужна только часам и HA, датчики идут по BLE),
-# строка BLE с временем последнего пакета, внизу четыре ячейки: давление,
-# пороги, возраст пакета, температура, полоска свежести, вспышка рамки на
-# каждый пакет. Время из HA, запасное SNTP. Включили вне дома, значит вместо
+# внизу четыре ячейки: давление, пороги, возраст пакета, температура,
+# батарея, RSSI, число пакетов с включения, полоска свежести, вспышка рамки
+# на каждый пакет. Время из HA, запасное SNTP. Включили вне дома, значит вместо
 # часов прочерки и аптайм: своих часов с батарейкой у платы нет.
 #
 # Сетка 2x2: по плитке на датчик, давление, за ним график последних 15 минут,
@@ -50,13 +51,19 @@ substitutions:
   # .222 занят телефоном Bison на мотоцикле, не путать
   static_ip: '192.168.0.233'
   # Подписи плиток. Порядок как в tpms::MAC: позиции 80, 81, 82, 83.
-  # 1 и 2 стоят на сердечниках TUbliss, 3 и 4 на покрышках.
-  # Имена входят в ключ сохранения порогов: сменишь имя, и пороги вернутся
-  # к значениям по умолчанию ниже.
-  name_0: 'TUBLISS 1'
-  name_1: 'TUBLISS 2'
-  name_2: 'КОЛЕСО 3'
-  name_3: 'КОЛЕСО 4'
+  # 1 и 2 стоят на сердечниках TUbliss (перед, зад), 3 и 4 на покрышках
+  # (перед, зад). Не длиннее 8 знаков, иначе не влезает в ячейку.
+  name_0: 'TUB ПЕР'
+  name_1: 'TUB ЗАД'
+  name_2: 'ШИНА ПЕР'
+  name_3: 'ШИНА ЗАД'
+  # Имена сущностей в HA. Латиницей: ESPHome строит из имени ASCII-ID, и
+  # кириллица после TUB у двух датчиков давала одинаковый id. Входят в ключ
+  # сохранения порогов, как и раньше имена плиток.
+  ha_0: 'TUB front'
+  ha_1: 'TUB rear'
+  ha_2: 'Tire front'
+  ha_3: 'Tire rear'
   # Пороги по умолчанию, действуют только до первой правки.
   lo_0: '6.4'
   hi_0: '9.0'
@@ -181,7 +188,8 @@ time:
       - 1.pool.ntp.org
 
 image:
-  - file: images/ktm_bg.png
+  - platform: file
+    file: images/ktm_bg.png
     id: img_bg
     type: RGB565
     resize: 320x170
@@ -277,102 +285,102 @@ binary_sensor:
 
   - platform: template
     id: al0
-    name: ${name_0} тревога
+    name: ${ha_0} тревога
     device_class: problem
   - platform: template
     id: al1
-    name: ${name_1} тревога
+    name: ${ha_1} тревога
     device_class: problem
   - platform: template
     id: al2
-    name: ${name_2} тревога
+    name: ${ha_2} тревога
     device_class: problem
   - platform: template
     id: al3
-    name: ${name_3} тревога
+    name: ${ha_3} тревога
     device_class: problem
 
 sensor:
   - platform: template
     id: p0
-    name: ${name_0} давление
+    name: ${ha_0} давление
     unit_of_measurement: bar
     device_class: pressure
     accuracy_decimals: 2
     update_interval: never
   - platform: template
     id: p1
-    name: ${name_1} давление
+    name: ${ha_1} давление
     unit_of_measurement: bar
     device_class: pressure
     accuracy_decimals: 2
     update_interval: never
   - platform: template
     id: p2
-    name: ${name_2} давление
+    name: ${ha_2} давление
     unit_of_measurement: bar
     device_class: pressure
     accuracy_decimals: 2
     update_interval: never
   - platform: template
     id: p3
-    name: ${name_3} давление
+    name: ${ha_3} давление
     unit_of_measurement: bar
     device_class: pressure
     accuracy_decimals: 2
     update_interval: never
   - platform: template
     id: t0
-    name: ${name_0} температура
+    name: ${ha_0} температура
     unit_of_measurement: °C
     device_class: temperature
     accuracy_decimals: 1
     update_interval: never
   - platform: template
     id: t1
-    name: ${name_1} температура
+    name: ${ha_1} температура
     unit_of_measurement: °C
     device_class: temperature
     accuracy_decimals: 1
     update_interval: never
   - platform: template
     id: t2
-    name: ${name_2} температура
+    name: ${ha_2} температура
     unit_of_measurement: °C
     device_class: temperature
     accuracy_decimals: 1
     update_interval: never
   - platform: template
     id: t3
-    name: ${name_3} температура
+    name: ${ha_3} температура
     unit_of_measurement: °C
     device_class: temperature
     accuracy_decimals: 1
     update_interval: never
   - platform: template
     id: b0
-    name: ${name_0} батарея
+    name: ${ha_0} батарея
     unit_of_measurement: '%'
     device_class: battery
     accuracy_decimals: 0
     update_interval: never
   - platform: template
     id: b1
-    name: ${name_1} батарея
+    name: ${ha_1} батарея
     unit_of_measurement: '%'
     device_class: battery
     accuracy_decimals: 0
     update_interval: never
   - platform: template
     id: b2
-    name: ${name_2} батарея
+    name: ${ha_2} батарея
     unit_of_measurement: '%'
     device_class: battery
     accuracy_decimals: 0
     update_interval: never
   - platform: template
     id: b3
-    name: ${name_3} батарея
+    name: ${ha_3} батарея
     unit_of_measurement: '%'
     device_class: battery
     accuracy_decimals: 0
@@ -381,7 +389,7 @@ sensor:
 number:
   - platform: template
     id: lo0
-    name: ${name_0} мин
+    name: ${ha_0} мин
     optimistic: true
     restore_value: true
     initial_value: ${lo_0}
@@ -392,7 +400,7 @@ number:
     mode: box
   - platform: template
     id: hi0
-    name: ${name_0} макс
+    name: ${ha_0} макс
     optimistic: true
     restore_value: true
     initial_value: ${hi_0}
@@ -403,7 +411,7 @@ number:
     mode: box
   - platform: template
     id: lo1
-    name: ${name_1} мин
+    name: ${ha_1} мин
     optimistic: true
     restore_value: true
     initial_value: ${lo_1}
@@ -414,7 +422,7 @@ number:
     mode: box
   - platform: template
     id: hi1
-    name: ${name_1} макс
+    name: ${ha_1} макс
     optimistic: true
     restore_value: true
     initial_value: ${hi_1}
@@ -425,7 +433,7 @@ number:
     mode: box
   - platform: template
     id: lo2
-    name: ${name_2} мин
+    name: ${ha_2} мин
     optimistic: true
     restore_value: true
     initial_value: ${lo_2}
@@ -436,7 +444,7 @@ number:
     mode: box
   - platform: template
     id: hi2
-    name: ${name_2} макс
+    name: ${ha_2} макс
     optimistic: true
     restore_value: true
     initial_value: ${hi_2}
@@ -447,7 +455,7 @@ number:
     mode: box
   - platform: template
     id: lo3
-    name: ${name_3} мин
+    name: ${ha_3} мин
     optimistic: true
     restore_value: true
     initial_value: ${lo_3}
@@ -458,7 +466,7 @@ number:
     mode: box
   - platform: template
     id: hi3
-    name: ${name_3} макс
+    name: ${ha_3} макс
     optimistic: true
     restore_value: true
     initial_value: ${hi_3}
@@ -734,27 +742,10 @@ display:
         const bool wf = wifi::global_wifi_component->is_connected();
         it.print(204, 38, id(f_px1), wf ? id(c_dim) : id(c_grey), wf ? "сеть: дом" : "сеть: нет");
 
-        // Строка BLE: последний пакет от датчиков с настенным временем.
-        const int li = id(last_pkt_idx);
-        if (li >= 0) {
-          char a[12]; age_str(li, a, sizeof(a));
-          const auto &w = tpms::W[li];
-          if (w.last_epoch) {
-            struct tm lt; time_t e = w.last_epoch; localtime_r(&e, &lt);
-            it.printf(4, 54, id(f_px1), id(c_text), "BLE %02d:%02d:%02d от %d, %s назад",
-                      lt.tm_hour, lt.tm_min, lt.tm_sec, li + 1, a);
-          } else {
-            it.printf(4, 54, id(f_px1), id(c_text), "BLE пакет от %d, %s назад", li + 1, a);
-          }
-        } else {
-          it.print(4, 54, id(f_px1), id(c_dim), "BLE: датчики молчат, ждем");
-        }
-        it.printf(316, 54, id(f_px1), id(c_dim), TextAlign::TOP_RIGHT, "RX %u", (unsigned) id(rx_total));
-
         // Четыре ячейки внизу, прозрачные: мотоцикл просвечивает сквозь них.
         for (int i = 0; i < tpms::N; i++) {
           const auto &w = tpms::W[i];
-          const int x = 1 + i * 80, y = 73, cw2 = 78, chh = 97;
+          const int x = 1 + i * 80, y = 55, cw2 = 78, chh = 115;
           const bool fr = tpms::fresh(i, stale);
           const uint32_t age = now - w.last_ms;
           if (w.alarm && fr) {
@@ -765,14 +756,18 @@ display:
           it.rectangle(x, y, cw2, chh, flash ? id(c_ktm) : id(c_grid));
           if (flash) it.rectangle(x + 1, y + 1, cw2 - 2, chh - 2, id(c_ktm));
           it.print(x + cw2 / 2, y + 3, id(f_px1), id(c_text), TextAlign::TOP_CENTER, NAME[i]);
-          it.printf(x + cw2 / 2, y + 58, id(f_px1), id(c_dim), TextAlign::TOP_CENTER,
+          it.printf(x + cw2 / 2, y + 46, id(f_px1), id(c_dim), TextAlign::TOP_CENTER,
                     "%.1f-%.1f", L[i]->state, H[i]->state);
           if (w.seen) {
             const Color fg = !fr ? id(c_grey) : (w.alarm ? id(c_white) : id(c_ok));
-            it.printf(x + cw2 / 2, y + 39, id(f_num), fg, TextAlign::CENTER, "%.2f", w.bar);
+            it.printf(x + cw2 / 2, y + 31, id(f_num), fg, TextAlign::CENTER, "%.2f", w.bar);
             char a[12]; age_str(i, a, sizeof(a));
-            it.print(x + 4, y + 75, id(f_px1), id(c_text), a);
-            it.printf(x + cw2 - 4, y + 75, id(f_px1), id(c_dim), TextAlign::TOP_RIGHT, "%.0f°", w.temp);
+            it.print(x + 4, y + 62, id(f_px1), id(c_text), a);
+            it.printf(x + cw2 - 4, y + 62, id(f_px1), id(c_dim), TextAlign::TOP_RIGHT, "%.0f°", w.temp);
+            it.printf(x + 4, y + 78, id(f_px1), id(c_dim), "%d%%", w.batt);
+            it.printf(x + cw2 - 4, y + 78, id(f_px1), id(c_dim), TextAlign::TOP_RIGHT, "%d", w.rssi);
+            it.printf(x + cw2 / 2, y + 94, id(f_px1), id(c_dim), TextAlign::TOP_CENTER, "%u пак",
+                      (unsigned) w.packets);
             // Полоска свежести: полная сразу после пакета, к stale_min пустая.
             float fr01 = 1.0f - (float) age / (float) stale;
             if (fr01 < 0) fr01 = 0;
@@ -780,8 +775,8 @@ display:
             it.filled_rectangle(x + 4, y + chh - 5, cw2 - 8, 2, id(c_tile));
             if (bw > 0) it.filled_rectangle(x + 4, y + chh - 5, bw, 2, fr01 > 0.5f ? id(c_ok) : id(c_amber));
           } else {
-            it.print(x + cw2 / 2, y + 39, id(f_num), id(c_grey), TextAlign::CENTER, "-.--");
-            it.print(x + cw2 / 2, y + 75, id(f_px1), id(c_grey), TextAlign::TOP_CENTER, "спит");
+            it.print(x + cw2 / 2, y + 31, id(f_num), id(c_grey), TextAlign::CENTER, "-.--");
+            it.print(x + cw2 / 2, y + 62, id(f_px1), id(c_grey), TextAlign::TOP_CENTER, "спит");
           }
         }
         return;
