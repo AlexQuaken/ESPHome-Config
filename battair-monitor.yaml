@@ -63,7 +63,8 @@ battair:
   id: battair_hub
   ble_client_id: battair_ble
   update_interval: 5min
-  attempts: 3
+  # Как в Arduino v2.2. На -85..-90 дБм соединение часто падает со status 133.
+  attempts: 5
   found_devices:
     name: Found Devices
   scan_counter:
@@ -71,12 +72,13 @@ battair:
   log:
     name: Log
   batteries:
-    - !include {file: packages/battair_bat.yaml, vars: {n: 1, ble: 'BattAir 1', mac: ''}}
-    - !include {file: packages/battair_bat.yaml, vars: {n: 2, ble: 'BattAir 2', mac: ''}}
-    - !include {file: packages/battair_bat.yaml, vars: {n: 3, ble: 'BattAir 3', mac: ''}}
-    - !include {file: packages/battair_bat.yaml, vars: {n: 4, ble: 'BattAir 4', mac: ''}}
-    - !include {file: packages/battair_bat.yaml, vars: {n: 5, ble: 'BattAir 5', mac: ''}}
-    - !include {file: packages/battair_bat.yaml, vars: {n: 6, ble: 'BattAir 6', mac: ''}}
+    # MAC сняты с эфира 08.10.2026. Пустой mac: '' значит искать по имени (для замены модуля).
+    - !include {file: packages/battair_bat.yaml, vars: {n: 1, ble: 'BattAir 1', mac: 'E0:4E:7A:27:1E:28'}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 2, ble: 'BattAir 2', mac: '54:14:A7:D1:13:31'}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 3, ble: 'BattAir 3', mac: 'E0:4E:7A:26:F3:A7'}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 4, ble: 'BattAir 4', mac: 'E0:4E:7A:26:F5:49'}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 5, ble: 'BattAir 5', mac: 'E0:4E:7A:27:05:AF'}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 6, ble: 'BattAir 6', mac: '54:14:A7:D1:5C:FF'}}
 
 button:
   - platform: template
