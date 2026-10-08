@@ -75,7 +75,7 @@ TEXT_KEYS = ["label", "type", "firmware"]
 def _cell():
     return sensor.sensor_schema(
         unit_of_measurement=UNIT_VOLT,
-        accuracy_decimals=3,
+        accuracy_decimals=2,
         device_class=DEVICE_CLASS_VOLTAGE,
         state_class=STATE_CLASS_MEASUREMENT,
         icon="mdi:battery",

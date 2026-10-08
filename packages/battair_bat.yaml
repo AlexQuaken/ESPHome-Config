@@ -1,48 +1,71 @@
 # Одна батарея для battair-monitor.yaml: подключается в список batteries через
-#   - !include {file: packages/battair_bat.yaml, vars: {n: 1, ble: 'BattAir 3', mac: '...'}}
-# Имена сущностей "Bat<n> ..." повторяют Arduino-прошивку v2.2, на них завязаны
-# automation.battair_low_voltage_alert, Awtrix, экран esp32-cam1 и дашборды.
+#   - !include {file: packages/battair_bat.yaml, vars: {n: 1, ble: 'BattAir 1', mac: ''}}
+# Каждая батарея отдельное подустройство bat<n>_dev (объявлены в esphome: devices:),
+# в HA это устройство "BattAir <n>" с сущностями "Cell 1", "Voltage" и т. д.
+# Entity_id в HA оставлены старыми, sensor.battair_monitor_bat<n>_...: на них завязаны
+# уведомления о напряжении и разбалансе, Awtrix, экран esp32-cam1 и дашборды.
 ble_name: ${ble}
 mac_address: ${mac}
 label:
-  name: Bat${n} Name
+  name: Name
+  device_id: bat${n}_dev
 type:
-  name: Bat${n} Type
+  name: Type
+  device_id: bat${n}_dev
 cycles:
-  name: Bat${n} Cycles
+  name: Cycles
+  device_id: bat${n}_dev
 voltage:
-  name: Bat${n} Voltage
+  name: Voltage
+  device_id: bat${n}_dev
 cell_1:
-  name: Bat${n} Cell 1
+  name: Cell 1
+  device_id: bat${n}_dev
 cell_2:
-  name: Bat${n} Cell 2
+  name: Cell 2
+  device_id: bat${n}_dev
 cell_3:
-  name: Bat${n} Cell 3
+  name: Cell 3
+  device_id: bat${n}_dev
 cell_4:
-  name: Bat${n} Cell 4
+  name: Cell 4
+  device_id: bat${n}_dev
 cell_delta:
-  name: Bat${n} Cell Delta
+  name: Cell Delta
+  device_id: bat${n}_dev
 temperature:
-  name: Bat${n} Temperature
+  name: Temperature
+  device_id: bat${n}_dev
 charge_current:
-  name: Bat${n} Charge Current
+  name: Charge Current
+  device_id: bat${n}_dev
 discharge_current:
-  name: Bat${n} Discharge Current
+  name: Discharge Current
+  device_id: bat${n}_dev
 level:
-  name: Bat${n} Level
+  name: Level
+  device_id: bat${n}_dev
 rssi:
-  name: Bat${n} RSSI
+  name: RSSI
+  device_id: bat${n}_dev
 online:
-  name: Bat${n} Online
+  name: Online
+  device_id: bat${n}_dev
 firmware:
-  name: Bat${n} Firmware
+  name: Firmware
+  device_id: bat${n}_dev
 errors:
-  name: Bat${n} Errors
+  name: Errors
+  device_id: bat${n}_dev
 outages:
-  name: Bat${n} Outages
+  name: Outages
+  device_id: bat${n}_dev
 overheats:
-  name: Bat${n} Overheats
+  name: Overheats
+  device_id: bat${n}_dev
 overcharges:
-  name: Bat${n} Overcharges
+  name: Overcharges
+  device_id: bat${n}_dev
 overdischarges:
-  name: Bat${n} Overdischarges
+  name: Overdischarges
+  device_id: bat${n}_dev
