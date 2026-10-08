@@ -11,9 +11,10 @@
 # подписка на 0xBA01, рукопожатие, 11 команд, отключение. На датчик уходит
 # около 3 секунд, обход всех шести раз в update_interval. Датчики вещают в
 # эфир сами, MAC берется по имени из рекламы, если в слоте он не прописан.
-# Порядок слотов Bat1..Bat6 как был в Arduino (он хранился в NVS платы):
-# на эти имена завязаны уведомления о низком напряжении, Awtrix, экран
-# esp32-cam1 и дашборды. Нужна нумерация как на корпусах, переставить ble.
+# Слот BatN это датчик "BattAir N", номер как на корпусе. Имена сущностей
+# Bat<n> ... остались от Arduino: на них завязаны уведомления о низком
+# напряжении и разбалансе, Awtrix, экран esp32-cam1 и дашборды.
+# У 1-й банки бывает просадка, за ней следит Cell Delta (разбаланс, мВ).
 
 substitutions:
   board_name: 'battair-monitor'
@@ -62,12 +63,12 @@ battair:
   log:
     name: Log
   batteries:
-    - !include {file: packages/battair_bat.yaml, vars: {n: 1, ble: 'BattAir 3', mac: ''}}
-    - !include {file: packages/battair_bat.yaml, vars: {n: 2, ble: 'BattAir 6', mac: ''}}
-    - !include {file: packages/battair_bat.yaml, vars: {n: 3, ble: 'BattAir 4', mac: ''}}
-    - !include {file: packages/battair_bat.yaml, vars: {n: 4, ble: 'BattAir 2', mac: ''}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 1, ble: 'BattAir 1', mac: ''}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 2, ble: 'BattAir 2', mac: ''}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 3, ble: 'BattAir 3', mac: ''}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 4, ble: 'BattAir 4', mac: ''}}
     - !include {file: packages/battair_bat.yaml, vars: {n: 5, ble: 'BattAir 5', mac: ''}}
-    - !include {file: packages/battair_bat.yaml, vars: {n: 6, ble: 'BattAir 1', mac: ''}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 6, ble: 'BattAir 6', mac: ''}}
 
 button:
   - platform: template
