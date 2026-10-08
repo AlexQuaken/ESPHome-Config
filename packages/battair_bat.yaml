@@ -1,0 +1,48 @@
+# Одна батарея для battair-monitor.yaml: подключается в список batteries через
+#   - !include {file: packages/battair_bat.yaml, vars: {n: 1, ble: 'BattAir 3', mac: '...'}}
+# Имена сущностей "Bat<n> ..." повторяют Arduino-прошивку v2.2, на них завязаны
+# automation.battair_low_voltage_alert, Awtrix, экран esp32-cam1 и дашборды.
+ble_name: ${ble}
+mac_address: ${mac}
+label:
+  name: Bat${n} Name
+type:
+  name: Bat${n} Type
+cycles:
+  name: Bat${n} Cycles
+voltage:
+  name: Bat${n} Voltage
+cell_1:
+  name: Bat${n} Cell 1
+cell_2:
+  name: Bat${n} Cell 2
+cell_3:
+  name: Bat${n} Cell 3
+cell_4:
+  name: Bat${n} Cell 4
+cell_delta:
+  name: Bat${n} Cell Delta
+temperature:
+  name: Bat${n} Temperature
+charge_current:
+  name: Bat${n} Charge Current
+discharge_current:
+  name: Bat${n} Discharge Current
+level:
+  name: Bat${n} Level
+rssi:
+  name: Bat${n} RSSI
+online:
+  name: Bat${n} Online
+firmware:
+  name: Bat${n} Firmware
+errors:
+  name: Bat${n} Errors
+outages:
+  name: Bat${n} Outages
+overheats:
+  name: Bat${n} Overheats
+overcharges:
+  name: Bat${n} Overcharges
+overdischarges:
+  name: Bat${n} Overdischarges
