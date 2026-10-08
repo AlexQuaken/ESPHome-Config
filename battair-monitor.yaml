@@ -23,6 +23,14 @@ substitutions:
 esphome:
   name: ${board_name}
   friendly_name: BattAir Monitor
+  # По устройству HA на каждую батарею, сама плата остается BattAir Monitor.
+  devices:
+    - {id: bat1_dev, name: BattAir 1}
+    - {id: bat2_dev, name: BattAir 2}
+    - {id: bat3_dev, name: BattAir 3}
+    - {id: bat4_dev, name: BattAir 4}
+    - {id: bat5_dev, name: BattAir 5}
+    - {id: bat6_dev, name: BattAir 6}
 
 esp32:
   board: esp32dev
