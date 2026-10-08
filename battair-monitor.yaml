@@ -1,0 +1,77 @@
+# battair-monitor: ESP32 DevKit, MAC 8c:4f:00:3c:cf:78, 192.168.0.188.
+# Опрашивает по BLE шесть датчиков ISDT BattAir на LiPo 4S и отдает в HA
+# напряжения банок, циклы, температуру, токи и счетчики аварий.
+#
+# Заменила Arduino-прошивку BattAirMonitor v2.2 (BLE -> MQTT через ArduinoHA).
+# Ее исходник восстановлен в D:\MegaSync\Arduino\BattAirMonitor_v2_2\, полный
+# дамп флеша перед перепрошивкой лежит там же. Протокол разобран в
+# external_components/battair/battair.h.
+#
+# Как работает. Один ble_client по очереди подключается к каждому датчику:
+# подписка на 0xBA01, рукопожатие, 11 команд, отключение. На датчик уходит
+# около 3 секунд, обход всех шести раз в update_interval. Датчики вещают в
+# эфир сами, MAC берется по имени из рекламы, если в слоте он не прописан.
+# Порядок слотов Bat1..Bat6 как был в Arduino (он хранился в NVS платы):
+# на эти имена завязаны уведомления о низком напряжении, Awtrix, экран
+# esp32-cam1 и дашборды. Нужна нумерация как на корпусах, переставить ble.
+
+substitutions:
+  board_name: 'battair-monitor'
+  static_ip: '192.168.0.188'
+
+esphome:
+  name: ${board_name}
+  friendly_name: BattAir Monitor
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+packages:
+  device_base: !include packages/1wifi_api_ota_logger.yaml
+  base_sensors: !include packages/2common_sensors.yaml
+  led: !include packages/3status_led_esp32.yaml
+  diag: !include packages/diag.yaml
+
+external_components:
+  - source:
+      type: local
+      path: external_components
+    components: [battair]
+
+esp32_ble_tracker:
+  scan_parameters:
+    active: true
+
+ble_client:
+  # Адрес меняется на ходу компонентом battair, здесь заглушка.
+  - id: battair_ble
+    mac_address: '00:00:00:00:00:00'
+    auto_connect: false
+
+battair:
+  id: battair_hub
+  ble_client_id: battair_ble
+  update_interval: 5min
+  attempts: 3
+  found_devices:
+    name: Found Devices
+  scan_counter:
+    name: Scan Counter
+  log:
+    name: Log
+  batteries:
+    - !include {file: packages/battair_bat.yaml, vars: {n: 1, ble: 'BattAir 3', mac: ''}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 2, ble: 'BattAir 6', mac: ''}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 3, ble: 'BattAir 4', mac: ''}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 4, ble: 'BattAir 2', mac: ''}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 5, ble: 'BattAir 5', mac: ''}}
+    - !include {file: packages/battair_bat.yaml, vars: {n: 6, ble: 'BattAir 1', mac: ''}}
+
+button:
+  - platform: template
+    name: Poll Now
+    icon: mdi:refresh
+    on_press:
+      - lambda: id(battair_hub).poll_now();
