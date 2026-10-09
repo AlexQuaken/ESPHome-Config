@@ -96,6 +96,13 @@ struct Battery {
   uint8_t attempt{0};
   bool ok{false};
   Session s;
+  // Фильтр мусора: последнее принятое и ждущее подтверждения напряжения банок, циклы.
+  int32_t accepted_mv[6]{};
+  bool have_accepted{false};
+  int32_t pending_mv[6]{};
+  bool have_pending{false};
+  uint8_t pending_count{0};
+  int last_cycles{-1};
   sensor::Sensor *sensors[SENSOR_COUNT]{};
   text_sensor::TextSensor *texts[TEXT_COUNT]{};
   binary_sensor::BinarySensor *online{nullptr};
@@ -179,6 +186,7 @@ class BattAirHub : public PollingComponent,
   void write_(const uint8_t *data, size_t len);
   void on_packet_(const uint8_t *raw, size_t len);
   void publish_battery_(Battery &b);
+  bool confirms_pending_(Battery &b);
 };
 
 }  // namespace esphome::battair

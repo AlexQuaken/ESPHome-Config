@@ -3,10 +3,13 @@
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
 
+#include <esp_bt.h>
+
 #include <algorithm>
 #include <cinttypes>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #ifdef USE_ESP32
@@ -40,6 +43,18 @@ static const uint32_t RETRY_DELAY_MS = 2000;
 static const uint32_t CLOSE_TIMEOUT_MS = 15000;
 static const uint32_t ADV_LOG_INTERVAL_MS = 300000;
 static const uint32_t BOOT_DELAY_MS = 30000;  // после загрузки даем трекеру увидеть датчики
+
+// Границы фильтра мусора, см. publish_battery_().
+static const int32_t CELL_MIN_MV = 2500;
+static const int32_t CELL_MAX_MV = 4300;
+static const int32_t CELL_JUMP_MV = 150;     // скачок между опросами, который надо подтвердить
+static const int32_t CELL_CONFIRM_MV = 50;   // насколько повтор может отличаться от первого замера
+static const uint16_t CYCLES_MAX = 1000;
+static const int CYCLES_STEP_MAX = 3;
+static const uint16_t COUNTER_MAX = 10000;
+static const int8_t TEMP_MIN_C = -20;
+static const int8_t TEMP_MAX_C = 70;
+static const uint32_t CURRENT_MAX = 100000;
 
 static const char *const BATTERY_TYPES[] = {"LiHv", "LiPo", "LiIon", "LiFe", "Pb", "NiMh/Cd", "LiUHv"};
 
@@ -218,6 +233,12 @@ void BattAirHub::start_attempt_() {
   this->deadline_ = millis() + SESSION_TIMEOUT_MS;
   ESP_LOGD(TAG, "Bat%d '%s' %s, попытка %u", this->cur_ + 1, b.ble_name.c_str(), mac_str(b.address).c_str(),
            b.attempt);
+  // +9 дБм, как ставила Arduino-прошивка (NimBLEDevice::setPower(ESP_PWR_LVL_P9)). ESPHome мощность
+  // BLE не настраивает, по умолчанию она ниже, и дальние датчики слышали нас хуже, чем мы их.
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P9);
+  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, ESP_PWR_LVL_P9);
+  for (int h = ESP_BLE_PWR_TYPE_CONN_HDL0; h <= ESP_BLE_PWR_TYPE_CONN_HDL8; h++)
+    esp_ble_tx_power_set(static_cast<esp_ble_power_type_t>(h), ESP_PWR_LVL_P9);
   this->parent()->set_address(b.address);
   this->parent()->set_remote_addr_type(static_cast<esp_ble_addr_type_t>(b.address_type));
   this->parent()->connect();
@@ -518,6 +539,15 @@ void BattAirHub::on_packet_(const uint8_t *raw, size_t len) {
   }
 }
 
+bool BattAirHub::confirms_pending_(Battery &b) {
+  if (!b.have_pending)
+    return false;
+  for (uint8_t c = 0; c < b.s.cell_count; c++)
+    if (std::abs(b.s.cell_mv[c] - b.pending_mv[c]) > CELL_CONFIRM_MV)
+      return false;
+  return true;
+}
+
 void BattAirHub::publish_battery_(Battery &b) {
   auto &s = b.s;
   auto pub = [&b](uint8_t kind, float v) {
@@ -542,20 +572,42 @@ void BattAirHub::publish_battery_(Battery &b) {
     pub_text(TEXT_FIRMWARE, fw);
   }
 
+  // Фильтр мусора. Датчик иногда отдает нефизичные значения, их не публикуем, в HA остается
+  // прошлое. Настоящая просадка банки идет медленно или повторяется в следующем опросе,
+  // поэтому фильтр ее не прячет, а только задерживает на один опрос.
   std::string line = "B" + std::to_string(n);
   if (s.cells) {
-    // Проверка из v2.2: живая LiPo-банка лежит в 2,5..4,3 В, остальное мусор в пакете.
     bool valid = true;
-    int32_t total = 0, lo = INT32_MAX, hi = INT32_MIN;
+    int32_t total = 0, lo = INT32_MAX, hi = INT32_MIN, jump = 0;
     for (uint8_t c = 0; c < s.cell_count; c++) {
       int32_t mv = s.cell_mv[c];
-      if (mv < 2500 || mv > 4300)
+      // Живая LiPo-банка лежит в 2,5..4,3 В (граница из v2.2).
+      if (mv < CELL_MIN_MV || mv > CELL_MAX_MV)
         valid = false;
       total += mv;
       lo = std::min(lo, mv);
       hi = std::max(hi, mv);
+      if (b.have_accepted)
+        jump = std::max(jump, std::abs(mv - b.accepted_mv[c]));
     }
-    if (valid) {
+    if (!valid) {
+      ESP_LOGW(TAG, "Bat%d: мусор, банки вне 2.5..4.3 В: %d %d %d %d", n, (int) s.cell_mv[0], (int) s.cell_mv[1],
+               (int) s.cell_mv[2], (int) s.cell_mv[3]);
+      line += " bad";
+    } else if (jump > CELL_JUMP_MV && !this->confirms_pending_(b) && b.pending_count < 2) {
+      // Резкий скачок от прошлого принятого значения: ждем подтверждения следующим опросом.
+      // Третий скачок подряд принимаем без подтверждения, иначе при быстрой зарядке значения залипнут.
+      b.pending_count++;
+      ESP_LOGW(TAG, "Bat%d: скачок банки %d мВ, жду подтверждения: %d %d %d %d", n, (int) jump,
+               (int) s.cell_mv[0], (int) s.cell_mv[1], (int) s.cell_mv[2], (int) s.cell_mv[3]);
+      memcpy(b.pending_mv, s.cell_mv, sizeof(b.pending_mv));
+      b.have_pending = true;
+      line += " ?";
+    } else {
+      memcpy(b.accepted_mv, s.cell_mv, sizeof(b.accepted_mv));
+      b.have_accepted = true;
+      b.have_pending = false;
+      b.pending_count = 0;
       for (uint8_t c = 0; c < s.cell_count && c < 4; c++)
         pub(SENSOR_CELL_1 + c, s.cell_mv[c] / 1000.0f);
       pub(SENSOR_VOLTAGE, total / 1000.0f);
@@ -563,26 +615,42 @@ void BattAirHub::publish_battery_(Battery &b) {
       char v[12];
       snprintf(v, sizeof(v), " %.2f", total / 1000.0f);
       line += v;
-    } else {
-      ESP_LOGW(TAG, "Bat%d: банки вне 2.5..4.3 В: %d %d %d %d", n, (int) s.cell_mv[0], (int) s.cell_mv[1],
-               (int) s.cell_mv[2], (int) s.cell_mv[3]);
-      line += " bad";
     }
   }
   if (s.stats) {
-    if (s.cycles <= 1000)
+    // Циклы только растут, и не больше чем на несколько за один опрос.
+    bool cycles_ok = s.cycles <= CYCLES_MAX &&
+                     (b.last_cycles < 0 || (s.cycles >= b.last_cycles && s.cycles <= b.last_cycles + CYCLES_STEP_MAX));
+    if (cycles_ok) {
+      b.last_cycles = s.cycles;
       pub(SENSOR_CYCLES, s.cycles);
-    pub(SENSOR_ERRORS, s.errors);
-    pub(SENSOR_OUTAGES, s.outages);
-    pub(SENSOR_OVERHEATS, s.overheats);
-    pub(SENSOR_OVERCHARGES, s.overcharges);
-    pub(SENSOR_OVERDISCHARGES, s.overdischarges);
+    } else {
+      ESP_LOGW(TAG, "Bat%d: мусор в циклах %u (было %d)", n, s.cycles, b.last_cycles);
+    }
+    if (s.errors <= COUNTER_MAX && s.overheats <= COUNTER_MAX && s.overcharges <= COUNTER_MAX &&
+        s.overdischarges <= COUNTER_MAX) {
+      pub(SENSOR_ERRORS, s.errors);
+      pub(SENSOR_OUTAGES, s.outages);
+      pub(SENSOR_OVERHEATS, s.overheats);
+      pub(SENSOR_OVERCHARGES, s.overcharges);
+      pub(SENSOR_OVERDISCHARGES, s.overdischarges);
+    } else {
+      ESP_LOGW(TAG, "Bat%d: мусор в счетчиках аварий", n);
+    }
   }
   if (s.realtime) {
-    pub(SENSOR_TEMPERATURE, s.temperature);
-    pub(SENSOR_CHARGE_CURRENT, s.charge_current);
-    pub(SENSOR_DISCHARGE_CURRENT, s.discharge_current);
-    if (s.level)
+    if (s.temperature >= TEMP_MIN_C && s.temperature <= TEMP_MAX_C)
+      pub(SENSOR_TEMPERATURE, s.temperature);
+    else
+      ESP_LOGW(TAG, "Bat%d: мусор в температуре %d", n, s.temperature);
+    // Единицы тока не подтверждены (похоже на мА); больше 100 А с балансировочного датчика не бывает.
+    if (s.charge_current <= CURRENT_MAX && s.discharge_current <= CURRENT_MAX) {
+      pub(SENSOR_CHARGE_CURRENT, s.charge_current);
+      pub(SENSOR_DISCHARGE_CURRENT, s.discharge_current);
+    } else {
+      ESP_LOGW(TAG, "Bat%d: мусор в токах %" PRIu32 " %" PRIu32, n, s.charge_current, s.discharge_current);
+    }
+    if (s.level && s.level_raw <= 100)
       pub(SENSOR_LEVEL, s.level_raw);
   }
   if (b.rssi_valid)
