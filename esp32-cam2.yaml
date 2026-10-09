@@ -1,6 +1,7 @@
 substitutions:
   board_name: 'esp32-cam2'
   static_ip: '192.168.0.177'
+  board_id: '30'  # номер платы в таблице на дашборде ESP
 
 esphome:
   name: ${board_name}
