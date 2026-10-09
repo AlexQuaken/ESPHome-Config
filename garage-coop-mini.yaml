@@ -1,4 +1,4 @@
-# t-display-s3-23 — LilyGO T-Display-S3 (ESP32-S3 + ST7789 i80 320x170)
+# garage-coop-mini (до 09.10.2026 t-display-s3-23), мини-экран в гараже в кооперативе. LilyGO T-Display-S3 (ESP32-S3 + ST7789 i80 320x170)
 # BLE radar + log console. Лог-режим первые 60s, после авто → radar.
 #
 # С 23.08.2026 — нативный драйвер: display platform mipi_spi, model T-DISPLAY-S3
