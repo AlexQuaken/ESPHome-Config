@@ -1,6 +1,7 @@
 substitutions:
   board_name: 'door_lock_garage'
   static_ip: '192.168.0.192'
+  board_id: '27'  # номер платы в таблице на дашборде ESP
   pulse_time: '250ms'
 
 esphome:
