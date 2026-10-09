@@ -1,6 +1,7 @@
 substitutions:
   board_name: 'door_lock_mk'
   static_ip: '192.168.0.174'
+  board_id: '28'  # номер платы в таблице на дашборде ESP
 
 esphome:
   name: ${board_name}
