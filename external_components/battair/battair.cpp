@@ -623,7 +623,7 @@ void BattAirHub::publish_battery_(Battery &b) {
       for (uint8_t c = 0; c < s.cell_count && c < 4; c++)
         pub(SENSOR_CELL_1 + c, s.cell_mv[c] / 1000.0f);
       pub(SENSOR_VOLTAGE, total / 1000.0f);
-      pub(SENSOR_CELL_DELTA, hi - lo);
+      pub(SENSOR_CELL_DELTA, (hi - lo) / 1000.0f);
       char v[12];
       snprintf(v, sizeof(v), " %.2f", total / 1000.0f);
       line += v;

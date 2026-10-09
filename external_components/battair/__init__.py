@@ -45,7 +45,6 @@ CONF_SCAN_COUNTER = "scan_counter"
 CONF_LOG = "log"
 CONF_ONLINE = "online"
 
-UNIT_MILLIVOLT = "mV"
 UNIT_MILLIAMP = "mA"
 
 # Порядок совпадает с SensorKind в battair.h.
@@ -111,9 +110,11 @@ BATTERY_SCHEMA = cv.Schema(
         cv.Optional("cell_2"): _cell(),
         cv.Optional("cell_3"): _cell(),
         cv.Optional("cell_4"): _cell(),
+        # Разбаланс банок (максимум минус минимум) в вольтах, как и сами банки: 0.05 В.
         cv.Optional("cell_delta"): sensor.sensor_schema(
-            unit_of_measurement=UNIT_MILLIVOLT,
-            accuracy_decimals=0,
+            unit_of_measurement=UNIT_VOLT,
+            accuracy_decimals=2,
+            device_class=DEVICE_CLASS_VOLTAGE,
             state_class=STATE_CLASS_MEASUREMENT,
             icon="mdi:scale-balance",
         ),
