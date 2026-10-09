@@ -1,6 +1,7 @@
 substitutions:
   board_name: 'alarm_panel_mk'
   static_ip: '192.168.0.172'
+  board_id: '25'  # номер платы в таблице на дашборде ESP
   scan_duration: !secret scan_duration
   update_interval: !secret update_interval
 
