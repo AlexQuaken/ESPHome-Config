@@ -41,14 +41,14 @@
 #
 # Одно радио на Wi-Fi и BLE: окно скана 330 мс из 1100, иначе Wi-Fi голодает.
 # Флеш 4 МБ, под прошивку в слоте OTA 1,75 МБ.
-# Скриншот экрана: http://192.168.0.221:8080/screen.bmp (dash_snapshot.h).
+# Скриншот экрана: http://192.168.0.163:8080/screen.bmp (dash_snapshot.h).
 #
 # Распиновка (devices.esphome.io, guition-jc4827543c):
 #   QSPI: CLK=47, D0..D3=21/48/40/39, CS=45 (задан в модели JC4827W543)
 #   подсветка GPIO1 (PWM), GT911: SDA=8, SCL=4, INT=3, RST=38, кнопка BOOT GPIO0
 substitutions:
   board_name: 'esp32-23-garage'
-  static_ip: '192.168.0.221'
+  static_ip: '192.168.0.163'
   # ID платы в таблице ESP: первый свободный номер выше 20 (21 у t-display, 22 у C6)
   number: '23'
   # подстановки для общих пакетов, те же, что дает 1wifi_api_ota_logger
