@@ -2,6 +2,8 @@
 #   - !include {file: packages/battair_bat.yaml, vars: {n: 1, ble: 'BattAir 1', mac: ''}}
 # Каждая батарея отдельное подустройство bat<n>_dev (объявлены в esphome: devices:),
 # в HA это устройство "BattAir <n>" с сущностями "Cell 1", "Voltage" и т. д.
+# force_update у напряжений: интеграция ESPHome не пишет в HA повтор того же значения, и у
+# лежащей на хранении батареи "обновлено" застывало на первом опросе. Так видно каждый опрос.
 # Entity_id в HA оставлены старыми, sensor.battair_monitor_bat<n>_...: на них завязаны
 # уведомления о напряжении и разбалансе, Awtrix, экран esp32-cam1 и дашборды.
 ble_name: ${ble}
@@ -18,21 +20,27 @@ cycles:
 voltage:
   name: Voltage
   device_id: bat${n}_dev
+  force_update: true
 cell_1:
   name: Cell 1
   device_id: bat${n}_dev
+  force_update: true
 cell_2:
   name: Cell 2
   device_id: bat${n}_dev
+  force_update: true
 cell_3:
   name: Cell 3
   device_id: bat${n}_dev
+  force_update: true
 cell_4:
   name: Cell 4
   device_id: bat${n}_dev
+  force_update: true
 cell_delta:
   name: Cell Delta
   device_id: bat${n}_dev
+  force_update: true
 temperature:
   name: Temperature
   device_id: bat${n}_dev
