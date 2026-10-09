@@ -164,6 +164,7 @@ class BattAirHub : public PollingComponent,
   uint32_t next_cmd_at_{0};
   uint8_t attempts_{3};
   bool ota_active_{false};
+  bool tx_power_set_{false};
   uint16_t counter_{0};
   uint8_t found_{0};
   std::string log_;

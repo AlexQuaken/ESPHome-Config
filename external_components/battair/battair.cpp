@@ -235,13 +235,19 @@ void BattAirHub::start_attempt_() {
            b.attempt);
   // +9 дБм, как ставила Arduino-прошивка (NimBLEDevice::setPower(ESP_PWR_LVL_P9)). ESPHome мощность
   // BLE не настраивает, по умолчанию она ниже, и дальние датчики слышали нас хуже, чем мы их.
-  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P9);
-  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, ESP_PWR_LVL_P9);
-  for (int h = ESP_BLE_PWR_TYPE_CONN_HDL0; h <= ESP_BLE_PWR_TYPE_CONN_HDL8; h++)
-    esp_ble_tx_power_set(static_cast<esp_ble_power_type_t>(h), ESP_PWR_LVL_P9);
+  // Новые соединения берут уровень DEFAULT.
+  if (!this->tx_power_set_) {
+    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P9);
+    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, ESP_PWR_LVL_P9);
+    this->tx_power_set_ = true;
+  }
   this->parent()->set_address(b.address);
   this->parent()->set_remote_addr_type(static_cast<esp_ble_addr_type_t>(b.address_type));
-  this->parent()->connect();
+  // Не connect() напрямую: клиент в DISCOVERED подключает сам трекер, перед этим он
+  // останавливает скан и отдает радио BLE (coex PREFER_BT). Прямой connect() при идущем
+  // скане 09.10.2026 давал status=133 через 20 с, а через полчаса assert контроллера
+  // в lld_con_start и перезагрузку (panic, 23 раза за ночь).
+  this->parent()->set_state(espbt::ClientState::DISCOVERED);
 }
 
 void BattAirHub::close_(bool ok) {
@@ -249,6 +255,12 @@ void BattAirHub::close_(bool ok) {
     this->bat_().ok = true;
   this->phase_ = PH_CLOSE;
   this->deadline_ = millis() + CLOSE_TIMEOUT_MS;
+  // Трекер еще не взялся подключать: просто снимаем заявку, иначе disconnect()
+  // только запомнит want_disconnect и клиент так и останется в DISCOVERED.
+  if (this->parent()->state() == espbt::ClientState::DISCOVERED) {
+    this->parent()->set_state(espbt::ClientState::IDLE);
+    return;
+  }
   this->parent()->disconnect();
 }
 
