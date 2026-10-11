@@ -1,4 +1,4 @@
-// Интерфейс «Неоновые статусы» для Guition JC4827W543 (480x272), прошивка esp32-s3-status.yaml.
+// Интерфейс «Неоновые статусы» для Guition JC4827W543 (480x272), прошивка garage-home-panel.yaml.
 // Макет: D:\MegaSync\Misc\exceltable-dashboards\Гараж, выбранный вариант (v05b.py, v08b.py).
 //
 // Весь интерфейс строится здесь на LVGL 9 API: три слоя (главный экран, календарь, пин-панель
@@ -100,10 +100,11 @@ static void ev_live(int lane, uint32_t now_epoch) {
 }
 
 // колбэки команд касаний (ставит YAML)
-static std::function<void()> cb_arm, cb_disarm, cb_light, cb_charge, cb_flash_stop, cb_cam;
+static std::function<void()> cb_arm, cb_disarm, cb_light, cb_charge, cb_flash_stop;
 // пин-коды снятия с охраны, подходит любой (из secrets через YAML)
 static std::vector<std::string> PINS;
 static float TARIFF = 4.32f;  // грн за кВт·ч, условный
+static int ALARM_DELAY = 30;  // отсчет до сирены, с; delay_time пульта HA, ставит YAML
 
 // ------------------------------------------------------------------ помощники LVGL
 static lv_obj_t *obj(lv_obj_t *p, int x, int y, int w, int h) {
@@ -335,10 +336,8 @@ static uint32_t alarm_press_ms = 0;
 static void on_tile(lv_event_t *e) {
   int i = (int) (intptr_t) lv_event_get_user_data(e);
   if (lv_event_get_code(e) != LV_EVENT_SHORT_CLICKED) return;
-  if (i == 0) {
-    // ВОРОТА: картинка с камеры гаража (режим 4 прошивки, рисует raw_draw)
-    if (cb_cam) cb_cam();
-  } else if (i == 1) {
+  // ВОРОТА не нажимаются: до 11.10.2026 тап открывал камеру, ее убрали
+  if (i == 1) {
     bool armed = S.alarm.rfind("armed", 0) == 0 || S.alarm == "triggered" || S.alarm == "pending";
     if (armed) pin_open();
     else if (cb_arm) cb_arm();
@@ -385,7 +384,7 @@ static void build_main(lv_obj_t *scr) {
     t.sub = lbl(t.box, 7, 41, FS, SUB, "");
     t.ico = canvas(t.box, TW - 24, 4, 20, 20);
     t.ring = nullptr;
-    if (i == 0 || i == 1 || i == 2) {
+    if (i == 1 || i == 2) {
       t.ring = obj(t.box, TW - 25, 2, 21, 21);
       lv_obj_set_style_radius(t.ring, LV_RADIUS_CIRCLE, 0);
       border(t.ring, SUB, 1);
@@ -1323,10 +1322,15 @@ static void build_pin(lv_obj_t *scr) {
   }
   lv_obj_add_flag(pin_layer, LV_OBJ_FLAG_HIDDEN);
 }
-static void pin_draw_cd(int left) {
+// кольцо отсчета: left из total секунд. Перерисовка холста только на смену секунды.
+static void pin_draw_cd(int left, int total = 60) {
+  static int drawn = -1, drawn_total = -1;
+  if (left == drawn && total == drawn_total) return;
+  drawn = left;
+  drawn_total = total;
   Layer L(p_cdcv);
   L.arc(45, 45, 40, 6, 0, 360, 0x24184c);
-  if (left > 0) L.arc_grad(45, 45, 40, 6, -90, -90 + 360.0f * left / 60, PURPLE, ORANGE, 40);
+  if (left > 0) L.arc_grad(45, 45, 40, 6, -90, -90 + 360.0f * left / total, PURPLE, ORANGE, 40);
   char b[4];
   snprintf(b, sizeof b, "%d", left);
   set_text(p_cd, b);
@@ -1343,25 +1347,122 @@ static void pin_open() {
   lv_obj_move_foreground(pin_layer);
 }
 
-// ------------------------------------------------------------------ мигание охраны
-// Пока экран мигает, поверх всего лежит прозрачный слой на lv_layer_top: первый тап
-// попадает в него, гасит мигание и не нажимает кнопку под пальцем.
-static lv_obj_t *flash_layer = nullptr;
-static void on_flash(lv_event_t *e) {
+// ------------------------------------------------------------------ экран ALARM
+// С 11.10.2026 вместо голой инверсии экрана. Встает поверх всего (lv_layer_top), когда
+// пульт уходит в pending (ворота открыли на охране) или плата застает уже тревогу.
+// Мигает сама панель аппаратной инверсией, это делает YAML (g_flash), здесь только
+// картинка. Первое касание гасит мигание (на нажатии), а на отпускании убирает экран
+// и открывает пин-панель: кнопки под пальцем не нажимаются, касание целиком досталось
+// этому слою. Сняли охрану раньше касания (метка, HA), экран закрывается сам.
+static const lv_font_t *FA = nullptr, *FN = nullptr;  // надпись 48x96 и цифры 24x48
+static lv_obj_t *al_layer = nullptr, *al_what, *al_num;
+static uint32_t al_t0 = 0;
+static bool al_preview = false, al_siren = false;
+static int al_left = -1;
+
+static bool alarm_shown() { return al_layer && !lv_obj_has_flag(al_layer, LV_OBJ_FLAG_HIDDEN); }
+static void alarm_draw() {
+  if (!alarm_shown()) return;
+  if (al_siren) {
+    set_text(al_what, "СИРЕНА ВКЛЮЧЕНА");
+    set_color(al_what, RED);
+    lv_obj_add_flag(al_num, LV_OBJ_FLAG_HIDDEN);
+    return;
+  }
+  int left = ALARM_DELAY - (int) ((esphome::millis() - al_t0) / 1000);
+  if (left < 0) left = 0;
+  if (left == al_left) return;
+  al_left = left;
+  char b[8];
+  snprintf(b, sizeof b, "%02d", left);
+  set_text(al_num, b);
+  lv_obj_remove_flag(al_num, LV_OBJ_FLAG_HIDDEN);
+  set_text(al_what, al_preview ? "ПРОВЕРКА ЭКРАНА, ДО СИРЕНЫ" : "ДО СИРЕНЫ, СЕКУНД");
+  set_color(al_what, SUB);
+}
+static void alarm_hide() {
+  if (!al_layer) return;
+  lv_obj_add_flag(al_layer, LV_OBJ_FLAG_HIDDEN);
+  al_preview = false;
+  if (cb_flash_stop) cb_flash_stop();
+}
+// preview: проверка экрана без тревоги, закрывается сама; siren: плата застала уже тревогу
+static void alarm_show(bool preview, bool siren) {
+  if (!al_layer) return;
+  al_preview = preview;
+  al_siren = siren;
+  al_t0 = esphome::millis();
+  al_left = -1;
+  lv_obj_remove_flag(al_layer, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(al_layer);
+  alarm_draw();
+}
+static void on_alarm_touch(lv_event_t *e) {
   auto c = lv_event_get_code(e);
   if (c == LV_EVENT_PRESSED && cb_flash_stop) cb_flash_stop();
-  if (c == LV_EVENT_RELEASED || c == LV_EVENT_PRESS_LOST) lv_obj_add_flag(flash_layer, LV_OBJ_FLAG_HIDDEN);
-}
-static void flash_guard(bool on) {
-  if (flash_layer == nullptr) {
-    flash_layer = obj(lv_layer_top(), 0, 0, 480, 272);
-    lv_obj_add_flag(flash_layer, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(flash_layer, on_flash, LV_EVENT_ALL, nullptr);
-    lv_obj_add_flag(flash_layer, LV_OBJ_FLAG_HIDDEN);
+  if (c == LV_EVENT_RELEASED || c == LV_EVENT_PRESS_LOST) {
+    alarm_hide();
+    show_page(0);
+    pin_open();
   }
-  // включаем сразу; выключаем тоже сразу, кроме случая, когда палец еще на слое
-  if (on) lv_obj_remove_flag(flash_layer, LV_OBJ_FLAG_HIDDEN);
-  else if (!lv_obj_has_state(flash_layer, LV_STATE_PRESSED)) lv_obj_add_flag(flash_layer, LV_OBJ_FLAG_HIDDEN);
+}
+// Смена состояния пульта охраны (on_value в YAML). true: экран ALARM только что
+// встал, YAML включает мигание. Повтор того же состояния пропускаем: HA присылает
+// его заново и на смену атрибутов, а снятый касанием экран не должен вставать снова.
+static bool alarm_state(const std::string &x) {
+  static std::string prev;
+  if (x == prev) return false;
+  std::string was = prev;
+  prev = x;
+  if (x == "pending") {
+    pending_ms = esphome::millis();
+    alarm_show(false, false);
+    return true;
+  }
+  if (x == "triggered") {
+    // отсчет кончился: тот же экран, вместо цифр «сирена». Если его уже сняли
+    // касанием, не возвращаем, человек вводит код. Застали тревогу сразу, показываем.
+    if (was == "pending") {
+      al_siren = true;
+      alarm_draw();
+      return false;
+    }
+    alarm_show(false, true);
+    return true;
+  }
+  if (!al_preview) alarm_hide();
+  if (x == "disarmed") pin_close();
+  return false;
+}
+
+// Полосы «опасность» сверху и снизу: желтые косые на черном, рисуются один раз
+static void hazard(lv_obj_t *p, int y) {
+  lv_obj_t *cv = canvas(p, 0, y, 480, 18);
+  Layer L(cv);
+  L.rect(0, 0, 480, 18, 0, 0x000000, LV_OPA_COVER);
+  // целые координаты: lv_value_precise_t в этой сборке int32 (LV_USE_FLOAT выключен)
+  for (int32_t x = -18; x < 480 + 18; x += 28) L.poly({{x, 0}, {x + 14, 0}, {x - 4, 18}, {x - 18, 18}}, AMBER);
+}
+static void build_alarm() {
+  al_layer = obj(lv_layer_top(), 0, 0, 480, 272);
+  fill(al_layer, 0x140008, 0);
+  lv_obj_add_flag(al_layer, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(al_layer, on_alarm_touch, LV_EVENT_ALL, nullptr);
+  hazard(al_layer, 0);
+  hazard(al_layer, 254);
+  // рамка с красным свечением
+  lv_obj_t *f = obj(al_layer, 10, 26, 460, 220);
+  fill(f, 0x0c0006, 12);
+  border(f, RED, 3);
+  glow(f, RED, 20, 200);
+  // ALARM: 5 знаков по 48 = 240 px, по центру
+  lbl(f, 230, 6, FA, RED, "ALARM", 1, 300);
+  lv_obj_t *ln = obj(f, 40, 108, 380, 2);
+  fill(ln, mix(RED, 0x000000, 0.4f), 1);
+  al_what = lbl(f, 230, 118, FM, SUB, "", 1, 440);
+  al_num = lbl(f, 230, 136, FN, AMBER, "", 1, 120);
+  lbl(f, 230, 192, FM, TEXT, "КОСНИТЕСЬ ЭКРАНА, ЧТОБЫ ВВЕСТИ КОД", 1, 440);
+  lv_obj_add_flag(al_layer, LV_OBJ_FLAG_HIDDEN);
 }
 
 // ------------------------------------------------------------------ навигация, обновление
@@ -1379,13 +1480,15 @@ static void show_page(int p) {
   }
 }
 
-static void init(lv_obj_t *main_scr, const lv_font_t *fs, const lv_font_t *fm, const lv_font_t *fb) {
-  FS = fs; FM = fm; FB = fb;
+static void init(lv_obj_t *main_scr, const lv_font_t *fs, const lv_font_t *fm, const lv_font_t *fb,
+                 const lv_font_t *fa, const lv_font_t *fn) {
+  FS = fs; FM = fm; FB = fb; FA = fa; FN = fn;
   build_main(main_scr);
   build_cal();
   build_events();
   build_shares();
   build_pin(main_scr);
+  build_alarm();
 }
 
 // раз в секунду: часы, отсчеты
@@ -1398,11 +1501,16 @@ static void tick(const esphome::ESPTime &t) {
     set_text(l_clock, b);
   }
   uint32_t now = esphome::millis();
+  int siren_left = -1;  // секунд до сирены, пока идет отсчет
   if (pending_ms) {
-    int left = 60 - (int) ((now - pending_ms) / 1000);
+    siren_left = std::max(0, ALARM_DELAY - (int) ((now - pending_ms) / 1000));
     char b[24];
-    snprintf(b, sizeof b, "до сирены %d с", left < 0 ? 0 : left);
+    snprintf(b, sizeof b, "до сирены %d с", siren_left);
     set_text(T[1].sub, b);
+  }
+  if (alarm_shown()) {
+    alarm_draw();
+    if (al_preview && now - al_t0 > (uint32_t) (ALARM_DELAY + 3) * 1000) alarm_hide();
   }
   if (CUR_PAGE != 0) {
     int left = 300 - (int) ((now - cal_open_ms) / 1000);
@@ -1415,7 +1523,9 @@ static void tick(const esphome::ESPTime &t) {
   }
   if (pin_open_ms) {
     int left = 60 - (int) ((now - pin_open_ms) / 1000);
+    // во время отсчета кольцо показывает секунды до сирены, иначе минуту на ввод
     if (left <= 0) pin_close();
+    else if (siren_left >= 0) pin_draw_cd(siren_left, ALARM_DELAY);
     else pin_draw_cd(left);
     if (pin_err_ms && now - pin_err_ms > 1200) {
       pin_err_ms = 0;
