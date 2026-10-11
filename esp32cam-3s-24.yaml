@@ -40,6 +40,7 @@ packages:
   base_sensors: !include packages/2common_sensors.yaml
   esp32cam: !include packages/8esp32-cam-s3-freenove.yaml
   diag: !include packages/diag.yaml
+  diag_psram: !include packages/diag_psram.yaml
 
 # WS2812 на GPIO48 — статусный/декоративный индикатор
 light:
