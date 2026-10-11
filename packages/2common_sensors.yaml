@@ -19,24 +19,10 @@ text_sensor:
   - platform: template
     name: ${board_name}_Uptime
     lambda: |-
+      // ЧЧЧ:ММ:СС, часы без деления на сутки, с нулями до трех знаков
       uint32_t dur = id(uptime_sensor).state;
-      int dys = 0;
-      int hrs = 0;
-      int mnts = 0;
-      if (dur > 86399) {
-        dys = trunc(dur / 86400);
-        dur = dur - (dys * 86400);
-      }
-      if (dur > 3599) {
-        hrs = trunc(dur / 3600);
-        dur = dur - (hrs * 3600);
-      }
-      if (dur > 59) {
-        mnts = trunc(dur / 60);
-        dur = dur - (mnts * 60);
-      }
-      char buffer[64];
-      sprintf(buffer, "%ud %02uh %02um %02us", dys, hrs, mnts, dur);
+      char buffer[24];
+      snprintf(buffer, sizeof(buffer), "%03u:%02u:%02u", (unsigned) (dur / 3600), (unsigned) (dur % 3600 / 60), (unsigned) (dur % 60));
       return {buffer};
     icon: mdi:clock-start
     update_interval: ${update_interval}

@@ -1378,10 +1378,9 @@ script:
             it.printf(sb_x - 8, 3, id(f_console), id(c_green), TextAlign::TOP_RIGHT, "%s", dt);
 
             uint32_t up_s = t / 1000;
-            unsigned d = up_s / 86400, h = (up_s % 86400) / 3600, m = (up_s % 3600) / 60, ss = up_s % 60;
+            unsigned h = up_s / 3600, m = (up_s % 3600) / 60, ss = up_s % 60;
             char upbuf[32];
-            if (d > 0) snprintf(upbuf, sizeof(upbuf), "Up %ud %02u:%02u", d, h, m);
-            else snprintf(upbuf, sizeof(upbuf), "Up %02u:%02u:%02u", h, m, ss);
+            snprintf(upbuf, sizeof(upbuf), "Up %03u:%02u:%02u", h, m, ss);
             it.printf(4, H - 9, id(f_console), id(c_green), "%s", upbuf);
             char mem[16];
             snprintf(mem, sizeof(mem), "MEM %uK", (unsigned)(esp_get_free_heap_size() / 1024));
