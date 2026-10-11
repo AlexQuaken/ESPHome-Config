@@ -52,6 +52,7 @@ packages:
   led: !include packages/3status_led_esp32.yaml
   esp32cam: !include packages/8esp32-cam.yaml
   diag: !include packages/diag.yaml
+  diag_psram: !include packages/diag_psram.yaml
 
 esp32_camera:
   vertical_flip: true
