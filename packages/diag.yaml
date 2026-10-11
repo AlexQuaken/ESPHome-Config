@@ -10,6 +10,23 @@
 #   Prev Uptime     сколько прожила прошлая загрузка, с точностью до минуты
 #   Total Boots     сколько раз плата стартовала за всю жизнь пакета
 #   WiFi Drops      обрывов Wi-Fi с последнего старта
+#   Prev Uptime Text  то же, что Prev Uptime, в виде ЧЧЧ:ММ:СС для таблицы плат
+#   Heap Free       свободная внутренняя память сейчас, КБ
+#   Heap Min        минимум свободной памяти с загрузки, КБ. Медленно ползет вниз от
+#                   загрузки к загрузке, значит утечка; у самого дна жди panic
+#   Heap Max Block  самый большой свободный кусок, КБ. Свободно много, а кусок мелкий,
+#                   значит память порезана, и BLE с TLS уже не получат свой буфер
+#   Alloc Fails     сколько раз malloc вернул отказ с загрузки. Любое число больше нуля
+#                   это тревога, хоть плата пока и живет
+#   Loop Stack Free минимальный запас стека главного цикла за все время, байт. Переполнение
+#                   стека в лямбдах экранов дает panic
+#   WiFi AP         к какой точке подключена (BSSID и канал), видно дальний узел mesh
+#
+# PSRAM вынесена в packages/diag_psram.yaml, подключать только платам с psram:.
+#
+# На ESP8266 минимума памяти и счетчика отказов нет в SDK. Минимум там считается
+# опросом раз в 5 с (короткий провал между опросами не попадет), отказы всегда 0,
+# а вместо стека цикла отдается свободный стек cont (ESP.getFreeContStack).
 #
 # Почему счетчики пишутся вручную через global_preferences, а не через globals
 # с restore_value. Globals сбрасываются во флеш не сразу, а раз в flash_write_interval
@@ -60,6 +77,15 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  - id: diag_alloc_fails
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  # минимум кучи для ESP8266, где SDK его не ведет
+  - id: diag_heap_min
+    type: uint32_t
+    restore_value: no
+    initial_value: '0xFFFFFFFF'
 
 # on_boot списком, а не словарем. При слиянии пакета с файлом устройства словарь
 # против словаря сливается в одну автоматизацию с приоритетом из файла устройства,
@@ -95,6 +121,12 @@ esphome:
           p_tot.save(&tot);
           p_up.save(&up);
           global_preferences->sync();
+          #ifdef USE_ESP32
+          // Колбэк зовется из того места, где malloc не смог, поэтому только счет, без логов
+          heap_caps_register_failed_alloc_callback([](size_t, uint32_t, const char *) {
+            id(diag_alloc_fails) += 1;
+          });
+          #endif
           ESP_LOGI("diag", "boot #%u, failed before: %u, prev uptime: %us",
                    (unsigned) tot, (unsigned) id(diag_failed_before), (unsigned) id(diag_prev_uptime));
 
@@ -125,6 +157,13 @@ interval:
           auto p_up = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_up"), true);
           uint32_t up = millis() / 1000;
           p_up.save(&up);
+  - interval: 5s
+    then:
+      - lambda: |-
+          #ifdef USE_ESP8266
+          uint32_t f = ESP.getFreeHeap();
+          if (f < id(diag_heap_min)) id(diag_heap_min) = f;
+          #endif
 
 # Причина сброса читается напрямую, без компонента debug. С debug на классическом
 # ESP32 переставали работать камеры: esp32_camera Setup Failed: ESP_ERR_NOT_SUPPORTED
@@ -159,6 +198,27 @@ text_sensor:
     entity_category: diagnostic
     update_interval: 1h
     lambda: 'return {"${board_id}"};'
+  - platform: template
+    name: ${board_name} Prev Uptime Text
+    entity_category: diagnostic
+    icon: mdi:clock-start
+    update_interval: 1h
+    lambda: |-
+      uint32_t s = id(diag_prev_uptime);
+      char b[16];
+      snprintf(b, sizeof(b), "%03u:%02u:%02u", (unsigned) (s / 3600), (unsigned) (s % 3600 / 60), (unsigned) (s % 60));
+      return {b};
+  - platform: template
+    name: ${board_name} WiFi AP
+    entity_category: diagnostic
+    icon: mdi:access-point
+    update_interval: 60s
+    lambda: |-
+      auto bs = wifi::global_wifi_component->wifi_bssid();
+      unsigned ch = (unsigned) wifi::global_wifi_component->get_wifi_channel();
+      char b[32];
+      snprintf(b, sizeof(b), "%02X:%02X:%02X:%02X:%02X:%02X ch%u", bs[0], bs[1], bs[2], bs[3], bs[4], bs[5], ch);
+      return {b};
 
 sensor:
   - platform: template
@@ -190,3 +250,72 @@ sensor:
     state_class: measurement
     update_interval: 60s
     lambda: 'return id(diag_wifi_drops);'
+
+  # Память. INTERNAL, чтобы PSRAM не маскировала нехватку обычной памяти: на платах с
+  # PSRAM общий heap большой, а BLE, Wi-Fi и стеки живут только во внутренней.
+  - platform: template
+    name: ${board_name} Heap Free
+    entity_category: diagnostic
+    unit_of_measurement: kB
+    icon: mdi:memory
+    accuracy_decimals: 1
+    state_class: measurement
+    update_interval: 60s
+    lambda: |-
+      #ifdef USE_ESP32
+      return heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024.0f;
+      #else
+      return ESP.getFreeHeap() / 1024.0f;
+      #endif
+  - platform: template
+    name: ${board_name} Heap Min
+    entity_category: diagnostic
+    unit_of_measurement: kB
+    icon: mdi:memory
+    accuracy_decimals: 1
+    state_class: measurement
+    update_interval: 60s
+    lambda: |-
+      #ifdef USE_ESP32
+      return heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024.0f;
+      #else
+      return id(diag_heap_min) == 0xFFFFFFFF ? NAN : id(diag_heap_min) / 1024.0f;
+      #endif
+  - platform: template
+    name: ${board_name} Heap Max Block
+    entity_category: diagnostic
+    unit_of_measurement: kB
+    icon: mdi:memory
+    accuracy_decimals: 1
+    state_class: measurement
+    update_interval: 60s
+    lambda: |-
+      #ifdef USE_ESP32
+      return heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024.0f;
+      #else
+      return ESP.getMaxFreeBlockSize() / 1024.0f;
+      #endif
+  - platform: template
+    name: ${board_name} Alloc Fails
+    entity_category: diagnostic
+    icon: mdi:memory-arrow-down
+    accuracy_decimals: 0
+    state_class: measurement
+    update_interval: 60s
+    lambda: 'return id(diag_alloc_fails);'
+  # Интервальные лямбды выполняются в задаче главного цикла, поэтому nullptr это она.
+  # На ESP-IDF значение в байтах и это минимум запаса за все время задачи.
+  - platform: template
+    name: ${board_name} Loop Stack Free
+    entity_category: diagnostic
+    unit_of_measurement: B
+    icon: mdi:layers-triple
+    accuracy_decimals: 0
+    state_class: measurement
+    update_interval: 60s
+    lambda: |-
+      #ifdef USE_ESP32
+      return uxTaskGetStackHighWaterMark(nullptr);
+      #else
+      return ESP.getFreeContStack();
+      #endif

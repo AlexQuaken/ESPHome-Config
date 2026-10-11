@@ -1,0 +1,24 @@
+# PSRAM: свободно сейчас и минимум с загрузки. Отдельно от diag.yaml, потому что на
+# плате без psram: эти датчики показывали бы ноль. Подключается рядом с diag:
+#   diag_psram: !include packages/diag_psram.yaml
+# В PSRAM лежат буферы экранов и кадры камер; минимум у дна значит, что следующий
+# кадр или перерисовка может не получить память.
+sensor:
+  - platform: template
+    name: ${board_name} PSRAM Free
+    entity_category: diagnostic
+    unit_of_measurement: kB
+    icon: mdi:memory
+    accuracy_decimals: 0
+    state_class: measurement
+    update_interval: 60s
+    lambda: 'return heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024.0f;'
+  - platform: template
+    name: ${board_name} PSRAM Min
+    entity_category: diagnostic
+    unit_of_measurement: kB
+    icon: mdi:memory
+    accuracy_decimals: 0
+    state_class: measurement
+    update_interval: 60s
+    lambda: 'return heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM) / 1024.0f;'
