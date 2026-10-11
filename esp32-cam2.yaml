@@ -35,3 +35,4 @@ packages:
   esp32cam: !include packages/8esp32-cam.yaml
   # диагностика сбоев, пробный запуск перед раскаткой на все платы (28.09.2026)
   diag: !include packages/diag.yaml
+  diag_psram: !include packages/diag_psram.yaml
