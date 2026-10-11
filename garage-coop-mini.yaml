@@ -137,6 +137,7 @@ packages:
   ble_lila: !include packages/ble_lila.yaml
   ble_radar: !include packages/ble_radar_tdisplay_s3.yaml
   diag: !include packages/diag.yaml
+  diag_psram: !include packages/diag_psram.yaml
 
 # Яркость экрана по датчику освещенности гаража 2 (sensor.garage2_illuminance).
 # Темно, значит 30%, светло, значит 100%. До переезда 19.09.2026 тут был
