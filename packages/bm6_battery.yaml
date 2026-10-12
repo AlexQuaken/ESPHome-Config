@@ -1,6 +1,7 @@
 # BLE-монитор аккумулятора BM6 (Ancel BM200 и прочие клоны). Подключение:
-#   bm6_moto: !include {file: packages/bm6_battery.yaml, vars: {key: bm6_moto, dev: 'Мото АКБ', mac: '3C:AB:72:CB:01:6C', period_ms: '3600000'}}
-# period_ms это период опроса в миллисекундах.
+#   bm6_moto: !include {file: packages/bm6_battery.yaml, vars: {key: bm6_moto, dev: ktm_dev, label: Battery, mac: '3C:AB:72:CB:01:6C', period_ms: '3600000'}}
+# dev это id подустройства (заводит тот, кто подключает), label приставка к именам
+# сущностей, period_ms период опроса в миллисекундах.
 # В эфире датчик зовется BM6 и рекламирует только iBeacon, данных в рекламе нет.
 # Поэтому раз в period_ms (при срыве повтор через 30 с) плата подключается,
 # пишет команду в FFF3, ловит первое
@@ -15,9 +16,6 @@
 esphome:
   includes:
     - bm6.h
-  devices:
-    - id: ${key}_dev
-      name: ${dev}
 
 globals:
   # Когда датчик последний раз был слышен в эфире. Подключаться без этого нельзя:
@@ -107,8 +105,8 @@ sensor:
 
   - platform: template
     id: ${key}_v
-    name: Напряжение
-    device_id: ${key}_dev
+    name: ${label} voltage
+    device_id: ${dev}
     unit_of_measurement: V
     device_class: voltage
     state_class: measurement
@@ -119,8 +117,8 @@ sensor:
 
   - platform: template
     id: ${key}_t
-    name: Температура
-    device_id: ${key}_dev
+    name: ${label} temperature
+    device_id: ${dev}
     unit_of_measurement: °C
     device_class: temperature
     state_class: measurement
@@ -129,8 +127,8 @@ sensor:
 
   - platform: template
     id: ${key}_soc
-    name: Заряд по датчику
-    device_id: ${key}_dev
+    name: ${label} monitor charge
+    device_id: ${dev}
     unit_of_measurement: '%'
     entity_category: diagnostic
     accuracy_decimals: 0
@@ -139,8 +137,8 @@ sensor:
   # 0 норма, 1 низкое напряжение, 2 зарядка
   - platform: template
     id: ${key}_state
-    name: Состояние датчика
-    device_id: ${key}_dev
+    name: ${label} monitor state
+    device_id: ${dev}
     entity_category: diagnostic
     accuracy_decimals: 0
     update_interval: never
@@ -148,8 +146,8 @@ sensor:
   # Сила сигнала по рекламе, усредненная за 5 минут: видно, слышит ли плата датчик
   - platform: ble_rssi
     mac_address: ${mac}
-    name: RSSI
-    device_id: ${key}_dev
+    name: ${label} monitor RSSI
+    device_id: ${dev}
     entity_category: diagnostic
     filters:
       - throttle_average: 5min

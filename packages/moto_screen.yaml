@@ -12,9 +12,11 @@
 esphome:
   includes:
     - moto_ui.h
+  # Одно устройство в HA на весь мотоцикл: колпачки и аккумулятор (bm6_moto
+  # подключается с dev: ktm_dev). Имена сущностей латиницей, id выходят sensor.ktm_*
   devices:
-    - id: moto_tires_dev
-      name: Мото шины
+    - id: ktm_dev
+      name: KTM
 
 font:
   # Родной размер PxPlus 16, другой ломает буквы
@@ -54,8 +56,10 @@ esp32_ble_tracker:
                 w.pub_ms = now;
                 sensor::Sensor *P[4] = {id(moto_p0), id(moto_p1), id(moto_p2), id(moto_p3)};
                 sensor::Sensor *B[4] = {id(moto_b0), id(moto_b1), id(moto_b2), id(moto_b3)};
+                sensor::Sensor *C[4] = {id(moto_c0), id(moto_c1), id(moto_c2), id(moto_c3)};
                 P[i]->publish_state(w.bar);
                 B[i]->publish_state(w.batt);
+                C[i]->publish_state(w.temp);
               }
             }
 
@@ -88,11 +92,11 @@ sensor:
             moto::battery(x, id(bm6_moto_t).state);
             id(moto_soc).publish_state(moto::lfp_soc(x));
 
-  # Оценка по напряжению покоя LiFePO4 (у KTM HJTZ5S-FP-C), свой процент BM200 врет
+  # Оценка по напряжению LiFePO4 (у KTM HJTZ5S-FP-C), свой процент BM200 врет
   - platform: template
     id: moto_soc
-    name: Заряд
-    device_id: bm6_moto_dev
+    name: Battery charge
+    device_id: ktm_dev
     unit_of_measurement: '%'
     device_class: battery
     state_class: measurement
@@ -100,11 +104,11 @@ sensor:
     update_interval: never
 
   # Имена латиницей: из кириллицы после одинакового начала ESPHome строит
-  # одинаковый id, и сборка падает (было на tpms-s3)
+  # одинаковый id, и сборка падает (было на tpms-s3). Tube это сердечник TUbliss.
   - platform: template
     id: moto_p0
-    name: TUB front
-    device_id: moto_tires_dev
+    name: Front tube pressure
+    device_id: ktm_dev
     unit_of_measurement: bar
     device_class: pressure
     state_class: measurement
@@ -112,8 +116,8 @@ sensor:
     update_interval: never
   - platform: template
     id: moto_p1
-    name: TUB rear
-    device_id: moto_tires_dev
+    name: Rear tube pressure
+    device_id: ktm_dev
     unit_of_measurement: bar
     device_class: pressure
     state_class: measurement
@@ -121,8 +125,8 @@ sensor:
     update_interval: never
   - platform: template
     id: moto_p2
-    name: Tire front
-    device_id: moto_tires_dev
+    name: Front tire pressure
+    device_id: ktm_dev
     unit_of_measurement: bar
     device_class: pressure
     state_class: measurement
@@ -130,18 +134,57 @@ sensor:
     update_interval: never
   - platform: template
     id: moto_p3
-    name: Tire rear
-    device_id: moto_tires_dev
+    name: Rear tire pressure
+    device_id: ktm_dev
     unit_of_measurement: bar
     device_class: pressure
     state_class: measurement
     accuracy_decimals: 2
     update_interval: never
 
+  # Температура воздуха в колесе по колпачку
+  - platform: template
+    id: moto_c0
+    name: Front tube temperature
+    device_id: ktm_dev
+    unit_of_measurement: °C
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: never
+  - platform: template
+    id: moto_c1
+    name: Rear tube temperature
+    device_id: ktm_dev
+    unit_of_measurement: °C
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: never
+  - platform: template
+    id: moto_c2
+    name: Front tire temperature
+    device_id: ktm_dev
+    unit_of_measurement: °C
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: never
+  - platform: template
+    id: moto_c3
+    name: Rear tire temperature
+    device_id: ktm_dev
+    unit_of_measurement: °C
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: never
+
+  # Батарейка самого колпачка
   - platform: template
     id: moto_b0
-    name: TUB front battery
-    device_id: moto_tires_dev
+    name: Front tube sensor battery
+    device_id: ktm_dev
     unit_of_measurement: '%'
     device_class: battery
     entity_category: diagnostic
@@ -149,8 +192,8 @@ sensor:
     update_interval: never
   - platform: template
     id: moto_b1
-    name: TUB rear battery
-    device_id: moto_tires_dev
+    name: Rear tube sensor battery
+    device_id: ktm_dev
     unit_of_measurement: '%'
     device_class: battery
     entity_category: diagnostic
@@ -158,8 +201,8 @@ sensor:
     update_interval: never
   - platform: template
     id: moto_b2
-    name: Tire front battery
-    device_id: moto_tires_dev
+    name: Front tire sensor battery
+    device_id: ktm_dev
     unit_of_measurement: '%'
     device_class: battery
     entity_category: diagnostic
@@ -167,8 +210,8 @@ sensor:
     update_interval: never
   - platform: template
     id: moto_b3
-    name: Tire rear battery
-    device_id: moto_tires_dev
+    name: Rear tire sensor battery
+    device_id: ktm_dev
     unit_of_measurement: '%'
     device_class: battery
     entity_category: diagnostic
