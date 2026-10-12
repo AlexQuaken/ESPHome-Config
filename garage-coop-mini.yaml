@@ -55,10 +55,14 @@ wifi:
 
 esphome:
   name: ${board_name}
+  # Скриншот экрана: http://192.168.17.5:8080/screen.bmp (tft_snapshot.h)
+  includes:
+    - tft_snapshot.h
   on_boot:
     - priority: -100
       then:
         - lambda: |-
+            tft_snap::start(id(lcd));
             id(log_lines).push_back("${board_name} booted");
             id(log_lines).push_back("display OK");
 
