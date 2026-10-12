@@ -146,7 +146,7 @@ packages:
   diag_psram: !include packages/diag_psram.yaml
   # Ancel BM200 на аккумуляторе мотоцикла, с 12.10.2026. Без хозяина опрос раз в час,
   # при нем раз в 2 минуты (moto_screen.yaml)
-  bm6_moto: !include {file: packages/bm6_battery.yaml, vars: {key: bm6_moto, dev: 'Мото АКБ', mac: '3C:AB:72:CB:01:6C', period_ms: '3600000'}}
+  bm6_moto: !include {file: packages/bm6_battery.yaml, vars: {key: bm6_moto, dev: ktm_dev, label: Battery, mac: '3C:AB:72:CB:01:6C', period_ms: '3600000'}}
   # Экран мотоцикла вместо часов, пока хозяин в гараже: колпачки TPMS и АКБ, с 12.10.2026
   moto_screen: !include packages/moto_screen.yaml
 
