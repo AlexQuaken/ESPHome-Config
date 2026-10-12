@@ -44,7 +44,7 @@ static const float LO[N] = {6.4f, 6.4f, 0.4f, 0.4f};
 static const float HI[N] = {9.0f, 9.0f, 1.2f, 1.2f};
 // Датчик вещает раз в несколько секунд, пока в колесе есть давление
 static const uint32_t TIRE_STALE_MS = 15 * 60 * 1000;
-// Аккумулятор опрашивается раз в 2-10 минут
+// Аккумулятор опрашивается раз в 2 минуты при хозяине, без него раз в час
 static const uint32_t BATT_STALE_MS = 30 * 60 * 1000;
 
 struct Tire {
