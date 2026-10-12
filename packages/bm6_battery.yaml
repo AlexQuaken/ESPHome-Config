@@ -1,17 +1,41 @@
 # BLE-монитор аккумулятора BM6 (Ancel BM200 и прочие клоны). Подключение:
 #   bm6_moto: !include {file: packages/bm6_battery.yaml, vars: {key: bm6_moto, dev: 'Мото АКБ', mac: '3C:AB:72:CB:01:6C'}}
 # В эфире датчик зовется BM6 и рекламирует только iBeacon, данных в рекламе нет.
-# Поэтому раз в 10 минут плата подключается, пишет команду в FFF3, ловит первое
+# Поэтому раз в 10 минут (при срыве повтор через 30 с) плата подключается,
+# пишет команду в FFF3, ловит первое
 # уведомление FFF4 и сразу отключается. Расшифровка в bm6.h.
 #
 # Соединение у датчика одно. Пока держит телефон с приложением Ancel, плата не
-# подключится, и наоборот, но плата висит на связи пару секунд раз в 10 минут.
+# подключится, и наоборот, но плата висит на связи секунд 13 раз в 10 минут.
+#
+# Процент заряда и состояние датчик считает сам, и на BM200 они странные (0 % и
+# «низкое» при 13,17 В), поэтому оба идут диагностикой. Свою оценку заряда под
+# конкретную химию делает тот, кто подключает пакет (см. moto_screen.yaml).
 esphome:
   includes:
     - bm6.h
   devices:
     - id: ${key}_dev
       name: ${dev}
+
+globals:
+  # Когда датчик последний раз был слышен в эфире. Подключаться без этого нельзя:
+  # ble_client.connect к датчику, которого нет рядом, висит в ожидании рекламы.
+  - id: ${key}_seen_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  # Когда последний раз опрос прошел до конца, 0 пока ни разу
+  - id: ${key}_ok_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+
+esp32_ble_tracker:
+  on_ble_advertise:
+    - mac_address: ${mac}
+      then:
+        - lambda: 'id(${key}_seen_ms) = millis();'
 
 ble_client:
   - id: ${key}
@@ -30,15 +54,32 @@ ble_client:
         - delay: 20s
         - ble_client.disconnect: ${key}
 
+script:
+  # Опрос, если датчик рядом и клиент свободен. Зовут интервал ниже и, чаще,
+  # экран мотоцикла, пока хозяин в гараже.
+  #
+  # Подключение прямым вызовом, а не действием ble_client.connect: действие ждет
+  # установления связи и после ошибки (status=133, бывает, когда связь держит
+  # телефон) не завершается никогда. Скрипт тогда навсегда «уже запущен», и опрос
+  # умирает до перезагрузки. Так было при первой прошивке 12.10.2026.
+  - id: ${key}_poll
+    then:
+      - lambda: |-
+          if (id(${key}).state() != esp32_ble_tracker::ClientState::IDLE) return;
+          if (id(${key}_seen_ms) == 0 || millis() - id(${key}_seen_ms) > 60000) return;
+          id(${key}).connect();
+
 interval:
-  - interval: 10min
-    startup_delay: 60s
+  # Раз в 10 минут, а если опрос сорвался, повтор каждые 30 с. Срывается часто:
+  # связь на -75...-80 dBm, и первая попытка нередко кончается status=133.
+  - interval: 30s
+    startup_delay: 30s
     then:
       - if:
           condition:
-            lambda: 'return !id(${key}).connected();'
+            lambda: 'return id(${key}_ok_ms) == 0 || millis() - id(${key}_ok_ms) > 600000;'
           then:
-            - ble_client.connect: ${key}
+            - script.execute: ${key}_poll
 
 sensor:
   - platform: ble_client
@@ -52,10 +93,14 @@ sensor:
     update_interval: never
     lambda: |-
       float v, t, s;
-      if (!bm6::decode(x, v, t, s)) return NAN;
-      id(${key}_v).publish_state(v);
+      int st;
+      if (!bm6::decode(x, v, t, s, st)) return NAN;
+      id(${key}_ok_ms) = millis();
+      // температура раньше напряжения: подписчики напряжения берут ее свежей
       id(${key}_t).publish_state(t);
       id(${key}_soc).publish_state(s);
+      id(${key}_state).publish_state(st);
+      id(${key}_v).publish_state(v);
       id(${key}).disconnect();
       return v;
 
@@ -67,6 +112,7 @@ sensor:
     device_class: voltage
     state_class: measurement
     accuracy_decimals: 2
+    update_interval: never
     # повтор того же значения иначе в HA не пишется, и не видно, жив ли опрос
     force_update: true
 
@@ -78,15 +124,25 @@ sensor:
     device_class: temperature
     state_class: measurement
     accuracy_decimals: 0
+    update_interval: never
 
   - platform: template
     id: ${key}_soc
-    name: Заряд
+    name: Заряд по датчику
     device_id: ${key}_dev
     unit_of_measurement: '%'
-    device_class: battery
-    state_class: measurement
+    entity_category: diagnostic
     accuracy_decimals: 0
+    update_interval: never
+
+  # 0 норма, 1 низкое напряжение, 2 зарядка
+  - platform: template
+    id: ${key}_state
+    name: Состояние датчика
+    device_id: ${key}_dev
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: never
 
   # Сила сигнала по рекламе, усредненная за 5 минут: видно, слышит ли плата датчик
   - platform: ble_rssi

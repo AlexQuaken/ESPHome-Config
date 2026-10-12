@@ -1,0 +1,176 @@
+# Экран мотоцикла для garage-coop-mini: давление в колесах KTM и аккумулятор.
+# Подключается после bm6_moto (берет его сенсоры через !extend):
+#   moto_screen: !include packages/moto_screen.yaml
+#
+# Пока у платы виден браслет хозяина (${mifit_alex}) и от мотоцикла есть свежие
+# данные, вместо часов рисуется moto::draw (moto_ui.h), хук стоит в режиме часов
+# в ble_radar_tdisplay_s3.yaml. Хозяин ушел, через 5 минут таймаута ble_presence
+# снова часы. Мотоцикла нет (колпачки молчат 15 минут и аккумулятор 30), тоже часы.
+#
+# Колпачки TPMS вещают сами, подключаться к ним не надо: плата ловит их рекламу
+# тем же сканером, что и браслеты. Разбор и пороги взяты из прошивки tpms-s3.
+esphome:
+  includes:
+    - moto_ui.h
+  devices:
+    - id: moto_tires_dev
+      name: Мото шины
+
+font:
+  # Родной размер PxPlus 16, другой ломает буквы
+  - file: fonts/PxPlus_IBM_VGA_8x16.ttf
+    id: f_moto_txt
+    size: 16
+    bpp: 1
+    glyphs: ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_abcdefghijklmnopqrstuvwxyz{|}~°АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюя'
+  - file: fonts/ArchivoBlack-Regular.ttf
+    id: f_moto_num
+    size: 30
+    bpp: 4
+    glyphs: '0123456789.-'
+
+binary_sensor:
+  # Свой датчик присутствия на тот же браслет: у ble_presence в ble_alex.yaml нет id
+  - platform: ble_presence
+    mac_address: ${mifit_alex}
+    id: moto_owner_here
+    internal: true
+
+esp32_ble_tracker:
+  on_ble_advertise:
+    - then:
+        - lambda: |-
+            for (auto &md : x.get_manufacturer_datas()) {
+              int i = moto::parse(md.data);
+              if (i < 0) continue;
+              auto &w = moto::T[i];
+              ESP_LOGD("moto", "#%d %.3f bar %.1f C bat %d%% al %d rssi %d",
+                       i, w.bar, w.temp, w.batt, w.sensor_alarm, x.get_rssi());
+              // В HA не чаще раза в минуту, если давление не сдвинулось на 0,02 бар
+              uint32_t now = millis();
+              if (std::isnan(w.pub_bar) || fabsf(w.bar - w.pub_bar) >= 0.02f ||
+                  now - w.pub_ms > 60000) {
+                w.pub_bar = w.bar;
+                w.pub_ms = now;
+                sensor::Sensor *P[4] = {id(moto_p0), id(moto_p1), id(moto_p2), id(moto_p3)};
+                sensor::Sensor *B[4] = {id(moto_b0), id(moto_b1), id(moto_b2), id(moto_b3)};
+                P[i]->publish_state(w.bar);
+                B[i]->publish_state(w.batt);
+              }
+            }
+
+api:
+  services:
+    # Показать экран мотоцикла на минуту, даже если хозяина нет: проверка и снимок
+    # (http://192.168.17.5:8080/screen.bmp). Данных от мотоцикла нет, будут часы.
+    - service: moto_preview
+      then:
+        - lambda: 'moto::preview_until = millis() + 60000; moto::dirty = true;'
+
+interval:
+  # Хозяин в гараже: аккумулятор раз в 2 минуты, а не в 10, чтобы на экране была
+  # зарядка почти вживую
+  - interval: 30s
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(moto_owner_here).state &&
+                     (!moto::B.seen || millis() - moto::B.last_ms > 110000);
+          then:
+            - script.execute: bm6_moto_poll
+
+sensor:
+  - id: !extend bm6_moto_v
+    on_value:
+      then:
+        - lambda: |-
+            moto::battery(x, id(bm6_moto_t).state);
+            id(moto_soc).publish_state(moto::lfp_soc(x));
+
+  # Оценка по напряжению покоя LiFePO4 (у KTM HJTZ5S-FP-C), свой процент BM200 врет
+  - platform: template
+    id: moto_soc
+    name: Заряд
+    device_id: bm6_moto_dev
+    unit_of_measurement: '%'
+    device_class: battery
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: never
+
+  # Имена латиницей: из кириллицы после одинакового начала ESPHome строит
+  # одинаковый id, и сборка падает (было на tpms-s3)
+  - platform: template
+    id: moto_p0
+    name: TUB front
+    device_id: moto_tires_dev
+    unit_of_measurement: bar
+    device_class: pressure
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: never
+  - platform: template
+    id: moto_p1
+    name: TUB rear
+    device_id: moto_tires_dev
+    unit_of_measurement: bar
+    device_class: pressure
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: never
+  - platform: template
+    id: moto_p2
+    name: Tire front
+    device_id: moto_tires_dev
+    unit_of_measurement: bar
+    device_class: pressure
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: never
+  - platform: template
+    id: moto_p3
+    name: Tire rear
+    device_id: moto_tires_dev
+    unit_of_measurement: bar
+    device_class: pressure
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: never
+
+  - platform: template
+    id: moto_b0
+    name: TUB front battery
+    device_id: moto_tires_dev
+    unit_of_measurement: '%'
+    device_class: battery
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: never
+  - platform: template
+    id: moto_b1
+    name: TUB rear battery
+    device_id: moto_tires_dev
+    unit_of_measurement: '%'
+    device_class: battery
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: never
+  - platform: template
+    id: moto_b2
+    name: Tire front battery
+    device_id: moto_tires_dev
+    unit_of_measurement: '%'
+    device_class: battery
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: never
+  - platform: template
+    id: moto_b3
+    name: Tire rear battery
+    device_id: moto_tires_dev
+    unit_of_measurement: '%'
+    device_class: battery
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: never

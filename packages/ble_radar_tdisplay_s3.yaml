@@ -167,6 +167,12 @@ font:
     size: 110
     bpp: 4
     glyphs: '0123456789-'
+  # Цифры часов в три карточки (ЧЧ ММ СС), две цифры влезают в 98 px
+  - file: "fonts/ArchivoBlack-Regular.ttf"
+    id: f_clock3
+    size: 68
+    bpp: 4
+    glyphs: '0123456789-'
   - file: "fonts/ArchivoBlack-Regular.ttf"
     id: f_label
     size: 13
@@ -472,21 +478,37 @@ display:
         id(clk_key) = 0xFFFFFFFFu;
       }
 
-      if (id(display_mode) == 2) {
+      if (id(display_mode) == 2 && (id(moto_owner_here).state || moto::preview()) && moto::has_data()) {
+        // ============ MOTO MODE ============
+        // Хозяин в гараже (или просили показ службой moto_preview) и мотоцикл на
+        // связи: вместо часов давление в колесах и
+        // аккумулятор (packages/moto_screen.yaml, moto_ui.h). Перерисовка раз в
+        // секунду или сразу по новому пакету. Старший бит ключа отличает кадр
+        // мотоцикла от кадра часов, и при смене картинки перерисовка обязательна.
+        auto tm = id(homeassistant_time).now();
+        uint32_t key = 0x80000000u | (tm.is_valid()
+            ? (uint32_t)(tm.hour * 10000 + tm.minute * 100 + tm.second)
+            : (uint32_t)(millis() / 1000));
+        if (key != id(clk_key) || moto::dirty) {
+          id(clk_key) = key;
+          moto::draw(it, id(f_moto_txt), id(f_moto_num), tm);
+        }
+        id(render_us) = micros() - t_render0;
+
+      } else if (id(display_mode) == 2) {
         // ============ FLIP CLOCK MODE ============
-        // Две карточки одна над другой: часы сверху, минуты снизу. Линия по
-        // середине карточки рисуется ПОСЛЕ цифр и режет их пополам — именно она
-        // делает вид перекидного табло, без нее это просто крупный текст.
-        // Ландшафт 320x170: часы и минуты рядом. В портрете они стояли друг над
-        // другом, и от той разметки тут не осталось ничего, кроме высоты цифр.
-        const int CARD_W = 150;
-        const int CARD_H = 118;
+        // Три карточки рядом: часы, минуты, секунды (секунды по просьбе 12.10.2026,
+        // до этого было две карточки по 150 px с цифрами 110). Линия по середине
+        // карточки рисуется ПОСЛЕ цифр и режет их пополам: именно она делает вид
+        // перекидного табло, без нее это просто крупный текст.
+        const int CARD_W = 98;
+        const int CARD_H = 108;
         const int CARD_Y = 12;
+        const int CARD_GAP = 7;
         const int CARD1_X = 6;
-        const int CARD2_X = CARD1_X + CARD_W + 8;
 
         // Скругление углов ступенькой: filled_rounded_rectangle в ядре 2026.8.0 нет,
-        // а на карточке шириной 154 радиус в пять пикселей на глаз неотличим.
+        // а на карточке такого размера радиус в пять пикселей на глаз неотличим.
         auto card = [&](int x, int y, int w, int h) {
           it.filled_rectangle(x, y, w, h, id(c_card));
           for (int i = 0; i < 5; i++) {
@@ -499,7 +521,7 @@ display:
         };
 
         auto tn = id(homeassistant_time).now();
-        // Две сплошные карточки это 39 тысяч попиксельных вызовов, 57 мс на кадр.
+        // Три сплошные карточки это около 32 тысяч попиксельных вызовов.
         // Раз в секунду это ничто, пятьдесят раз в секунду это вся загрузка платы.
         uint32_t key = tn.is_valid()
             ? (uint32_t)(tn.hour * 10000 + tn.minute * 100 + tn.second)
@@ -511,24 +533,21 @@ display:
         id(clk_key) = key;
         uint32_t t_draw0 = micros();
         it.fill(id(c_black));
-        card(CARD1_X, CARD_Y, CARD_W, CARD_H);
-        card(CARD2_X, CARD_Y, CARD_W, CARD_H);
-
         int mid_y = CARD_Y + CARD_H / 2;
-        if (tn.is_valid()) {
-          it.printf(CARD1_X + CARD_W / 2, mid_y, id(f_clock), id(c_flip), TextAlign::CENTER, "%02d", tn.hour);
-          it.printf(CARD2_X + CARD_W / 2, mid_y, id(f_clock), id(c_flip), TextAlign::CENTER, "%02d", tn.minute);
-        } else {
-          it.printf(CARD1_X + CARD_W / 2, mid_y, id(f_clock), id(c_flip), TextAlign::CENTER, "--");
-          it.printf(CARD2_X + CARD_W / 2, mid_y, id(f_clock), id(c_flip), TextAlign::CENTER, "--");
+        int vals[3] = {tn.hour, tn.minute, tn.second};
+        for (int c = 0; c < 3; c++) {
+          int x = CARD1_X + c * (CARD_W + CARD_GAP);
+          card(x, CARD_Y, CARD_W, CARD_H);
+          if (tn.is_valid())
+            it.printf(x + CARD_W / 2, mid_y, id(f_clock3), id(c_flip), TextAlign::CENTER, "%02d", vals[c]);
+          else
+            it.printf(x + CARD_W / 2, mid_y, id(f_clock3), id(c_flip), TextAlign::CENTER, "--");
+          it.filled_rectangle(x, mid_y - 1, CARD_W, 3, id(c_black));
         }
 
-        it.filled_rectangle(CARD1_X, mid_y - 1, CARD_W, 3, id(c_black));
-        it.filled_rectangle(CARD2_X, mid_y - 1, CARD_W, 3, id(c_black));
-
-        // Секунды полоской во всю ширину под обеими карточками
-        int tr_y = CARD_Y + CARD_H + 6;
-        int tr_w = CARD2_X + CARD_W - CARD1_X;
+        // Секунды еще и полоской во всю ширину под карточками
+        int tr_y = CARD_Y + CARD_H + 8;
+        int tr_w = 3 * CARD_W + 2 * CARD_GAP;
         it.filled_rectangle(CARD1_X, tr_y, tr_w, 2, id(c_track));
         if (tn.is_valid()) {
           int sw = (tr_w * (tn.second + 1)) / 60;

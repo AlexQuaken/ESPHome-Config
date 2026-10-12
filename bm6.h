@@ -6,8 +6,9 @@
 //   байт 0-2  d1 55 07, признак ответа на эту команду
 //   байт 3    1 значит температура ниже нуля
 //   байт 4    температура, °C
-//   байт 5    назначение неизвестно (в примерах 01)
-//   байт 6    заряд, %
+//   байт 5    состояние по мнению датчика: 0 норма, 1 низкое, 2 зарядка
+//             (так в github Rafciq/BM6; на BM200 показал 1 при 13,17 В)
+//   байт 6    заряд, %, считает сам датчик (на BM200 0 и при 13,17 В)
 //   байт 7-8  напряжение, сотые вольта, старший байт первым
 #include <vector>
 #include "mbedtls/aes.h"
@@ -18,7 +19,7 @@ namespace bm6 {
 static const std::vector<uint8_t> CMD = {0x69, 0x7e, 0xa0, 0xb5, 0xd5, 0x4c, 0xf0, 0x24,
                                          0xe7, 0x94, 0x77, 0x23, 0x55, 0x55, 0x41, 0x14};
 
-inline bool decode(const std::vector<uint8_t> &x, float &volts, float &temp, float &soc) {
+inline bool decode(const std::vector<uint8_t> &x, float &volts, float &temp, float &soc, int &state) {
   if (x.size() < 16) return false;
   static const uint8_t key[16] = {'l', 'e', 'a', 'g', 'e', 'n', 'd', 0xff,
                                   0xfe, '0', '1', '0', '0', '0', '0', '9'};
@@ -39,6 +40,7 @@ inline bool decode(const std::vector<uint8_t> &x, float &volts, float &temp, flo
   if (volts <= 0.0f || volts > 30.0f) return false;
   temp = out[3] == 1 ? -(float) out[4] : (float) out[4];
   soc = out[6];
+  state = out[5];
   return true;
 }
 
