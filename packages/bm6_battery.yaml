@@ -1,0 +1,98 @@
+# BLE-монитор аккумулятора BM6 (Ancel BM200 и прочие клоны). Подключение:
+#   bm6_moto: !include {file: packages/bm6_battery.yaml, vars: {key: bm6_moto, dev: 'Мото АКБ', mac: '3C:AB:72:CB:01:6C'}}
+# В эфире датчик зовется BM6 и рекламирует только iBeacon, данных в рекламе нет.
+# Поэтому раз в 10 минут плата подключается, пишет команду в FFF3, ловит первое
+# уведомление FFF4 и сразу отключается. Расшифровка в bm6.h.
+#
+# Соединение у датчика одно. Пока держит телефон с приложением Ancel, плата не
+# подключится, и наоборот, но плата висит на связи пару секунд раз в 10 минут.
+esphome:
+  includes:
+    - bm6.h
+  devices:
+    - id: ${key}_dev
+      name: ${dev}
+
+ble_client:
+  - id: ${key}
+    mac_address: ${mac}
+    auto_connect: false
+    on_connect:
+      then:
+        # секунда на подписку уведомлений после поиска служб
+        - delay: 1s
+        - ble_client.ble_write:
+            id: ${key}
+            service_uuid: fff0
+            characteristic_uuid: fff3
+            value: !lambda return bm6::CMD;
+        # ответ приходит сразу, это страховка, если он потерялся
+        - delay: 20s
+        - ble_client.disconnect: ${key}
+
+interval:
+  - interval: 10min
+    startup_delay: 60s
+    then:
+      - if:
+          condition:
+            lambda: 'return !id(${key}).connected();'
+          then:
+            - ble_client.connect: ${key}
+
+sensor:
+  - platform: ble_client
+    type: characteristic
+    ble_client_id: ${key}
+    id: ${key}_raw
+    internal: true
+    service_uuid: fff0
+    characteristic_uuid: fff4
+    notify: true
+    update_interval: never
+    lambda: |-
+      float v, t, s;
+      if (!bm6::decode(x, v, t, s)) return NAN;
+      id(${key}_v).publish_state(v);
+      id(${key}_t).publish_state(t);
+      id(${key}_soc).publish_state(s);
+      id(${key}).disconnect();
+      return v;
+
+  - platform: template
+    id: ${key}_v
+    name: Напряжение
+    device_id: ${key}_dev
+    unit_of_measurement: V
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 2
+    # повтор того же значения иначе в HA не пишется, и не видно, жив ли опрос
+    force_update: true
+
+  - platform: template
+    id: ${key}_t
+    name: Температура
+    device_id: ${key}_dev
+    unit_of_measurement: °C
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: template
+    id: ${key}_soc
+    name: Заряд
+    device_id: ${key}_dev
+    unit_of_measurement: '%'
+    device_class: battery
+    state_class: measurement
+    accuracy_decimals: 0
+
+  # Сила сигнала по рекламе, усредненная за 5 минут: видно, слышит ли плата датчик
+  - platform: ble_rssi
+    mac_address: ${mac}
+    name: RSSI
+    device_id: ${key}_dev
+    entity_category: diagnostic
+    filters:
+      - throttle_average: 5min
