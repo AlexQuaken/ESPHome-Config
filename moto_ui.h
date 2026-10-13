@@ -140,12 +140,14 @@ static const Color C_WARN(255, 170, 0);
 static const Color C_BAD(255, 45, 45);
 static const Color C_KTM(255, 102, 0);
 
-// "сейчас", "5м", "2ч"
+// Возраст замера не длиннее 3 знаков, чтобы влезть справа от "ШИНА ПЕР":
+// "8с", "45с", "5м", "2ч", "3д"
 inline void age_str(char *buf, size_t n, uint32_t ms) {
-  uint32_t m = ms / 60000;
-  if (m < 1) snprintf(buf, n, "сейчас");
-  else if (m < 60) snprintf(buf, n, "%uм", (unsigned) m);
-  else snprintf(buf, n, "%uч", (unsigned) (m / 60));
+  uint32_t s = ms / 1000;
+  if (s < 60) snprintf(buf, n, "%uс", (unsigned) s);
+  else if (s < 3600) snprintf(buf, n, "%uм", (unsigned) (s / 60));
+  else if (s < 100 * 3600) snprintf(buf, n, "%uч", (unsigned) (s / 3600));
+  else snprintf(buf, n, "%uд", (unsigned) (s / 86400));
 }
 
 inline void draw_tire(Display &it, BaseFont *ft, BaseFont *fn, int i, int x, int y, int w, int h) {
@@ -160,18 +162,18 @@ inline void draw_tire(Display &it, BaseFont *ft, BaseFont *fn, int i, int x, int
   else
     it.printf(x + w / 2, y + 19, fn, C_DIM, TextAlign::TOP_CENTER, "--");
   if (!t.seen) return;
+  // Сколько прошло с последнего пакета, справа от названия. Колпачок вещает раз в
+  // несколько секунд, минута тишины уже подозрительна
+  uint32_t age = esphome::millis() - t.last_ms;
+  char a[24];  // кириллица по 2 байта на букву
+  age_str(a, sizeof(a), age);
+  it.printf(x + w - 5, y + 3, ft, (fresh && age >= 60000) ? C_WARN : C_DIM, TextAlign::TOP_RIGHT, "%s", a);
   int by = y + h - 19;
   if (!std::isnan(t.temp))
     it.printf(x + 5, by, ft, C_DIM, TextAlign::TOP_LEFT, "%d°", (int) lroundf(t.temp));
-  uint32_t age = esphome::millis() - t.last_ms;
-  if (age >= 60000) {
-    char a[24];  // кириллица по 2 байта на букву
-    age_str(a, sizeof(a), age);
-    it.printf(x + w - 5, by, ft, fresh ? C_WARN : C_DIM, TextAlign::TOP_RIGHT, "%s", a);
-  } else if (t.batt >= 0) {
-    // батарейка колпачка, пока данные свежие; садится, значит менять
+  // батарейка колпачка; садится, значит менять
+  if (t.batt >= 0)
     it.printf(x + w - 5, by, ft, t.batt < 20 ? C_WARN : C_DIM, TextAlign::TOP_RIGHT, "%d%%", t.batt);
-  }
 }
 
 inline void draw_batt(Display &it, BaseFont *ft, BaseFont *fn, int x, int y, int w, int h) {
@@ -218,7 +220,7 @@ inline void draw_batt(Display &it, BaseFont *ft, BaseFont *fn, int x, int y, int
 inline void draw(Display &it, BaseFont *ft, BaseFont *fn, const esphome::ESPTime &now) {
   const int W = it.get_width();
   it.fill(C_BG);
-  it.printf(4, 1, ft, C_KTM, TextAlign::TOP_LEFT, "KTM 350 EXC-F");
+  it.printf(4, 1, ft, C_KTM, TextAlign::TOP_LEFT, "KTM 350 EXC-F Six Days");
   if (now.is_valid())
     it.printf(W - 4, 1, ft, C_TEXT, TextAlign::TOP_RIGHT, "%02d:%02d:%02d", now.hour, now.minute, now.second);
   it.horizontal_line(0, 18, W, C_FRAME);
