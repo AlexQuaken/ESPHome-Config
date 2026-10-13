@@ -81,7 +81,10 @@ interval:
             lambda: |-
               uint32_t age = millis() - moto::B.last_ms;
               if (moto::batt_charging()) return age > 55000;
-              return id(moto_owner_here).state && (!moto::B.seen || age > 110000);
+              // После перезагрузки два замера подряд, чтобы было с чем сравнить рост,
+              // иначе без хозяина первый замер только через час
+              if (!moto::B.seen || std::isnan(moto::B.prev)) return age > 110000 || !moto::B.seen;
+              return id(moto_owner_here).state && age > 110000;
           then:
             - script.execute: bm6_moto_poll
 
