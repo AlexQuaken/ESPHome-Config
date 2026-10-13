@@ -44,7 +44,8 @@ static const float LO[N] = {6.4f, 6.4f, 0.4f, 0.4f};
 static const float HI[N] = {9.0f, 9.0f, 1.2f, 1.2f};
 // Датчик вещает раз в несколько секунд, пока в колесе есть давление
 static const uint32_t TIRE_STALE_MS = 15 * 60 * 1000;
-// Аккумулятор опрашивается раз в 2 минуты при хозяине, без него раз в час
+// Аккумулятор опрашивается раз в минуту на зарядке, раз в 2 минуты при хозяине,
+// иначе раз в час
 static const uint32_t BATT_STALE_MS = 30 * 60 * 1000;
 
 struct Tire {
@@ -61,11 +62,20 @@ static Tire T[N];
 
 struct Batt {
   float volts = NAN;
+  float prev = NAN;  // прошлый замер, чтобы видеть рост
   float temp = NAN;
   bool seen = false;
   uint32_t last_ms = 0;
 };
 static Batt B;
+
+// Стоит на зарядке: выше напряжения покоя полного LFP или растет от замера к
+// замеру. Тогда опрос раз в минуту, даже без хозяина (moto_screen.yaml)
+inline bool batt_charging() {
+  if (!B.seen || std::isnan(B.volts)) return false;
+  if (B.volts >= 13.6f) return true;
+  return !std::isnan(B.prev) && B.volts - B.prev >= 0.02f;
+}
 
 // Пришли новые данные, кадр перерисовать сразу, не дожидаясь смены секунды
 static bool dirty = true;
@@ -96,6 +106,7 @@ inline int parse(const std::vector<uint8_t> &d) {
 }
 
 inline void battery(float volts, float temp) {
+  B.prev = B.volts;
   B.volts = volts;
   B.temp = temp;
   B.seen = true;

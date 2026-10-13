@@ -72,15 +72,16 @@ api:
         - lambda: 'moto::preview_until = millis() + 60000; moto::dirty = true;'
 
 interval:
-  # Хозяин в гараже: аккумулятор раз в 2 минуты, а не раз в час, чтобы на экране была
-  # зарядка почти вживую
+  # Аккумулятор на зарядке (выше 13,6 В или растет): раз в минуту, хозяин рядом
+  # или нет. Просто хозяин в гараже: раз в 2 минуты. Иначе раз в час по bm6_moto
   - interval: 30s
     then:
       - if:
           condition:
             lambda: |-
-              return id(moto_owner_here).state &&
-                     (!moto::B.seen || millis() - moto::B.last_ms > 110000);
+              uint32_t age = millis() - moto::B.last_ms;
+              if (moto::batt_charging()) return age > 55000;
+              return id(moto_owner_here).state && (!moto::B.seen || age > 110000);
           then:
             - script.execute: bm6_moto_poll
 
