@@ -63,18 +63,23 @@ static Tire T[N];
 struct Batt {
   float volts = NAN;
   float prev = NAN;  // прошлый замер, чтобы видеть рост
+  float base = NAN;  // от чего считается рост, сдвигается только по 0,02 В
+  uint32_t rise_ms = 0;
   float temp = NAN;
   bool seen = false;
   uint32_t last_ms = 0;
 };
 static Batt B;
 
-// Стоит на зарядке: выше напряжения покоя полного LFP или растет от замера к
-// замеру. Тогда опрос раз в минуту, даже без хозяина (moto_screen.yaml)
+// Стоит на зарядке: выше напряжения покоя полного LFP или рос последние 20 минут.
+// Тогда опрос раз в минуту, даже без хозяина (moto_screen.yaml). Сравнивать только
+// соседние замеры мало: на полке LFP под током 1 А напряжение стоит минутами
+// (13.10.2026 залип на 13,42), и опрос откатывался на раз в час
+static const uint32_t RISE_HOLD_MS = 20 * 60 * 1000;
 inline bool batt_charging() {
   if (!B.seen || std::isnan(B.volts)) return false;
   if (B.volts >= 13.6f) return true;
-  return !std::isnan(B.prev) && B.volts - B.prev >= 0.02f;
+  return B.rise_ms != 0 && esphome::millis() - B.rise_ms < RISE_HOLD_MS;
 }
 
 // Пришли новые данные, кадр перерисовать сразу, не дожидаясь смены секунды
@@ -108,6 +113,9 @@ inline int parse(const std::vector<uint8_t> &d) {
 inline void battery(float volts, float temp) {
   B.prev = B.volts;
   B.volts = volts;
+  // Рост по 0,01 В за минуту не видно между соседними замерами, поэтому от базы
+  if (std::isnan(B.base) || volts < B.base) B.base = volts;
+  else if (volts - B.base >= 0.02f) { B.base = volts; B.rise_ms = esphome::millis(); }
   B.temp = temp;
   B.seen = true;
   B.last_ms = esphome::millis();
