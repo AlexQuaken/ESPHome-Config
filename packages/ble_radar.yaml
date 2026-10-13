@@ -276,28 +276,29 @@ logger:
     mqtt: ERROR
     mqtt.idf: ERROR
     mqtt.client: ERROR
-    esp32_ble_tracker: DEBUG
+    # INFO, а не DEBUG: на DEBUG сканер пишет в лог каждое BLE-объявление, консоль на экране
+    # копировала все эти строки, и на платах без PSRAM (esp32-5-ant, 13.10.2026) память
+    # рвалась на мелкие куски до panic раз в сутки-полтора
+    esp32_ble_tracker: INFO
     esp32_ble: INFO
   on_message:
-    level: DEBUG
+    level: INFO
     then:
       - lambda: |-
-          std::string t = tag ? tag : "";
-          if (t.find("font") != std::string::npos) return;
-          if (t.find("display") != std::string::npos) return;
-          if (t.find("mqtt") != std::string::npos) return;
-          std::string raw;
-          for (size_t i = 0; message[i] != 0; i++) {
-            unsigned char c = (unsigned char)message[i];
-            if (c == 0x1B) { while (message[i] != 0 && message[i] != 'm') i++; continue; }
-            if (c == '\r' || c == '\n') continue;
-            if (c < 0x20 || c > 0x7E) continue;
-            raw += (char)c;
-          }
-          auto p = raw.find("]: ");
-          if (p != std::string::npos) raw = raw.substr(p + 3);
+          if (tag != nullptr && (strstr(tag, "font") || strstr(tag, "display") || strstr(tag, "mqtt"))) return;
+          // одна строка, зарезервированная под длину сообщения, без временных копий и роста по символу
+          const char *m = message;
+          const char *b = strstr(m, "]: ");
+          if (b != nullptr) m = b + 3;
           std::string clean;
-          for (char c : raw) if (c != '\'') clean += c;
+          clean.reserve(strlen(m));
+          for (size_t i = 0; m[i] != 0; i++) {
+            unsigned char c = (unsigned char)m[i];
+            if (c == 0x1B) { while (m[i] != 0 && m[i] != 'm') i++; if (m[i] == 0) break; continue; }
+            if (c < 0x20 || c > 0x7E || c == '\'') continue;
+            clean += (char)c;
+          }
+          if (clean.size() > 64) clean.resize(64);
           if (clean.empty()) return;
           uint32_t now = millis();
           auto &v = id(log_lines);
