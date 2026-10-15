@@ -93,6 +93,7 @@ struct Battery {
   int rssi{0};
   bool rssi_valid{false};
   uint32_t last_adv_log{0};
+  uint32_t last_seen{0};  // когда последний раз слышали рекламу, для сторожа
   uint8_t attempt{0};
   bool ok{false};
   Session s;
@@ -169,6 +170,12 @@ class BattAirHub : public PollingComponent,
   uint8_t found_{0};
   std::string log_;
   std::vector<uint64_t> unknown_logged_;
+  // Сторож: обходы подряд без единого ответа при датчиках, слышных в эфире,
+  // и был ли уже перезапуск BLE с последнего удачного обхода.
+  uint8_t dead_cycles_{0};
+  bool ble_restarted_since_ok_{false};
+  bool ble_restarting_{false};
+  uint16_t ble_restarts_{0};
 
   sensor::Sensor *found_sensor_{nullptr};
   sensor::Sensor *counter_sensor_{nullptr};
@@ -188,6 +195,8 @@ class BattAirHub : public PollingComponent,
   void on_packet_(const uint8_t *raw, size_t len);
   void publish_battery_(Battery &b);
   bool confirms_pending_(Battery &b);
+  void restart_ble_(const char *why);
+  uint8_t visible_missing_();
 };
 
 }  // namespace esphome::battair

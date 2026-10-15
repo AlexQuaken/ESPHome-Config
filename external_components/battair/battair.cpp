@@ -1,6 +1,8 @@
 #include "battair.h"
 
+#include "esphome/core/application.h"
 #include "esphome/core/hal.h"
+#include "esphome/components/esp32_ble/ble.h"
 #include "esphome/core/log.h"
 
 #include <esp_bt.h>
@@ -40,7 +42,17 @@ static const uint32_t COMMAND_TIMEOUT_MS = 1500;
 static const uint32_t COMMAND_GAP_MS = 80;
 static const uint32_t SETUP_DELAY_MS = 300;
 static const uint32_t RETRY_DELAY_MS = 2000;
-static const uint32_t CLOSE_TIMEOUT_MS = 15000;
+// Сколько ждать, пока клиент вернется в IDLE после нашего отказа от сеанса. Стек ESPHome
+// подключается с таймаутом 20 с и сам повторяет попытку до 10 раз (CONFIG_BT_GATTC_CONNECT_RETRY_COUNT),
+// так что брошенная заявка живет до 200 с. Раньше здесь было 15 с: новая заявка шла поверх
+// незакрытой, стек отвечал gatt_connect wrong state, и через полдня клиент клинило насовсем
+// (13-15.10.2026, 0 из 6 до перезагрузки платы).
+static const uint32_t CLOSE_TIMEOUT_MS = 240000;
+static const uint32_t BLE_OFF_MS = 3000;          // пауза между disable и enable стека
+static const uint32_t BLE_SETTLE_MS = 20000;      // после enable даем трекеру снова увидеть датчики
+static const uint32_t VISIBLE_WINDOW_MS = 600000; // датчик "слышен", если реклама была за 10 минут
+static const uint8_t DEAD_CYCLES_LIMIT = 2;       // обходов подряд без ответа при слышных датчиках
+static const uint32_t REBOOT_MIN_UPTIME_MS = 3600000;  // перезагрузка не чаще раза в час аптайма
 static const uint32_t ADV_LOG_INTERVAL_MS = 300000;
 static const uint32_t BOOT_DELAY_MS = 30000;  // после загрузки даем трекеру увидеть датчики
 
@@ -155,6 +167,7 @@ bool BattAirHub::parse_device(const espbt::ESPBTDevice &device) {
       ESP_LOGI(TAG, "Bat%u '%s' найден в эфире: %s", (unsigned) i + 1, b.ble_name.c_str(), mac_str(addr).c_str());
     }
     b.address_type = device.get_address_type();
+    b.last_seen = millis();
     b.rssi = device.get_rssi();
     b.rssi_valid = true;
     // Раз в 5 минут пишем рекламу целиком: вдруг напряжения есть прямо в ней,
@@ -183,7 +196,7 @@ bool BattAirHub::parse_device(const espbt::ESPBTDevice &device) {
 }
 
 void BattAirHub::update() {
-  if (this->ota_active_)
+  if (this->ota_active_ || this->ble_restarting_)
     return;
   if (this->phase_ != PH_IDLE) {
     ESP_LOGW(TAG, "Прошлый обход еще идет, пропускаю");
@@ -284,9 +297,51 @@ void BattAirHub::after_close_() {
   this->next_battery_();
 }
 
+uint8_t BattAirHub::visible_missing_() {
+  // Сколько датчиков не ответило, хотя их реклама слышна. Если датчики унесли или они спят,
+  // реклама пропадает, и сторож ничего не делает.
+  uint32_t now = millis();
+  uint8_t n = 0;
+  for (auto &b : this->bats_)
+    if (!b.ok && b.last_seen != 0 && now - b.last_seen < VISIBLE_WINDOW_MS)
+      n++;
+  return n;
+}
+
+void BattAirHub::restart_ble_(const char *why) {
+  this->ble_restarts_++;
+  ESP_LOGW(TAG, "Перезапуск BLE #%u: %s", this->ble_restarts_, why);
+  this->log_ += std::string("BLE restart #") + std::to_string(this->ble_restarts_) + ": " + why + "; ";
+  if (this->log_sensor_ != nullptr)
+    this->log_sensor_->publish_state(this->log_);
+  this->phase_ = PH_IDLE;
+  this->cur_ = -1;
+  this->ble_restarting_ = true;
+  // Полный disable/enable стека Bluedroid снимает зависшие заявки GATT без перезагрузки платы.
+  // Клиент и трекер ESPHome сами перерегистрируются, когда стек снова активен.
+  esp32_ble::global_ble->disable();
+  this->set_timeout("ble_up", BLE_OFF_MS, [this]() {
+    esp32_ble::global_ble->enable();
+    this->set_timeout("ble_settle", BLE_SETTLE_MS, [this]() {
+      this->ble_restarting_ = false;
+      this->update();
+    });
+  });
+}
+
 void BattAirHub::finish_cycle_() {
   this->phase_ = PH_IDLE;
   this->cur_ = -1;
+  // Сторож. Первая ступень: два обхода подряд без ответа при слышных датчиках, перезапуск BLE.
+  // Вторая: если и после перезапуска стека снова два пустых обхода, перезагрузка платы,
+  // но не раньше чем через час аптайма, чтобы не уйти в цикл перезагрузок.
+  uint8_t missing = this->visible_missing_();
+  if (this->found_ > 0) {
+    this->dead_cycles_ = 0;
+    this->ble_restarted_since_ok_ = false;
+  } else if (missing > 0) {
+    this->dead_cycles_++;
+  }
   if (this->found_sensor_ != nullptr)
     this->found_sensor_->publish_state(this->found_);
   if (this->counter_sensor_ != nullptr)
@@ -298,6 +353,19 @@ void BattAirHub::finish_cycle_() {
   ESP_LOGI(TAG, "%s", msg.c_str());
   if (this->log_sensor_ != nullptr)
     this->log_sensor_->publish_state(msg);
+
+  if (this->dead_cycles_ >= DEAD_CYCLES_LIMIT) {
+    this->dead_cycles_ = 0;
+    if (!this->ble_restarted_since_ok_) {
+      this->ble_restarted_since_ok_ = true;
+      this->restart_ble_("2 обхода без ответа, датчики слышны");
+    } else if (millis() > REBOOT_MIN_UPTIME_MS) {
+      ESP_LOGE(TAG, "Перезапуск BLE не помог, перезагружаю плату");
+      if (this->log_sensor_ != nullptr)
+        this->log_sensor_->publish_state("BLE restart did not help, rebooting");
+      App.safe_reboot();
+    }
+  }
 }
 
 void BattAirHub::loop() {
@@ -312,8 +380,13 @@ void BattAirHub::loop() {
       return;
 
     case PH_CLOSE:
-      if (this->parent()->state() == espbt::ClientState::IDLE || (int32_t) (now - this->deadline_) >= 0)
+      // Новую заявку подаем только когда стек отпустил прошлую: клиент снова IDLE.
+      if (this->parent()->state() == espbt::ClientState::IDLE) {
         this->after_close_();
+      } else if ((int32_t) (now - this->deadline_) >= 0) {
+        // За 4 минуты стек так и не закрыл соединение: клиент застрял, лечим перезапуском BLE.
+        this->restart_ble_("клиент не вернулся в IDLE");
+      }
       return;
 
     default:
