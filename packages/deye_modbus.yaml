@@ -1,0 +1,138 @@
+# Deye SG03LP1 по Modbus RTU с порта RS485 (RJ45 на низу инвертора, не BMS и не Meter).
+# Подключение (17.10.2026, esp32-20 в щитке): модуль TTL-RS485 на MAX13487 с
+# автонаправлением, VCC от 3V3. Подписи TXD/RXD на модуле даны со стороны платы:
+# TXD модуля на TX платы ${deye_tx_pin}, RXD модуля на RX платы ${deye_rx_pin}. Проверено
+# 17.10.2026: при такой раскладке плата слышит эхо своего запроса (8 байт во время
+# отправки), MAX13487 не глушит приемник на передаче, modbus это эхо отбрасывает.
+# Патч-корд: пин 1 B (бело-оранжевая в T568B), пин 2 A (оранжевая), пин 3 GND.
+# Порт 9600 8N1, адрес ${deye_address}. Регистры и масштабы взяты из профиля solarman
+# custom/deye_hybrid_10s.yaml, с которым сейчас работает интеграция по Wi-Fi-стику:
+# стик сидит на RS232 и живет независимо, данные можно сверять один в один.
+#
+# Подключение:
+#   deye: !include {file: packages/deye_modbus.yaml, vars: {deye_tx_pin: GPIO22, deye_rx_pin: GPIO21, deye_address: '1'}}
+
+uart:
+  id: deye_uart
+  tx_pin: ${deye_tx_pin}
+  rx_pin: ${deye_rx_pin}
+  baud_rate: 9600
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+
+modbus:
+  id: deye_modbus
+  uart_id: deye_uart
+
+modbus_controller:
+  - id: deye
+    modbus_id: deye_modbus
+    address: ${deye_address}
+    update_interval: 10s
+    # инвертор не отвечает, пока не прогрузился, и так не забиваем шину повторами
+    offline_skip_updates: 3
+
+sensor:
+  - platform: modbus_controller
+    modbus_controller_id: deye
+    name: Deye device state
+    id: deye_state_raw
+    register_type: holding
+    address: 59
+    value_type: U_WORD
+    accuracy_decimals: 0
+    entity_category: diagnostic
+
+  - platform: modbus_controller
+    modbus_controller_id: deye
+    name: Deye battery SOC
+    register_type: holding
+    address: 184
+    value_type: U_WORD
+    unit_of_measurement: "%"
+    device_class: battery
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: modbus_controller
+    modbus_controller_id: deye
+    name: Deye battery voltage
+    register_type: holding
+    address: 183
+    value_type: U_WORD
+    unit_of_measurement: V
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+
+  # плюс разряд, минус заряд (как у solarman)
+  - platform: modbus_controller
+    modbus_controller_id: deye
+    name: Deye battery power
+    register_type: holding
+    address: 190
+    value_type: S_WORD
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: modbus_controller
+    modbus_controller_id: deye
+    name: Deye battery temperature
+    register_type: holding
+    address: 182
+    value_type: U_WORD
+    unit_of_measurement: °C
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    filters:
+      - lambda: return (x - 1000) * 0.1;
+
+  - platform: modbus_controller
+    modbus_controller_id: deye
+    name: Deye grid power
+    register_type: holding
+    address: 169
+    value_type: S_WORD
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: modbus_controller
+    modbus_controller_id: deye
+    name: Deye load power
+    register_type: holding
+    address: 178
+    value_type: S_WORD
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: modbus_controller
+    modbus_controller_id: deye
+    name: Deye PV1 power
+    register_type: holding
+    address: 186
+    value_type: U_WORD
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 0
+
+  - platform: modbus_controller
+    modbus_controller_id: deye
+    name: Deye PV2 power
+    register_type: holding
+    address: 187
+    value_type: U_WORD
+    unit_of_measurement: W
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 0
