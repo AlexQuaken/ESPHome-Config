@@ -103,7 +103,33 @@ psram:
 packages:
   device_base: !include packages/1wifi_api_ota_logger.yaml
 
+# Две сети, у каждой свой адрес (с 18.10.2026): дома 192.168.0.233, в гараже
+# кооператива точка Garage54 и 192.168.17.6 (пул DHCP там 200-254). Из дома до
+# гаражной сети HA достает через WireGuard, как до garage-coop-mini, поэтому
+# прошивку можно лить и там: esphome upload tpms-s3.yaml --device 192.168.17.6.
+# manual_ip пакета с домашним шлюзом убран: общий для обеих сетей он увел бы
+# плату в гараже в чужую подсеть.
 wifi:
+  networks:
+    - ssid: !secret wifi
+      password: !secret wifipwd
+      manual_ip:
+        static_ip: ${static_ip}
+        gateway: 192.168.0.1
+        subnet: 255.255.255.0
+        dns1: 192.168.0.7
+        dns2: 192.168.0.1
+    - ssid: Garage54
+      password: !secret garage_wifipwd
+      manual_ip:
+        static_ip: 192.168.17.6
+        gateway: 192.168.17.1
+        subnet: 255.255.255.0
+        dns1: 192.168.17.1
+  manual_ip: !remove
+  # ESPHome требует один адрес по умолчанию при двух статических; в гараже
+  # кооператива давать --device 192.168.17.6
+  use_address: ${static_ip}
   reboot_timeout: 0s
   # Точка доступа при потере сети тут только мешает: вне дома сети нет почти
   # всегда, и AP висела бы постоянно, отъедая эфир у BLE.
