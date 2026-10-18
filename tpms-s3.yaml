@@ -17,7 +17,8 @@
 # родного размера 16, иначе буквы ломаются), давление шрифтом ArchivoBlack.
 #
 # Домашний: черный фон (картинку мотоцикла юзер попросил убрать 04.10.2026,
-# images/ktm_bg.png остался в репо), время ЧЧ:ММ:СС, дата цифрами и день недели,
+# images/ktm_bg.png остался в репо), время ЧЧ:ММ, рядом напряжение аккумулятора
+# с BM200 (с 18.10.2026, вместо секунд), дата цифрами и день недели,
 # есть ли домашняя сеть (нужна только часам и HA, датчики идут по BLE),
 # внизу четыре ячейки: давление, пороги, возраст пакета, температура,
 # батарея, RSSI, число пакетов с включения, полоска свежести, вспышка рамки
@@ -77,11 +78,16 @@ substitutions:
   leak_bar_h: '0.3'
   # Должно совпадать с tpms::HIST_STEP_S
   hist_step: '10'
+  # Ancel BM200 на аккумуляторе мотоцикла. Его же раз в час опрашивает
+  # garage-coop-mini (packages/bm6_battery.yaml), соединение у датчика одно.
+  bm_mac: '3C:AB:72:CB:01:6C'
 
 esphome:
   name: ${board_name}
   includes:
     - tpms_s3.h
+    # расшифровка BLE-монитора аккумулятора BM200 (общая с garage-coop-mini)
+    - bm6.h
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -117,6 +123,10 @@ esp32_ble_tracker:
     window: 90ms
     continuous: true
   on_ble_advertise:
+    # BM200 на аккумуляторе: в рекламе данных нет, только отметка «рядом»
+    - mac_address: ${bm_mac}
+      then:
+        - lambda: 'id(bm_seen_ms) = millis();'
     - then:
         - lambda: |-
             for (auto &md : x.get_manufacturer_datas()) {
@@ -173,6 +183,37 @@ globals:
   - id: rx_total
     type: uint32_t
     initial_value: '0'
+  # Аккумулятор (BM200): когда слышен в эфире, когда последний удачный опрос,
+  # напряжение и температура. В HA не отдаются: там их пишет garage-coop-mini.
+  - id: bm_seen_ms
+    type: uint32_t
+    initial_value: '0'
+  - id: bm_ok_ms
+    type: uint32_t
+    initial_value: '0'
+  - id: bm_v
+    type: float
+    initial_value: 'NAN'
+  - id: bm_t
+    type: float
+    initial_value: 'NAN'
+
+# Опрос BM200 как в packages/bm6_battery.yaml: подключиться, записать команду в
+# FFF3, поймать уведомление FFF4 и сразу отключиться.
+ble_client:
+  - id: bm
+    mac_address: ${bm_mac}
+    auto_connect: false
+    on_connect:
+      then:
+        - delay: 1s
+        - ble_client.ble_write:
+            id: bm
+            service_uuid: fff0
+            characteristic_uuid: fff3
+            value: !lambda return bm6::CMD;
+        - delay: 20s
+        - ble_client.disconnect: bm
 
 time:
   - platform: homeassistant
@@ -293,6 +334,24 @@ binary_sensor:
     device_class: problem
 
 sensor:
+  - platform: ble_client
+    type: characteristic
+    ble_client_id: bm
+    id: bm_raw
+    internal: true
+    service_uuid: fff0
+    characteristic_uuid: fff4
+    notify: true
+    update_interval: never
+    lambda: |-
+      float v, t, soc;
+      int st;
+      if (!bm6::decode(x, v, t, soc, st)) return NAN;
+      id(bm_v) = v;
+      id(bm_t) = t;
+      id(bm_ok_ms) = millis();
+      id(bm).disconnect();
+      return v;
   - platform: template
     id: p0
     name: ${ha_0} давление
@@ -469,6 +528,18 @@ number:
     mode: box
 
 interval:
+  # Аккумулятор раз в 5 минут, на зарядке (выше 13,6 В, мотор работает) раз в
+  # минуту. Сорвался опрос, повтор через 30 с. Прямой connect(), а не действие:
+  # действие после status=133 зависает навсегда (грабля из bm6_battery.yaml).
+  - interval: 30s
+    startup_delay: 20s
+    then:
+      - lambda: |-
+          const uint32_t period = (!std::isnan(id(bm_v)) && id(bm_v) > 13.6f) ? 60000 : 300000;
+          if (id(bm_ok_ms) != 0 && millis() - id(bm_ok_ms) < period) return;
+          if (id(bm).state() != esp32_ble_tracker::ClientState::IDLE) return;
+          if (id(bm_seen_ms) == 0 || millis() - id(bm_seen_ms) > 60000) return;
+          id(bm).connect();
   - interval: ${hist_step}s
     then:
       - lambda: 'tpms::hist_push(${stale_min} * 60000UL);'
@@ -539,7 +610,7 @@ font:
     id: f_px2
     size: 32
     bpp: 1
-    glyphs: '0123456789.,:-+ минакс'
+    glyphs: '0123456789.,:-+ минаксВ'
   - file: "fonts/PxPlus_IBM_VGA_8x16.ttf"
     id: f_px3
     size: 48
@@ -717,21 +788,42 @@ display:
         auto tn = id(ha_time).now();
         if (!tn.is_valid()) tn = id(sntp_time).now();
 
-        // Время и дата одним пиксельным шрифтом: время x3, дата x1 справа.
+        // Время ЧЧ:ММ x3, рядом аккумулятор x2, дата x1 справа. Секунды убраны
+        // 18.10.2026, чтобы влезло напряжение.
         if (tn.is_valid()) {
-          it.printf(4, 0, id(f_px3), id(c_white), "%02d:%02d:%02d", tn.hour, tn.minute, tn.second);
-          it.printf(204, 4, id(f_px1), id(c_text), "%02d.%02d.%04d", tn.day_of_month, tn.month, tn.year);
-          it.print(204, 21, id(f_px1), id(c_dim), WD[(tn.day_of_week + 6) % 7]);
+          it.printf(4, 0, id(f_px3), id(c_white), "%02d:%02d", tn.hour, tn.minute);
+          it.printf(230, 4, id(f_px1), id(c_text), "%02d.%02d.%04d", tn.day_of_month, tn.month, tn.year);
+          it.print(230, 21, id(f_px1), id(c_dim), WD[(tn.day_of_week + 6) % 7]);
         } else {
-          it.print(4, 0, id(f_px3), id(c_grey), "--:--:--");
+          it.print(4, 0, id(f_px3), id(c_grey), "--:--");
           const uint32_t up = now / 1000;
-          it.print(204, 4, id(f_px1), id(c_amber), "нет времени");
-          it.printf(204, 21, id(f_px1), id(c_dim), "up %u:%02u:%02u",
+          it.print(230, 4, id(f_px1), id(c_amber), "нет времени");
+          it.printf(230, 21, id(f_px1), id(c_dim), "up %u:%02u:%02u",
                     (unsigned) (up / 3600), (unsigned) (up / 60 % 60), (unsigned) (up % 60));
+        }
+        // Аккумулятор LiFePO4: выше 13,6 В заряжается (оранжевый), от 12,9 норма,
+        // от 12,5 подсел, ниже разряжен. Замер старше 30 минут серый.
+        {
+          const float v = id(bm_v);
+          const uint32_t bage = now - id(bm_ok_ms);
+          const bool bfr = !std::isnan(v) && bage < 1800000;
+          Color bc = !bfr ? id(c_grey) : v > 13.6f ? id(c_ktm) : v >= 12.9f ? id(c_ok) :
+                     v >= 12.5f ? id(c_amber) : id(c_red);
+          if (std::isnan(v)) it.print(128, 2, id(f_px2), id(c_grey), "--.--В");
+          else it.printf(128, 2, id(f_px2), bc, "%.2fВ", v);
+          char ba[12] = "";
+          if (!std::isnan(v)) {
+            const uint32_t s = bage / 1000;
+            if (s < 60) snprintf(ba, sizeof(ba), "%uс", (unsigned) s);
+            else if (s < 3600) snprintf(ba, sizeof(ba), "%uм", (unsigned) (s / 60));
+            else snprintf(ba, sizeof(ba), "%uч", (unsigned) (s / 3600));
+          }
+          if (std::isnan(v)) it.print(128, 36, id(f_px1), id(c_dim), "АКБ нет");
+          else it.printf(128, 36, id(f_px1), id(c_dim), "АКБ %.0f° %s", id(bm_t), ba);
         }
         // Сеть нужна только для часов и HA, датчики идут по BLE без нее.
         const bool wf = wifi::global_wifi_component->is_connected();
-        it.print(204, 38, id(f_px1), wf ? id(c_dim) : id(c_grey), wf ? "сеть: дом" : "сеть: нет");
+        it.print(230, 38, id(f_px1), wf ? id(c_dim) : id(c_grey), wf ? "сеть: дом" : "сеть: нет");
 
         // Четыре ячейки внизу, прозрачные: мотоцикл просвечивает сквозь них.
         for (int i = 0; i < tpms::N; i++) {
