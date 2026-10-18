@@ -88,6 +88,7 @@ esphome:
             gs::cb_disarm = []() { id(gs_disarm).execute(); };
             gs::cb_light = []() { id(gs_light).execute(); };
             gs::cb_charge = []() { id(gs_charge).execute(); };
+            gs::cb_lock = []() { id(gs_lock).execute(); };
             gs::cb_flash_stop = []() { id(flash_stop).execute(); };
             gs::init(id(p_status)->obj, id(fs)->get_lv_font(), id(fm)->get_lv_font(), id(fb)->get_lv_font(),
                      id(f_alarm)->get_lv_font(), id(f_alarm_num)->get_lv_font());
@@ -395,6 +396,16 @@ text_sensor:
           id(gs_refresh).execute();
   - platform: homeassistant
     internal: true
+    id: ha_lock
+    # замок ворот, тап по плитке ВОРОТА открывает и закрывает (gs_lock)
+    entity_id: lock.door_lock_garage
+    on_value:
+      - lambda: |-
+          if (x == "locked") id(log_event).execute("ЗАМОК", "закрыт");
+          else if (x == "unlocked") id(log_event).execute("ЗАМОК", "открыт");
+          id(gs_refresh).execute();
+  - platform: homeassistant
+    internal: true
     id: ha_alarm
     # manual-пульт HA, с 30.09.2026 вместо родной охраны Шлюза 4
     entity_id: alarm_control_panel.garazh_okhrana
@@ -648,6 +659,7 @@ script:
           st.gate_open = id(ha_gate).state;
           st.motion = id(ha_motion).state;
           st.light_on = id(ha_light).state == "on";
+          st.lock = id(ha_lock).state;
           st.alarm = id(ha_alarm).state;
           st.charge_on = id(ha_chg_sw).state == "on";
           float lt = id(ha_light_to).state;
@@ -699,6 +711,33 @@ script:
           action: switch.toggle
           data:
             entity_id: switch.svet_garazh
+  # Замок: команды toggle у lock в HA нет, выбираем по состоянию. Код panel в
+  # input_text.garage_lock_source подписывает уведомление «с панели в гараже».
+  # Закрытие при открытых воротах откатит garage_lock_guard_gate_open в HA.
+  - id: gs_lock
+    then:
+      - if:
+          condition:
+            lambda: 'return id(ha_lock).state == "locked" || id(ha_lock).state == "unlocked";'
+          then:
+            - homeassistant.action:
+                action: input_text.set_value
+                data:
+                  entity_id: input_text.garage_lock_source
+                  value: !lambda 'return "panel|" + to_string(id(homeassistant_time).now().timestamp);'
+            - if:
+                condition:
+                  lambda: 'return id(ha_lock).state == "locked";'
+                then:
+                  - homeassistant.action:
+                      action: lock.unlock
+                      data:
+                        entity_id: lock.door_lock_garage
+                else:
+                  - homeassistant.action:
+                      action: lock.lock
+                      data:
+                        entity_id: lock.door_lock_garage
   - id: gs_arm
     then:
       - homeassistant.action:
