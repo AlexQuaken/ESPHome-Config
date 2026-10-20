@@ -416,7 +416,7 @@ void DeyeBMS::parse_frame_(const std::vector<uint8_t> &f) {
     float soc = le16(f, 5) / 10.0f;
     float soh = le16(f, 7) / 10.0f;
     float totalv = le16(f, 10) / 100.0f;
-    float cur = sle16(f, 12) / 100.0f;
+    float cur = sle16(f, 12) / 10.0f;  // 0.1 A, сверено с током инвертора 20.10.2026
     float tcell = sle16(f, 14) / 10.0f;
     float tmos = sle16(f, 20) / 10.0f;
     float tenv = sle16(f, 22) / 10.0f;
