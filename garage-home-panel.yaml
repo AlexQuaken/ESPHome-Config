@@ -65,6 +65,8 @@ packages:
   base_sensors: !include packages/2common_sensors.yaml
   diag: !include packages/diag.yaml
   diag_psram: !include packages/diag_psram.yaml
+  # самокат Ninebot G3 по BLE раз в 5 минут, с 27.10.2026
+  ninebot_g3: !include packages/ninebot_g3.yaml
 
 esphome:
   name: ${board_name}
