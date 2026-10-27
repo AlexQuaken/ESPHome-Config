@@ -94,6 +94,15 @@ struct Battery {
   bool rssi_valid{false};
   uint32_t last_adv_log{0};
   uint32_t last_seen{0};  // когда последний раз слышали рекламу, для сторожа
+  // Последняя разобранная реклама (mfg 0xABBA). Из нее берутся напряжение, уровень,
+  // температура и циклы, когда подключиться к датчику не вышло, а слышно его хорошо.
+  bool adv_valid{false};
+  uint32_t adv_at{0};
+  uint16_t adv_cv{0};  // общее напряжение, десятки мВ
+  uint8_t adv_level{0};
+  int8_t adv_temp{0};
+  uint16_t adv_cycles{0};
+  uint16_t adv_count{0};  // реклам за обход, для лога
   uint8_t attempt{0};
   bool ok{false};
   Session s;
@@ -173,6 +182,7 @@ class BattAirHub : public PollingComponent,
   // Сторож: обходы подряд без единого ответа при датчиках, слышных в эфире,
   // и был ли уже перезапуск BLE с последнего удачного обхода.
   uint8_t dead_cycles_{0};
+  uint8_t silent_cycles_{0};  // обходы подряд, когда в эфире не слышно ни одного датчика
   bool ble_restarted_since_ok_{false};
   bool ble_restarting_{false};
   uint16_t ble_restarts_{0};
@@ -194,6 +204,7 @@ class BattAirHub : public PollingComponent,
   void write_(const uint8_t *data, size_t len);
   void on_packet_(const uint8_t *raw, size_t len);
   void publish_battery_(Battery &b);
+  bool publish_from_adv_(Battery &b);
   bool confirms_pending_(Battery &b);
   void restart_ble_(const char *why);
   uint8_t visible_missing_();

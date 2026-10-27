@@ -34,6 +34,11 @@ static const char *const TAG = "battair";
 //   26 -> 27 пусто, 28 -> 29 71 28 00 00, не известно
 // В рекламе (mfg 0xABBA) есть общее напряжение в 10 мВ, температура и циклы,
 // но не банки, поэтому без подключения просадку одной банки не увидеть.
+// Разбор рекламы сверен 27.10.2026 с ответами GATT тех же датчиков, BattAir 6:
+//   10 00 00 08 DD 05 13 19 0C 00 04 BC 02 01 42 61 74 36
+//   [0] 0x10, [3] флаги (00 или 08, смысл не ясен), [4..5] напряжение 0x05DD = 15.01 В,
+//   [6] уровень 19 %, [7] температура 25 °C, [8..9] циклы 12, [10] банок 4,
+//   [11..12] 700, как C-рейт в ответе 0x15, [13] тип 01 LiPo, дальше короткое имя.
 static const uint8_t COMMANDS[] = {0x02, 0x06, 0x04, 0x10, 0x12, 0x14, 0x0E, 0x0A, 0x16, 0x26, 0x28};
 static const size_t COMMAND_COUNT = sizeof(COMMANDS);
 
@@ -54,6 +59,13 @@ static const uint32_t VISIBLE_WINDOW_MS = 600000; // датчик "слышен"
 static const uint8_t DEAD_CYCLES_LIMIT = 2;       // обходов подряд без ответа при слышных датчиках
 static const uint32_t REBOOT_MIN_UPTIME_MS = 3600000;  // перезагрузка не чаще раза в час аптайма
 static const uint32_t ADV_LOG_INTERVAL_MS = 300000;
+// Датчик, которого столько не слышно в эфире, не подключаем: без рекламы соединение не
+// установится, а каждая брошенная заявка держит стек до 200 с (см. CLOSE_TIMEOUT_MS).
+static const uint32_t SILENT_SKIP_MS = 300000;
+// Реклама свежее этого годится вместо опроса, если подключиться не вышло.
+static const uint32_t ADV_FRESH_MS = 360000;
+static const uint16_t ADV_COMPANY_ID = 0xABBA;
+static const uint8_t SILENT_CYCLES_LIMIT = 3;  // обходов подряд, когда не слышно ни одного датчика
 static const uint32_t BOOT_DELAY_MS = 30000;  // после загрузки даем трекеру увидеть датчики
 
 // Границы фильтра мусора, см. publish_battery_().
@@ -170,8 +182,25 @@ bool BattAirHub::parse_device(const espbt::ESPBTDevice &device) {
     b.last_seen = millis();
     b.rssi = device.get_rssi();
     b.rssi_valid = true;
-    // Раз в 5 минут пишем рекламу целиком: вдруг напряжения есть прямо в ней,
-    // тогда датчики можно будет слушать без подключения.
+    if (b.adv_count < UINT16_MAX)
+      b.adv_count++;
+    for (auto &md : device.get_manufacturer_datas()) {
+      const auto &d = md.data;
+      if (md.uuid != espbt::ESPBTUUID::from_uint16(ADV_COMPANY_ID) || d.size() < 11 || d[0] != 0x10)
+        continue;
+      uint8_t cells = d[10];
+      uint32_t mv = u16(d.data(), 4) * 10u;
+      // Те же границы, что у банок при опросе: мусор в рекламе не принимаем.
+      if (cells < 1 || cells > 6 || mv < cells * (uint32_t) CELL_MIN_MV || mv > cells * (uint32_t) CELL_MAX_MV)
+        continue;
+      b.adv_cv = u16(d.data(), 4);
+      b.adv_level = d[6];
+      b.adv_temp = (int8_t) d[7];
+      b.adv_cycles = u16(d.data(), 8);
+      b.adv_at = millis();
+      b.adv_valid = true;
+    }
+    // Раз в 5 минут пишем рекламу целиком, для сверки разбора.
     uint32_t now = millis();
     if (b.last_adv_log == 0 || now - b.last_adv_log > ADV_LOG_INTERVAL_MS) {
       b.last_adv_log = now;
@@ -224,6 +253,14 @@ void BattAirHub::next_battery_() {
       if (b.online != nullptr)
         b.online->publish_state(false);
       this->log_ += "B" + std::to_string(this->cur_ + 1) + " -; ";
+      continue;
+    }
+    if (b.last_seen == 0 || millis() - b.last_seen > SILENT_SKIP_MS) {
+      // Реклама не слышна: датчик унесли, разрядился или к нему подключен телефон.
+      ESP_LOGW(TAG, "Bat%d '%s' не слышно в эфире, не подключаюсь", this->cur_ + 1, b.ble_name.c_str());
+      if (b.online != nullptr)
+        b.online->publish_state(false);
+      this->log_ += "B" + std::to_string(this->cur_ + 1) + " не слышно; ";
       continue;
     }
     this->start_attempt_();
@@ -291,7 +328,8 @@ void BattAirHub::after_close_() {
     this->publish_battery_(b);
   } else {
     ESP_LOGW(TAG, "Bat%d '%s' не ответил за %u попыток", this->cur_ + 1, b.ble_name.c_str(), b.attempt);
-    this->log_ += "B" + std::to_string(this->cur_ + 1) + " нет связи; ";
+    if (!this->publish_from_adv_(b))
+      this->log_ += "B" + std::to_string(this->cur_ + 1) + " нет связи; ";
   }
   this->phase_ = PH_IDLE;
   this->next_battery_();
@@ -342,6 +380,24 @@ void BattAirHub::finish_cycle_() {
   } else if (missing > 0) {
     this->dead_cycles_++;
   }
+
+  // Сколько реклам каждого датчика услышали за обход: по этому числу видно, вещает ли
+  // датчик, когда к нему не подключиться (0 реклам и сильный сигнал у соседей значит,
+  // что он молчит сам, а не что далеко).
+  uint32_t now = millis();
+  uint8_t heard = 0;
+  std::string adv = "Реклам за обход:";
+  for (size_t i = 0; i < this->bats_.size(); i++) {
+    auto &b = this->bats_[i];
+    if (b.last_seen != 0 && now - b.last_seen < SILENT_SKIP_MS)
+      heard++;
+    adv += " B" + std::to_string(i + 1) + " " + std::to_string(b.adv_count);
+    b.adv_count = 0;
+  }
+  ESP_LOGD(TAG, "%s", adv.c_str());
+  // Не слышно вообще никого: либо батареи унесли, либо сканер встал. Один перезапуск BLE
+  // на такой случай, без перезагрузки платы, чтобы не крутиться, пока батареи в поле.
+  this->silent_cycles_ = (heard == 0 && this->found_ == 0) ? this->silent_cycles_ + 1 : 0;
   if (this->found_sensor_ != nullptr)
     this->found_sensor_->publish_state(this->found_);
   if (this->counter_sensor_ != nullptr)
@@ -365,6 +421,10 @@ void BattAirHub::finish_cycle_() {
         this->log_sensor_->publish_state("BLE restart did not help, rebooting");
       App.safe_reboot();
     }
+  } else if (this->silent_cycles_ >= SILENT_CYCLES_LIMIT && !this->ble_restarted_since_ok_) {
+    this->silent_cycles_ = 0;
+    this->ble_restarted_since_ok_ = true;
+    this->restart_ble_("ни одного датчика в эфире");
   }
 }
 
@@ -746,6 +806,37 @@ void BattAirHub::publish_battery_(Battery &b) {
            s.cycles, s.temperature,
            s.charge_current, s.discharge_current, s.level_raw);
   this->log_ += line + "; ";
+}
+
+// Подключиться не вышло, но реклама свежая: отдаем из нее общее напряжение, уровень,
+// температуру, циклы и сигнал. Банки и разбаланс в рекламе нет, они остаются от прошлого
+// удачного опроса, а Online остается off, по нему и видно, что банки старые.
+bool BattAirHub::publish_from_adv_(Battery &b) {
+  if (!b.adv_valid || millis() - b.adv_at > ADV_FRESH_MS)
+    return false;
+  auto pub = [&b](uint8_t kind, float v) {
+    if (b.sensors[kind] != nullptr)
+      b.sensors[kind]->publish_state(v);
+  };
+  int n = this->cur_ + 1;
+  pub(SENSOR_VOLTAGE, b.adv_cv / 100.0f);
+  if (b.adv_level <= 100)
+    pub(SENSOR_LEVEL, b.adv_level);
+  if (b.adv_temp >= TEMP_MIN_C && b.adv_temp <= TEMP_MAX_C)
+    pub(SENSOR_TEMPERATURE, b.adv_temp);
+  if (b.adv_cycles <= CYCLES_MAX &&
+      (b.last_cycles < 0 || (b.adv_cycles >= b.last_cycles && b.adv_cycles <= b.last_cycles + CYCLES_STEP_MAX))) {
+    b.last_cycles = b.adv_cycles;
+    pub(SENSOR_CYCLES, b.adv_cycles);
+  }
+  if (b.rssi_valid)
+    pub(SENSOR_RSSI, b.rssi);
+  char v[40];
+  snprintf(v, sizeof(v), "B%d %.2f эфир %d; ", n, b.adv_cv / 100.0f, b.rssi);
+  this->log_ += v;
+  ESP_LOGI(TAG, "Bat%d '%s': из рекламы %.2f В, ур. %u, %d°C, циклов %u, rssi %d", n, b.ble_name.c_str(),
+           b.adv_cv / 100.0f, b.adv_level, b.adv_temp, b.adv_cycles, b.rssi);
+  return true;
 }
 
 }  // namespace esphome::battair
