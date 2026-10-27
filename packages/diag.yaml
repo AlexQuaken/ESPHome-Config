@@ -154,7 +154,10 @@ interval:
     then:
       - lambda: |-
           if (!${diag_save_uptime}) return;
-          auto p_up = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_up"), true);
+          // static обязателен: make_preference() на каждый вызов делает new и ничего не
+          // освобождает. Без него все ESP32 с этим пакетом теряли около 20 байт в минуту
+          // (1,2 КБ в час) и через 2-3 суток падали по нехватке памяти (найдено 27.10.2026).
+          static auto p_up = global_preferences->make_preference<uint32_t>(fnv1_hash("diag_up"), true);
           uint32_t up = millis() / 1000;
           p_up.save(&up);
   - interval: 5s
