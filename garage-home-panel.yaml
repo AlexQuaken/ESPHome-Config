@@ -209,30 +209,8 @@ ota:
   password: !secret wifipwd
 
 logger:
-  # DEBUG ради лога самоката (ninebot), остальное прижато до INFO
-  level: DEBUG
+  level: INFO
   logs:
-    ninebot: DEBUG
-    ble_client: DEBUG
-    esp32_ble_client: DEBUG
-    sensor: INFO
-    text_sensor: INFO
-    binary_sensor: INFO
-    homeassistant.sensor: INFO
-    homeassistant.text_sensor: INFO
-    homeassistant.binary_sensor: INFO
-    api: INFO
-    api.service: INFO
-    light: INFO
-    switch: INFO
-    button: INFO
-    number: INFO
-    select: INFO
-    script: INFO
-    wifi: INFO
-    ble_presence: INFO
-    alarm: INFO
-    hb: INFO
     font: ERROR
     display: ERROR
     mipi_spi: ERROR
