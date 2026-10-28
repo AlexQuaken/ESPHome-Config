@@ -65,6 +65,8 @@ packages:
   base_sensors: !include packages/2common_sensors.yaml
   diag: !include packages/diag.yaml
   diag_psram: !include packages/diag_psram.yaml
+  # самокат Ninebot G3 по BLE раз в 5 минут, проба v5 с 28.10.2026
+  ninebot_g3: !include packages/ninebot_g3.yaml
 
 esphome:
   name: ${board_name}
@@ -109,6 +111,9 @@ esp32:
   cpu_frequency: 240MHz
   framework:
     type: esp-idf
+    advanced:
+      # запас под BLE-клиент самоката (ninebot), по умолчанию 8 КБ
+      loop_task_stack_size: 16384
     sdkconfig_options:
       # BLE-стек по возможности в PSRAM. Буферы Wi-Fi/LWIP туда не уносить:
       # PSRAM занята буферами экрана и DMA, с ними пинг был 200-600 мс
