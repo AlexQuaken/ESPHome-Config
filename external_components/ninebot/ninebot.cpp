@@ -282,7 +282,10 @@ void NinebotHub::close_(const char *why, bool retry) {
 }
 
 void NinebotHub::after_close_() {
-  if (!this->session_ok_ && this->retry_ && this->attempt_ < MAX_ATTEMPTS) {
+  // в сопряжении самокат рвет связь секунд через 10, если кнопку не нажали: окно держим
+  // попытками, около двух минут
+  uint8_t max_att = this->pairing_ ? 12 : MAX_ATTEMPTS;
+  if (!this->session_ok_ && this->retry_ && this->attempt_ < max_att) {
     this->phase_ = PH_WAIT;
     this->wait_until_ = millis() + RETRY_DELAY_MS;
     return;
@@ -379,9 +382,17 @@ void NinebotHub::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t, 
     case ESP_GATTC_SEARCH_CMPL_EVT: {
       if (this->phase_ != PH_CONNECT)
         break;
-      auto svc = espbt::ESPBTUUID::from_raw(SERVICE_UUID);
-      auto *wr = this->parent()->get_characteristic(svc, espbt::ESPBTUUID::from_raw(WRITE_UUID));
-      auto *nt = this->parent()->get_characteristic(svc, espbt::ESPBTUUID::from_raw(NOTIFY_UUID));
+      // сначала Nordic UART (gen2), сервис Ninebot запасным
+      const char *svc_name = "NUS";
+      auto nus = espbt::ESPBTUUID::from_raw(NUS_SERVICE_UUID);
+      auto *wr = this->parent()->get_characteristic(nus, espbt::ESPBTUUID::from_raw(NUS_WRITE_UUID));
+      auto *nt = this->parent()->get_characteristic(nus, espbt::ESPBTUUID::from_raw(NUS_NOTIFY_UUID));
+      if (wr == nullptr || nt == nullptr) {
+        svc_name = "NB";
+        auto svc = espbt::ESPBTUUID::from_raw(SERVICE_UUID);
+        wr = this->parent()->get_characteristic(svc, espbt::ESPBTUUID::from_raw(WRITE_UUID));
+        nt = this->parent()->get_characteristic(svc, espbt::ESPBTUUID::from_raw(NOTIFY_UUID));
+      }
       if (wr == nullptr || nt == nullptr) {
         this->close_("нет сервиса Ninebot", false);
         break;
@@ -395,7 +406,7 @@ void NinebotHub::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t, 
         auto *gn = this->parent()->get_characteristic((uint16_t) 0x1800, (uint16_t) 0x2A00);
         this->name_handle_ = gn ? gn->handle : 0;
       }
-      NBLOG("GATT wr 0x%04X p%02X nt 0x%04X p%02X name 0x%04X", wr->handle, wr->properties, nt->handle,
+      NBLOG("GATT %s wr 0x%04X p%02X nt 0x%04X p%02X name 0x%04X", svc_name, wr->handle, wr->properties, nt->handle,
             nt->properties, this->name_handle_);
       if (this->parent()->register_for_notify(this->notify_handle_)) {
         this->close_("подписка не удалась", true);
@@ -454,6 +465,8 @@ void NinebotHub::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t, 
     case ESP_GATTC_DISCONNECT_EVT:
     case ESP_GATTC_CLOSE_EVT:
       if (this->phase_ != PH_IDLE && this->phase_ != PH_CLOSE && this->phase_ != PH_WAIT) {
+        if (event == ESP_GATTC_DISCONNECT_EVT)
+          NBLOG("самокат отключился на шаге %u, reason 0x%02X", this->phase_, param->disconnect.reason);
         this->retry_ = !this->session_ok_;
         this->phase_ = PH_CLOSE;
         this->deadline_ = millis() + CLOSE_TIMEOUT_MS;
@@ -541,8 +554,8 @@ void NinebotHub::pump_tx_() {
     return;
   auto frag = this->tx_.front();
   this->tx_.erase(this->tx_.begin());
-  // PRE_COMM пишем с ответом, если характеристика умеет: отказ ATT 0x05/0x0F будет виден
-  bool rsp = !this->write_no_rsp_ || (this->phase_ == PH_PRECOMM && this->write_rsp_ok_);
+  // без подтверждения, если характеристика умеет: так пишет и приложение
+  bool rsp = !this->write_no_rsp_;
   auto type = rsp ? ESP_GATT_WRITE_TYPE_RSP : ESP_GATT_WRITE_TYPE_NO_RSP;
   if (rsp)
     this->write_busy_ = true;
@@ -593,8 +606,25 @@ void NinebotHub::on_frame_(const uint8_t *wire, size_t n) {
   std::vector<uint8_t> p;
   uint16_t cnt;
   int rc = this->crypto_.decrypt(wire, n, p, &cnt);
+  if (rc != nbcrypto::OK && this->phase_ == PH_SETPWD) {
+    // G3 после кнопки отвечает на SET_PWD уже ключом нового пароля, а не имени.
+    // 28.10.2026 такой ответ не сошелся ни с одним ключом до пароля.
+    this->crypto_.set_key(this->pwd_, 16, this->auth_);
+    rc = this->crypto_.decrypt(wire, n, p, &cnt);
+    if (rc == nbcrypto::OK) {
+      NBLOG("ответ SET_PWD ключом нового пароля: %s", hex_str(p.data(), p.size()).c_str());
+    } else {
+      const std::string &nm = this->cands_[this->cand_i_].name;
+      this->crypto_.set_key((const uint8_t *) nm.data(), nm.size(), this->auth_);
+    }
+  }
   if (rc != nbcrypto::OK) {
-    NBLOG("дешифровка rc=%d на шаге %u", rc, this->phase_);
+    NBLOG("дешифровка rc=%d на шаге %u: %s", rc, this->phase_, hex_str(wire, std::min(n, (size_t) 24)).c_str());
+    // на шаге пароля любой ответ приходит только после кнопки: пробуем AUTH, он и рассудит
+    if (this->phase_ == PH_SETPWD && this->pairing_) {
+      NBLOG("пробую AUTH с новым паролем");
+      this->send_auth_();
+    }
     return;
   }
   if (p.size() < 7)

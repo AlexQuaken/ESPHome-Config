@@ -39,6 +39,11 @@ namespace espbt = esphome::esp32_ble_tracker;
 static const char *const SERVICE_UUID = "6e400001-0000-0000-006e-696e65626f74";
 static const char *const WRITE_UUID = "6e400002-0000-0000-006e-696e65626f74";
 static const char *const NOTIFY_UUID = "6e400004-0000-0000-006e-696e65626f74";
+// Nordic UART. Самокаты gen2 (байт версии 2 в рекламе, G3 тоже) слушают
+// Encryption2 здесь, на сервис Ninebot выше молчат. Так делает и segway_ble_client.
+static const char *const NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+static const char *const NUS_WRITE_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+static const char *const NUS_NOTIFY_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 
 enum SensorKind : uint8_t {
   SENSOR_BATTERY = 0,     // vcu 0x55, общий заряд, %
