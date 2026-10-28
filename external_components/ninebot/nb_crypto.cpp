@@ -173,8 +173,9 @@ int Crypto::decrypt(const uint8_t *wire, size_t len, std::vector<uint8_t> &plain
   return OK;
 }
 
-std::vector<uint8_t> build_frame(uint8_t target, uint8_t cmd, uint8_t index, const uint8_t *data, size_t len) {
-  std::vector<uint8_t> f = {0x5A, 0xA5, (uint8_t) len, 0x3E, target, cmd, index};
+std::vector<uint8_t> build_frame(uint8_t target, uint8_t cmd, uint8_t index, const uint8_t *data, size_t len,
+                                 uint8_t sync2) {
+  std::vector<uint8_t> f = {0x5A, sync2, (uint8_t) len, 0x3E, target, cmd, index};
   if (len)
     f.insert(f.end(), data, data + len);
   return f;

@@ -120,6 +120,7 @@ class NinebotHub : public PollingComponent,
   bool parse_device(const espbt::ESPBTDevice &device) override;
   void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
                            esp_ble_gattc_cb_param_t *param) override;
+  void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) override;
 
   void set_mac(uint64_t mac) { this->cfg_mac_ = mac; }
   void set_mac_suffix(uint16_t suffix) { this->mac_suffix_ = suffix; this->has_suffix_ = true; }
@@ -199,8 +200,23 @@ class NinebotHub : public PollingComponent,
   bool pwd_new_{false};
   uint8_t auth_tries_{0};
   char serial_[15]{};
-  std::vector<std::string> names_;   // кандидаты имени для ключа PRE_COMM
-  uint8_t try_no_{0};                // номер попытки PRE_COMM: имя и вариант
+  // Кандидат ключа PRE_COMM: имя, вариант применения FW_DATA, байт 1 заголовка.
+  struct Cand {
+    std::string name;
+    uint8_t var;
+    uint8_t sync2;
+  };
+  std::vector<Cand> cands_;          // по порядку, между попытками одного update() не сбрасывается
+  uint8_t cand_i_{0};
+  uint8_t sync2_{0xA5};              // с каким заголовком ответил самокат
+  std::vector<uint8_t> last_tx_;     // последний PRE_COMM, чтобы узнать эхо
+  uint32_t rx_bytes_{0};
+  uint16_t rx_notifies_{0};
+  bool name_done_{false};
+  bool write_rsp_ok_{false};
+  bool pair_tried_{false};
+  bool adv_logged_{false};
+  std::string adv_alt_name_;         // не-ASCII имя из scan response
   uint32_t sent_at_{0};
   uint8_t sends_{0};
   bool pairing_{false};
@@ -252,6 +268,9 @@ class NinebotHub : public PollingComponent,
   void on_bytes_(const uint8_t *d, size_t n);
   void on_frame_(const uint8_t *wire, size_t n);
 
+  void build_cands_();
+  void add_cand_(const std::string &n, uint8_t var, uint8_t sync2);
+  void try_pair_(const char *why);
   void send_precomm_();
   void on_precomm_(const uint8_t *wire, size_t n);
   void send_setpwd_();

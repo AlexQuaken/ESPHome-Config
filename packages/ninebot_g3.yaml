@@ -25,8 +25,6 @@ ninebot:
   id: scooter
   ble_client_id: scooter_ble
   mac_suffix: 0xA068
-  # еще один кандидат ключа PRE_COMM: имя рекламы из dumpsys телефона
-  ble_name: "🛴Segway Scooter0602"
   password: ''
   update_interval: 5min
   battery:

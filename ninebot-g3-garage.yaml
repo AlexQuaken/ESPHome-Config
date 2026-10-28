@@ -1,0 +1,79 @@
+# Отдельная ESP32 у самоката Segway Ninebot MAX G3 в гараже. Раз в 5 минут
+# подключается по BLE, читает заряд и BMS, отдает в HA и отключается. Сам
+# самокат и кнопки в пакете packages/ninebot_g3.yaml, тот же пакет потом можно
+# подключить к панели garage-home-panel. Протокол:
+# C:\Users\Alex\Claude\Ninebot\research\PROTOCOL.md.
+#
+# Плата нужна обычная ESP32 или S3. Пока компонент не проверен живьем, его
+# гоняем здесь, а не на панели охраны: 27.10.2026 панель с ним ушла в цикл
+# перезагрузок, причина не поймана. Поэтому тут датчик причины сброса и
+# увеличенный стек loop.
+
+substitutions:
+  board_name: 'ninebot-g3'
+  static_ip: '192.168.0.189'
+
+esphome:
+  name: ${board_name}
+  friendly_name: Ninebot G3
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+    advanced:
+      loop_task_stack_size: 16384
+
+# external_components для ninebot подключает сам пакет
+packages:
+  ninebot: !include packages/ninebot_g3.yaml
+
+wifi:
+  ssid: !secret wifi
+  password: !secret wifipwd
+  reboot_timeout: 15min
+  manual_ip:
+    static_ip: ${static_ip}
+    gateway: 192.168.0.1
+    subnet: 255.255.255.0
+    dns1: 192.168.0.7
+    dns2: 192.168.0.1
+  ap:
+    ssid: ${board_name}_Fallback
+    password: !secret wifipwd
+
+captive_portal:
+api:
+ota:
+  platform: esphome
+  password: !secret wifipwd
+safe_mode:
+logger:
+  level: INFO
+
+# Активный скан: в scan response приходит полное имя и данные производителя,
+# по ним видно версию протокола самоката.
+esp32_ble_tracker:
+  scan_parameters:
+    interval: 1100ms
+    window: 450ms
+    active: true
+
+debug:
+  update_interval: 30s
+
+text_sensor:
+  - platform: debug
+    reset_reason:
+      name: Reset Reason
+
+sensor:
+  - platform: debug
+    free:
+      name: Heap Free
+    block:
+      name: Heap Max Block
+    loop_time:
+      name: Loop Time
+  - platform: uptime
+    name: Uptime

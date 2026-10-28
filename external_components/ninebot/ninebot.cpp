@@ -17,10 +17,23 @@ namespace esphome::ninebot {
 
 static const char *const TAG = "ninebot";
 // Шаги сеанса дублируются в сенсор Log: панель живет на INFO, DEBUG ее перегружает.
+// snprintf режет по байтам, обрезанный UTF-8 в text_sensor ломает JSON в HA.
+static void nb_utf8_trim(char *s) {
+  size_t l = strlen(s), k = l;
+  while (k && ((uint8_t) s[k - 1] & 0xC0) == 0x80)
+    k--;
+  if (k && ((uint8_t) s[k - 1] & 0x80)) {
+    uint8_t c = s[k - 1];
+    size_t need = c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : 2;
+    if (l - (k - 1) < need)
+      s[k - 1] = 0;
+  }
+}
 #define NBLOG(...) \
   do { \
-    char b_[128]; \
+    char b_[160]; \
     snprintf(b_, sizeof(b_), __VA_ARGS__); \
+    nb_utf8_trim(b_); \
     ESP_LOGI(TAG, "%s", b_); \
     if (this->texts_[TEXT_LOG]) \
       this->texts_[TEXT_LOG]->publish_state(b_); \
@@ -33,10 +46,10 @@ static const uint8_t CMD_READ = 0x01, CMD_WRITE = 0x02, CMD_WRITE_NR = 0x03;
 static const uint8_t CMD_READ_RESP = 0x04, CMD_WRITE_RESP = 0x05;
 static const uint8_t CMD_PRECOMM = 0x5B, CMD_SETPWD = 0x5C, CMD_AUTH = 0x5D;
 
-// Кандидаты адреса VCU и BMS: сначала то, что знаем про G3 (vcu на 0x09),
-// затем запасные из других семейств. Первый ответивший запоминается во флеш.
-static const uint8_t VCU_CANDS[] = {0x09, 0x01};
-static const uint8_t BMS_CANDS[] = {0x07, 0x06, 0x05};
+// Кандидаты адреса VCU и BMS. Для hw 258 (MAX G3) по boards.json: vcu 0x16,
+// bms1 0x07, bms2 0x06; 0x09 запасной. Первый ответивший запоминается во флеш.
+static const uint8_t VCU_CANDS[] = {0x16, 0x09};
+static const uint8_t BMS_CANDS[] = {0x07, 0x06};
 
 // Что читаем за обход. group: 0 vcu, 1 bms1. Длина как в таблице G3.
 struct Reg {
@@ -168,7 +181,6 @@ void NinebotHub::on_ota_global_state(ota::OTAState state, float, uint8_t, ota::O
 // Ищем самокат в эфире: по MAC из конфига, по последним байтам MAC, либо по имени.
 bool NinebotHub::parse_device(const espbt::ESPBTDevice &device) {
   uint64_t addr = device.address_uint64();
-  std::string name = device.get_name().str();
   bool match = false;
   if (this->cfg_mac_)
     match = addr == this->cfg_mac_;
@@ -177,7 +189,7 @@ bool NinebotHub::parse_device(const espbt::ESPBTDevice &device) {
   else if (this->has_suffix_)
     match = (addr & 0xFFFF) == this->mac_suffix_;
   else if (!this->cfg_name_.empty())
-    match = name == this->cfg_name_;
+    match = device.get_name().str() == this->cfg_name_;
   if (!match)
     return false;
   this->address_ = addr;
@@ -185,8 +197,19 @@ bool NinebotHub::parse_device(const espbt::ESPBTDevice &device) {
   this->last_seen_ = millis();
   this->rssi_ = device.get_rssi();
   this->rssi_valid_ = true;
-  if (!name.empty())
-    this->adv_name_ = name;
+  std::string name = device.get_name().str();
+  if (!name.empty()) {
+    bool ascii = std::all_of(name.begin(), name.end(), [](char ch) { return (uint8_t) ch < 0x80; });
+    (ascii ? this->adv_name_ : this->adv_alt_name_) = name;
+  }
+  if (!this->adv_logged_) {  // один раз за загрузку: версия протокола в manufacturer data
+    this->adv_logged_ = true;
+    NBLOG("эфир: '%s' тип %u rssi %d", name.c_str(), (unsigned) this->address_type_, this->rssi_);
+    for (auto &m : device.get_manufacturer_datas()) {
+      char ub[espbt::UUID_STR_LEN];
+      NBLOG("mfg %s: %s", m.uuid.to_str(ub), hex_str(m.data.data(), std::min(m.data.size(), (size_t) 24)).c_str());
+    }
+  }
   return true;
 }
 
@@ -206,6 +229,9 @@ void NinebotHub::update() {
     this->status_("не сопряжен, нажми Pair");
     return;
   }
+  this->cands_.clear();
+  this->cand_i_ = 0;
+  this->pair_tried_ = false;
   this->attempt_ = 0;
   this->start_attempt_();
 }
@@ -227,19 +253,13 @@ void NinebotHub::start_attempt_() {
   this->vcu_ok_ = this->bms_ok_ = this->bms_dead_ = this->vcu_dead_ = false;
   this->cells_sum_ = NAN;
   this->volt_have_ = false;
-  this->try_no_ = 0;
   this->sends_ = 0;
   this->auth_tries_ = 0;
-  // имя для ключа PRE_COMM: из конфига, сохраненное, затем из эфира
-  this->names_.clear();
-  if (!this->cfg_name_.empty())
-    this->names_.push_back(this->cfg_name_);
-  if (this->st_.name[0])
-    this->names_.push_back(this->st_.name);
-  if (!this->adv_name_.empty())
-    this->names_.push_back(this->adv_name_);
-  if (this->names_.empty())
-    this->names_.push_back("");
+  this->setup_at_ = 0;  // раньше не сбрасывался: на попытке 2-3 PH_SETUP срабатывал до REG_FOR_NOTIFY
+  this->name_done_ = false;
+  this->rx_bytes_ = 0;
+  this->rx_notifies_ = 0;
+  this->last_tx_.clear();
   if (!this->tx_power_set_) {
     esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P9);
     this->tx_power_set_ = true;
@@ -251,7 +271,7 @@ void NinebotHub::start_attempt_() {
 }
 
 void NinebotHub::close_(const char *why, bool retry) {
-  NBLOG("Закрываю: %s", why);
+  NBLOG("Закрываю: %s (rx %u б, %u нотиф.)", why, (unsigned) this->rx_bytes_, (unsigned) this->rx_notifies_);
   this->retry_ = retry;
   this->phase_ = PH_CLOSE;
   this->deadline_ = millis() + CLOSE_TIMEOUT_MS;
@@ -306,20 +326,17 @@ void NinebotHub::loop() {
     this->close_("не подключились", true);
     return;
   }
-  if (this->phase_ == PH_SETUP && this->setup_at_ && now - this->setup_at_ >= SETUP_DELAY_MS) {
-    this->phase_ = PH_NAME;
-    // Имя из GAP 0x2A00: ключ первой фазы. Если характеристики нет, обойдемся
-    // кандидатами из конфига/эфира.
-    auto *chr = this->parent()->get_characteristic(espbt::ESPBTUUID::from_uint32(0x1800),
-                                                   espbt::ESPBTUUID::from_uint32(0x2A00));
-    if (chr != nullptr) {
-      this->name_handle_ = chr->handle;
-      esp_ble_gattc_read_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(), this->name_handle_,
-                              ESP_GATT_AUTH_REQ_NONE);
-      this->deadline_ = now + STEP_TIMEOUT_MS + SESSION_TIMEOUT_MS;
-    } else {
-      this->send_precomm_();
-    }
+  if (this->phase_ == PH_SETUP && this->setup_at_ && now - this->setup_at_ >= SETUP_DELAY_MS &&
+      (this->name_done_ || now - this->setup_at_ >= 1500)) {
+    // ESTABLISHED только теперь: BLEClient освобождает кэш сервисов после него
+    this->node_state = espbt::ClientState::ESTABLISHED;
+    this->build_cands_();
+    if (this->cand_i_ >= this->cands_.size())
+      this->cand_i_ = 0;
+    NBLOG("GAP '%s', эфир '%s', кандидатов %u, с #%u", this->gap_name_.c_str(), this->adv_name_.c_str(),
+          (unsigned) this->cands_.size(), (unsigned) this->cand_i_ + 1);
+    this->sends_ = 0;
+    this->send_precomm_();
     return;
   }
   // Ручная запись без ответа: подождали паузу и идем дальше по обходу.
@@ -340,11 +357,12 @@ void NinebotHub::loop() {
     if (this->phase_ == PH_PRECOMM) {
       // Кадр с чужим ключом самокат молча отбрасывает: молчание тоже значит
       // "не тот ключ", идем к следующему варианту.
+      this->write_busy_ = false;  // если WRITE_CHAR_EVT потерялся, очередь не встанет
       if (++this->sends_ >= 2) {
         this->sends_ = 0;
-        this->try_no_++;
-        if (this->try_no_ >= this->names_.size() * 4) {
-          this->close_("PRE_COMM: молчит на всех именах/вариантах", false);
+        if (++this->cand_i_ >= this->cands_.size()) {
+          this->cand_i_ = 0;
+          this->close_("PRE_COMM: молчит на всех кандидатах", false);
           return;
         }
       }
@@ -371,46 +389,67 @@ void NinebotHub::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t, 
       this->write_handle_ = wr->handle;
       this->notify_handle_ = nt->handle;
       this->write_no_rsp_ = (wr->properties & ESP_GATT_CHAR_PROP_BIT_WRITE_NR) != 0;
+      this->write_rsp_ok_ = (wr->properties & ESP_GATT_CHAR_PROP_BIT_WRITE) != 0;
+      {
+        // пока кэш сервисов жив: имя GAP 0x2A00, ключ первой фазы
+        auto *gn = this->parent()->get_characteristic((uint16_t) 0x1800, (uint16_t) 0x2A00);
+        this->name_handle_ = gn ? gn->handle : 0;
+      }
+      NBLOG("GATT wr 0x%04X p%02X nt 0x%04X p%02X name 0x%04X", wr->handle, wr->properties, nt->handle,
+            nt->properties, this->name_handle_);
       if (this->parent()->register_for_notify(this->notify_handle_)) {
         this->close_("подписка не удалась", true);
         break;
       }
+      if (this->name_handle_)
+        esp_ble_gattc_read_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(), this->name_handle_,
+                                ESP_GATT_AUTH_REQ_NONE);
+      else
+        this->name_done_ = true;
       this->phase_ = PH_SETUP;
       break;
     }
     case ESP_GATTC_REG_FOR_NOTIFY_EVT:
       if (this->phase_ == PH_SETUP && param->reg_for_notify.handle == this->notify_handle_) {
-        this->node_state = espbt::ClientState::ESTABLISHED;
-        this->setup_at_ = millis();
+        if (param->reg_for_notify.status != ESP_GATT_OK)
+          NBLOG("reg_for_notify st=0x%02X", param->reg_for_notify.status);
+        this->setup_at_ = millis();  // ESTABLISHED здесь не ставим, иначе кэш освободят сразу
+      }
+      break;
+    case ESP_GATTC_WRITE_DESCR_EVT:
+      if (this->phase_ != PH_IDLE && param->write.conn_id == this->parent()->get_conn_id()) {
+        NBLOG("CCCD 0x%04X st=0x%02X", param->write.handle, param->write.status);
+        if (param->write.status == ESP_GATT_INSUF_AUTHENTICATION || param->write.status == ESP_GATT_INSUF_ENCRYPTION)
+          this->try_pair_("CCCD");
       }
       break;
     case ESP_GATTC_READ_CHAR_EVT:
-      if (this->phase_ == PH_NAME && param->read.handle == this->name_handle_) {
+      if (this->name_handle_ && param->read.handle == this->name_handle_) {
         if (param->read.status == ESP_GATT_OK && param->read.value_len > 0)
           this->gap_name_.assign((const char *) param->read.value, param->read.value_len);
-        this->deadline_ = millis() + SESSION_TIMEOUT_MS;
-        this->names_.clear();
-        if (!this->cfg_name_.empty())
-          this->names_.push_back(this->cfg_name_);
-        if (!this->gap_name_.empty())
-          this->names_.push_back(this->gap_name_);
-        if (!this->adv_name_.empty() && this->adv_name_ != this->gap_name_)
-          this->names_.push_back(this->adv_name_);
-        NBLOG("имя GAP '%s', реклама '%s', кандидатов %u", this->gap_name_.c_str(), this->adv_name_.c_str(),
-              (unsigned) this->names_.size());
-        if (this->st_.name[0])
-          this->names_.push_back(this->st_.name);
-        if (this->names_.empty())
-          this->names_.push_back("");
-        this->send_precomm_();
+        else
+          NBLOG("0x2A00 st=0x%02X", param->read.status);
+        this->name_done_ = true;
       }
       break;
     case ESP_GATTC_NOTIFY_EVT:
-      if (param->notify.handle == this->notify_handle_)
+      if (param->notify.handle == this->notify_handle_) {
+        this->rx_bytes_ += param->notify.value_len;
+        if (++this->rx_notifies_ <= 4)
+          NBLOG("RX#%u %u: %s", (unsigned) this->rx_notifies_, (unsigned) param->notify.value_len,
+                hex_str(param->notify.value, std::min<size_t>(param->notify.value_len, 24)).c_str());
         this->on_bytes_(param->notify.value, param->notify.value_len);
+      } else if (this->phase_ != PH_IDLE && ++this->rx_notifies_ <= 4) {
+        NBLOG("RX чужой 0x%04X %u б", param->notify.handle, (unsigned) param->notify.value_len);
+      }
       break;
     case ESP_GATTC_WRITE_CHAR_EVT:
       this->write_busy_ = false;
+      if (param->write.status != ESP_GATT_OK) {
+        NBLOG("write 0x%04X st=0x%02X", param->write.handle, param->write.status);
+        if (param->write.status == ESP_GATT_INSUF_AUTHENTICATION || param->write.status == ESP_GATT_INSUF_ENCRYPTION)
+          this->try_pair_("write");
+      }
       break;
     case ESP_GATTC_DISCONNECT_EVT:
     case ESP_GATTC_CLOSE_EVT:
@@ -425,11 +464,68 @@ void NinebotHub::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t, 
   }
 }
 
+void NinebotHub::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
+  if (event == ESP_GAP_BLE_AUTH_CMPL_EVT && this->phase_ != PH_IDLE)
+    NBLOG("SMP success=%u fail=0x%02X", param->ble_security.auth_cmpl.success,
+          param->ble_security.auth_cmpl.fail_reason);
+}
+
+// Самокат просит шифрованный линк: один раз за update() пробуем SMP-сопряжение.
+void NinebotHub::try_pair_(const char *why) {
+  if (this->pair_tried_)
+    return;
+  this->pair_tried_ = true;
+  NBLOG("%s: нужна шифровка линка, pair()", why);
+  this->parent()->pair();
+}
+
+void NinebotHub::add_cand_(const std::string &n, uint8_t var, uint8_t sync2) {
+  if (n.empty())
+    return;
+  for (auto &c : this->cands_)
+    if (c.name == n && c.var == var && c.sync2 == sync2)
+      return;
+  this->cands_.push_back({n, var, sync2});
+}
+
+static std::string ascii_tail(const std::string &s) {
+  size_t i = 0;
+  while (i < s.size() && ((uint8_t) s[i] >= 0x80 || s[i] == ' '))
+    i++;
+  return s.substr(i);
+}
+
+// Дополняет список, порядок уже стоящих не трогает: cand_i_ между попытками остается верным.
+// Вариант 3 (FW_DATA и как key2, и как статический блок) у libnbcrypto и NinebotCrypto.
+void NinebotHub::build_cands_() {
+  if (this->st_.name[0] && this->st_.variant < 4)
+    this->add_cand_(this->st_.name, this->st_.variant, 0xA5);
+  for (std::string *n : {&this->gap_name_, &this->adv_name_})
+    this->add_cand_(*n, 3, 0xA5);
+  for (std::string *n : {&this->gap_name_, &this->adv_name_})
+    this->add_cand_(*n, 0, 0xA5);
+  for (std::string *n : {&this->gap_name_, &this->adv_name_})
+    this->add_cand_(*n, 0, 0xB5);
+  for (std::string *n : {&this->adv_alt_name_, &this->cfg_name_}) {
+    this->add_cand_(*n, 3, 0xA5);
+    this->add_cand_(ascii_tail(*n), 3, 0xA5);
+    this->add_cand_(*n, 0, 0xA5);
+  }
+  for (std::string *n : {&this->gap_name_, &this->adv_name_}) {
+    this->add_cand_(*n, 1, 0xA5);
+    this->add_cand_(*n, 2, 0xA5);
+  }
+  if (this->cands_.empty())
+    this->cands_.push_back({"", 3, 0xA5});
+}
+
 // --- отправка кадров ---
 
 void NinebotHub::send_plain_(const std::vector<uint8_t> &plain, bool sn) {
   uint32_t cnt = sn ? ++this->counter_ : 0;
   auto wire = this->crypto_.encrypt(plain, cnt);
+  if (!sn)
+    this->last_tx_ = wire;
   ESP_LOGV(TAG, "-> %s", hex_str(wire.data(), wire.size()).c_str());
   // Режем на куски по 20 байт (MTU-3 при MTU 23).
   for (size_t off = 0; off < wire.size(); off += 20)
@@ -445,11 +541,17 @@ void NinebotHub::pump_tx_() {
     return;
   auto frag = this->tx_.front();
   this->tx_.erase(this->tx_.begin());
-  auto type = this->write_no_rsp_ ? ESP_GATT_WRITE_TYPE_NO_RSP : ESP_GATT_WRITE_TYPE_RSP;
-  if (!this->write_no_rsp_)
+  // PRE_COMM пишем с ответом, если характеристика умеет: отказ ATT 0x05/0x0F будет виден
+  bool rsp = !this->write_no_rsp_ || (this->phase_ == PH_PRECOMM && this->write_rsp_ok_);
+  auto type = rsp ? ESP_GATT_WRITE_TYPE_RSP : ESP_GATT_WRITE_TYPE_NO_RSP;
+  if (rsp)
     this->write_busy_ = true;
-  esp_ble_gattc_write_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(), this->write_handle_,
-                           frag.size(), frag.data(), type, ESP_GATT_AUTH_REQ_NONE);
+  esp_err_t e = esp_ble_gattc_write_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
+                                         this->write_handle_, frag.size(), frag.data(), type, ESP_GATT_AUTH_REQ_NONE);
+  if (e != ESP_OK) {
+    NBLOG("write_char rc=0x%X", (unsigned) e);
+    this->write_busy_ = false;
+  }
   this->next_tx_at_ = this->tx_.empty() ? 0 : millis() + FRAG_GAP_MS;
 }
 
@@ -463,7 +565,7 @@ void NinebotHub::on_bytes_(const uint8_t *d, size_t n) {
       if (b == 0x5A)
         this->rx_.push_back(b);
     } else if (sz == 1) {
-      if (b == 0xA5)
+      if (b == 0xA5 || b == 0xB5)
         this->rx_.push_back(b);
       else
         this->rx_.clear();
@@ -495,7 +597,7 @@ void NinebotHub::on_frame_(const uint8_t *wire, size_t n) {
     NBLOG("дешифровка rc=%d на шаге %u", rc, this->phase_);
     return;
   }
-  if (p.size() < 6)
+  if (p.size() < 7)
     return;
   // p: 5A A5 LEN board 3E? cmd index ... На ответах байт 3 это плата-источник,
   // 4 это 0x3E, 5 cmd, 6 index. Берем cmd/index с конца заголовка.
@@ -520,8 +622,6 @@ void NinebotHub::on_frame_(const uint8_t *wire, size_t n) {
         if (this->pwd_new_) {
           memcpy(this->st_.pwd, this->pwd_, 16);
           this->st_.has_pwd = 1;
-          strncpy(this->st_.name, this->names_.empty() ? "" : this->names_[this->try_no_ % this->names_.size()].c_str(),
-                  sizeof(this->st_.name) - 1);
           this->save_();
           this->publish_bin_(BINARY_PAIRED, true);
           char ph[33];
@@ -564,41 +664,45 @@ void NinebotHub::on_frame_(const uint8_t *wire, size_t n) {
 // --- рукопожатие ---
 
 void NinebotHub::send_precomm_() {
-  // Перебор: имя x вариант ключа. Всего names_ * 4.
-  size_t name_i = (this->try_no_ / 4) % this->names_.size();
-  uint8_t var = this->try_no_ % 4;
-  const std::string &nm = this->names_[name_i];
-  NBLOG("PRE_COMM имя '%s' вариант %u", nm.c_str(), var);
-  this->crypto_.set_precomm_variant((const uint8_t *) nm.data(), nm.size(), var);
+  const Cand &c = this->cands_[this->cand_i_];
+  this->crypto_.set_precomm_variant((const uint8_t *) c.name.data(), c.name.size(), c.var);
   this->phase_ = PH_PRECOMM;
-  auto f = nbcrypto::build_frame(T_BLE, CMD_PRECOMM, 0x00, nullptr, 0);
+  this->deadline_ = millis() + 3 * STEP_TIMEOUT_MS;  // срок на каждого кандидата, а не на весь сеанс
+  auto f = nbcrypto::build_frame(T_BLE, CMD_PRECOMM, 0x00, nullptr, 0, c.sync2);
   this->send_plain_(f, false);
+  if (this->sends_ == 0)
+    NBLOG("PRE_COMM #%u/%u '%s' v%u: %s", (unsigned) this->cand_i_ + 1, (unsigned) this->cands_.size(),
+          c.name.c_str(), c.var, hex_str(this->last_tx_.data(), this->last_tx_.size()).c_str());
 }
 
 void NinebotHub::on_precomm_(const uint8_t *wire, size_t n) {
+  if (n == this->last_tx_.size() && memcmp(wire, this->last_tx_.data(), n) == 0) {
+    NBLOG("эхо PRE_COMM #%u: ключ отвергнут", (unsigned) this->cand_i_ + 1);
+    return;  // дальше по таймеру шага
+  }
   std::vector<uint8_t> p;
   uint16_t cnt;
-  if (this->crypto_.decrypt(wire, n, p, &cnt) != nbcrypto::OK || p.size() < 7 + 30) {
-    // не тот ключ: следующий вариант
-    NBLOG("ответ PRE_COMM %u байт не расшифрован", (unsigned) n);
-    this->sends_ = 0;
-    this->try_no_++;
-    size_t total = this->names_.size() * 4;
-    if (this->try_no_ >= total) {
-      this->close_("PRE_COMM не сошелся ни по одному имени/варианту", false);
-      return;
-    }
-    this->send_precomm_();
+  int rc = this->crypto_.decrypt(wire, n, p, &cnt);
+  if (rc != nbcrypto::OK || p.size() < 7 + 30) {
+    // не сдвигаем: поздний ответ на прошлого кандидата не должен сбить перебор, hex разберем на ПК
+    NBLOG("PRE_COMM ответ %u б rc=%d при #%u: %s", (unsigned) n, rc, (unsigned) this->cand_i_ + 1,
+          hex_str(wire, std::min(n, (size_t) 24)).c_str());
     return;
   }
+  const Cand &c = this->cands_[this->cand_i_];
+  NBLOG("PRE_COMM ок: '%s' v%u %02X", c.name.c_str(), c.var, c.sync2);
+  this->sync2_ = c.sync2;
+  this->st_.variant = c.var;
+  this->st_.mac = this->address_;
+  memset(this->st_.name, 0, sizeof(this->st_.name));
+  strncpy(this->st_.name, c.name.c_str(), sizeof(this->st_.name) - 1);
+  this->deadline_ = millis() + (this->pairing_ ? 60000 : SESSION_TIMEOUT_MS);
   // payload: auth[16] serial[14], плюс INDEX говорит, есть ли сохраненный пароль
   const uint8_t *data = p.data() + 7;
   memcpy(this->auth_, data, 16);
   memcpy(this->serial_, data + 16, 14);
   this->serial_[14] = 0;
   this->crypto_.set_auth(this->auth_);
-  // запомним рабочий вариант
-  this->st_.variant = this->try_no_ % 4;
   uint8_t index = p[6];
   ESP_LOGI(TAG, "PRE_COMM ок, serial %s, stored_pwd_flag=%u", this->serial_, index);
   if (this->texts_[TEXT_SERIAL])
@@ -633,10 +737,10 @@ void NinebotHub::send_setpwd_() {
     memcpy(this->pwd_, h, 16);
     this->pwd_new_ = true;
   }
-  this->crypto_.set_key((const uint8_t *) this->names_[(this->try_no_ / 4) % this->names_.size()].data(),
-                        this->names_[(this->try_no_ / 4) % this->names_.size()].size(), this->auth_);
+  const std::string &nm = this->cands_[this->cand_i_].name;
+  this->crypto_.set_key((const uint8_t *) nm.data(), nm.size(), this->auth_);
   this->phase_ = PH_SETPWD;
-  auto f = nbcrypto::build_frame(T_BLE, CMD_SETPWD, 0x00, this->pwd_, 16);
+  auto f = nbcrypto::build_frame(T_BLE, CMD_SETPWD, 0x00, this->pwd_, 16, this->sync2_);
   this->send_plain_(f, true);
   this->status_(this->pairing_ ? "нажми кнопку питания на самокате" : "ставлю пароль");
 }
@@ -644,7 +748,7 @@ void NinebotHub::send_setpwd_() {
 void NinebotHub::send_auth_() {
   this->crypto_.set_key(this->pwd_, 16, this->auth_);
   this->phase_ = PH_AUTH;
-  auto f = nbcrypto::build_frame(T_BLE, CMD_AUTH, 0x00, (const uint8_t *) this->serial_, 14);
+  auto f = nbcrypto::build_frame(T_BLE, CMD_AUTH, 0x00, (const uint8_t *) this->serial_, 14, this->sync2_);
   this->send_plain_(f, true);
 }
 
@@ -674,7 +778,8 @@ void NinebotHub::send_read_() {
     auto op = this->ops_run_.front();
     this->ops_run_.erase(this->ops_run_.begin());
     uint8_t cmd = op.cmd;
-    auto f = nbcrypto::build_frame(op.board, cmd, op.index, op.data.empty() ? nullptr : op.data.data(), op.data.size());
+    auto f = nbcrypto::build_frame(op.board, cmd, op.index, op.data.empty() ? nullptr : op.data.data(), op.data.size(),
+                                   this->sync2_);
     this->send_plain_(f, true);
     this->noreply_ = (cmd == CMD_WRITE_NR);
     this->read_pending_ = !this->noreply_;
@@ -699,7 +804,7 @@ void NinebotHub::send_read_() {
     return;
   }
   uint8_t len = r.len;
-  auto f = nbcrypto::build_frame(this->board_for_(r.group), CMD_READ, r.index, &len, 1);
+  auto f = nbcrypto::build_frame(this->board_for_(r.group), CMD_READ, r.index, &len, 1, this->sync2_);
   this->send_plain_(f, true);
   this->read_pending_ = true;
 }
@@ -735,6 +840,8 @@ void NinebotHub::next_read_(bool answered) {
 }
 
 void NinebotHub::on_read_(const std::vector<uint8_t> &p) {
+  if (p.size() < 7)
+    return;
   uint8_t index = p[6];
   const uint8_t *d = p.data() + 7;
   size_t dlen = p.size() > 7 ? p.size() - 7 : 0;

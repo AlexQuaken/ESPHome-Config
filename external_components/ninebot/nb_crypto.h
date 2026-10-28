@@ -63,6 +63,7 @@ class Crypto {
 };
 
 // Открытый кадр: 5A A5 LEN 3E target cmd index data.
-std::vector<uint8_t> build_frame(uint8_t target, uint8_t cmd, uint8_t index, const uint8_t *data, size_t len);
+std::vector<uint8_t> build_frame(uint8_t target, uint8_t cmd, uint8_t index, const uint8_t *data, size_t len,
+                                 uint8_t sync2 = 0xA5);
 
 }  // namespace nbcrypto
