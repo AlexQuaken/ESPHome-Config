@@ -1,0 +1,110 @@
+# Самокат Segway Ninebot MAX G3 в гараже, читается панелью garage-home-panel.
+# Раз в 5 минут BLE-коннект, чтение заряда и BMS, отключение. Компонент и разбор
+# протокола: C:\Users\Alex\Claude\Ninebot (README.md, research\PROTOCOL.md).
+#
+# Сопряжение один раз: кнопка "G3 Pair" в HA, затем в течение 2 минут короткое
+# нажатие кнопки питания самоката. Ключ плата хранит во флеше и показывает в
+# "G3 Pair Password". Его стоит вписать в password ниже, тогда кнопка не понадобится
+# и после стирания флеша. Самокат держит один ключ: вход в приложение Segway его
+# перетрет. Самокат ищется по последним байтам MAC (A0:68), полный адрес плата
+# запоминает сама.
+
+external_components:
+  - source:
+      type: local
+      path: external_components
+    components: [ninebot]
+
+ble_client:
+  - id: scooter_ble
+    # заглушка, настоящий адрес подставляет компонент из эфира
+    mac_address: '00:00:00:00:A0:68'
+    auto_connect: false
+
+ninebot:
+  id: scooter
+  ble_client_id: scooter_ble
+  mac_suffix: 0xA068
+  # еще один кандидат ключа PRE_COMM: имя рекламы из dumpsys телефона
+  ble_name: "🛴Segway Scooter0602"
+  password: ''
+  update_interval: 5min
+  battery:
+    name: G3 Battery
+  bms_soc:
+    name: G3 BMS SOC
+  voltage:
+    name: G3 Voltage
+  current:
+    name: G3 Current
+  bms_temperature:
+    name: G3 BMS Temperature
+  body_temperature:
+    name: G3 Body Temperature
+  cell_min:
+    name: G3 Cell Min
+  cell_max:
+    name: G3 Cell Max
+  cell_delta:
+    name: G3 Cell Delta
+  cycles:
+    name: G3 Cycles
+  remaining_capacity:
+    name: G3 Remaining Capacity
+  time_to_full:
+    name: G3 Time To Full
+  range:
+    name: G3 Range
+  odometer:
+    name: G3 Odometer
+  error_code:
+    name: G3 Error Code
+  warning_code:
+    name: G3 Warning Code
+  rssi:
+    name: G3 BLE RSSI
+  status:
+    name: G3 Status
+  serial:
+    name: G3 Serial
+  firmware:
+    name: G3 Firmware
+  log:
+    name: G3 Log
+  pair_password:
+    name: G3 Pair Password
+  online:
+    name: G3 Online
+  paired:
+    name: G3 Paired
+  bms_awake:
+    name: G3 BMS Awake
+
+button:
+  - platform: template
+    name: G3 Pair
+    icon: mdi:link-variant
+    on_press:
+      - ninebot.pair: scooter
+  - platform: template
+    name: G3 Poll Now
+    icon: mdi:refresh
+    on_press:
+      - ninebot.poll: scooter
+  - platform: template
+    name: G3 Forget Pairing
+    icon: mdi:link-variant-off
+    entity_category: config
+    on_press:
+      - ninebot.forget: scooter
+
+# Пока идет отсчет на входе или тревога, радио не занимаем коннектами к самокату.
+text_sensor:
+  - platform: homeassistant
+    id: g3_alarm_pause
+    internal: true
+    entity_id: alarm_control_panel.garazh_okhrana
+    on_value:
+      - ninebot.pause:
+          id: scooter
+          paused: !lambda 'return x == "pending" || x == "triggered";'
