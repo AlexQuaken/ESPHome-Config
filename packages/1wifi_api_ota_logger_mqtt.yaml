@@ -43,6 +43,10 @@ mqtt:
   discovery: false
   discovery_retain: false
   topic_prefix: esp/${board_name}
+  # Без этого каждая строка лога уходит отдельной публикацией в esp/<плата>/debug, а на
+  # ESP32 публикация идет из loop и может висеть секундами. Топик никто не читает,
+  # лог смотреть через API. Для ESP32 см. еще packages/mqtt_esp32.yaml (28.10.2026).
+  log_topic: null
   birth_message:
     topic: esp/status/status
     payload: ${board_name} online

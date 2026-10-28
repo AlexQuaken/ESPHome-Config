@@ -1,0 +1,32 @@
+# Добавка к 1wifi_api_ota_logger_mqtt.yaml для плат ESP32 (у ESP8266 этих опций нет).
+#
+# idf_send_async. На ESP-IDF ESPHome по умолчанию публикует в MQTT прямо из loop, и
+# публикация может висеть до 10 с на сетевом таймауте (так написано в самом
+# mqtt_backend_esp32.h). Сторож задач срабатывает через 5 с. power-meter-mk так
+# перезагружался по task watchdog по 4 раза в сутки, esp32-7-mini и esp32-cam2 реже
+# (28.10.2026). С этой опцией сообщения уходят через очередь отдельной задачей.
+#
+# wdt_trace.h. Если сторож все-таки сработает, в RTC-память пишется, какой компонент
+# держал loop и что работало на обоих ядрах. После загрузки это видно в логе и в
+# сенсоре "WDT Trace" ("нет", если прошлый сброс был не от сторожа).
+
+esphome:
+  includes:
+    - wdt_trace.h
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: |-
+            std::string t = wdt_trace_take();
+            if (!t.empty()) ESP_LOGE("wdt_trace", "task watchdog on previous boot: %s", t.c_str());
+            id(wdt_trace_text).publish_state(t.empty() ? "нет" : t);
+
+mqtt:
+  idf_send_async: true
+
+text_sensor:
+  - platform: template
+    id: wdt_trace_text
+    name: ${board_name} WDT Trace
+    icon: mdi:dog-side
+    entity_category: diagnostic
