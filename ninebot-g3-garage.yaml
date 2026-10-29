@@ -12,6 +12,8 @@
 substitutions:
   board_name: 'ninebot-g3'
   static_ip: '192.168.0.189'
+  # пароль сопряжения для packages/ninebot_g3.yaml, пустая строка значит кнопка Pair
+  g3_password: !secret g3_password
 
 esphome:
   name: ${board_name}
