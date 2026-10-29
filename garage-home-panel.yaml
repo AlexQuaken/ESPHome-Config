@@ -53,6 +53,8 @@ substitutions:
   # отсчет до сирены, секунд: delay_time пульта в HomeAssistant/packages/garage_home.yaml
   # и длина звука отсчета в шлюзе, менять вместе (с 11.10.2026 30, до этого 60)
   alarm_delay: '30'
+  # пароль сопряжения самоката Ninebot G3 для packages/ninebot_g3.yaml
+  g3_password: !secret g3_password
 
 # Общие пакеты, как у остальных плат. 1wifi_api_ota_logger сюда не подключен
 # намеренно: Wi-Fi, API (со своими действиями) и OTA у этой платы свои и по сети и
