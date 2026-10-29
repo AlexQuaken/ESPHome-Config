@@ -614,6 +614,7 @@ void NinebotHub::on_frame_(const uint8_t *wire, size_t n) {
     if (rc == nbcrypto::OK) {
       NBLOG("ответ SET_PWD ключом нового пароля: %s", hex_str(p.data(), p.size()).c_str());
     } else {
+      NBLOG("ключ пароля тоже мимо, plain %s", hex_str(p.data(), std::min(p.size(), (size_t) 24)).c_str());
       const std::string &nm = this->cands_[this->cand_i_].name;
       this->crypto_.set_key((const uint8_t *) nm.data(), nm.size(), this->auth_);
     }
@@ -621,9 +622,14 @@ void NinebotHub::on_frame_(const uint8_t *wire, size_t n) {
   if (rc != nbcrypto::OK) {
     NBLOG("дешифровка rc=%d на шаге %u: %s", rc, this->phase_, hex_str(wire, std::min(n, (size_t) 24)).c_str());
     // на шаге пароля любой ответ приходит только после кнопки: пробуем AUTH, он и рассудит
+    // ждем 8 с: вдруг следом придет кадр, который расшифруется
     if (this->phase_ == PH_SETPWD && this->pairing_) {
-      NBLOG("пробую AUTH с новым паролем");
-      this->send_auth_();
+      this->set_timeout("nb_auth", 8000, [this]() {
+        if (this->phase_ == PH_SETPWD) {
+          NBLOG("пробую AUTH с новым паролем");
+          this->send_auth_();
+        }
+      });
     }
     return;
   }
@@ -772,6 +778,7 @@ void NinebotHub::send_setpwd_() {
   this->phase_ = PH_SETPWD;
   auto f = nbcrypto::build_frame(T_BLE, CMD_SETPWD, 0x00, this->pwd_, 16, this->sync2_);
   this->send_plain_(f, true);
+  NBLOG("SET_PWD pwd %s auth %s", hex_str(this->pwd_, 16).c_str(), hex_str(this->auth_, 16).c_str());
   this->status_(this->pairing_ ? "нажми кнопку питания на самокате" : "ставлю пароль");
 }
 

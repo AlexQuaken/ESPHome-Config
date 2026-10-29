@@ -25,7 +25,8 @@ ninebot:
   id: scooter
   ble_client_id: scooter_ble
   mac_suffix: 0xA068
-  password: ''
+  # подставляет главный конфиг из корневого secrets.yaml (packages/secrets.yaml в git)
+  password: ${g3_password}
   update_interval: 5min
   battery:
     name: G3 Battery
