@@ -69,9 +69,16 @@ packages:
   diag_psram: !include packages/diag_psram.yaml
   # самокат Ninebot G3 по BLE раз в 5 минут, проба v5 с 28.10.2026
   ninebot_g3: !include packages/ninebot_g3.yaml
+  # Ancel BM200 на 12-вольтовом аккумуляторе e-Golf, с 31.10.2026 (такой же, как на KTM в
+  # кооперативе). Опрос раз в 10 минут: подключиться, команда, ответ, отключиться.
+  bm6_egolf: !include {file: packages/bm6_battery.yaml, vars: {key: bm6_egolf, dev: egolf_dev, label: Battery, mac: "C8:17:F5:A7:CC:53", period_ms: "600000"}}
 
 esphome:
   name: ${board_name}
+  # отдельное устройство в HA для аккумулятора машины (сенсоры bm6_egolf)
+  devices:
+    - id: egolf_dev
+      name: e-Golf
   includes:
     - dash_snapshot.h
     - garage_status_ui.h
