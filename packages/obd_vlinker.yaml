@@ -1,0 +1,151 @@
+# vLinker FD+ (ELM327 по BLE) в разъеме OBD e-Golf, ПРОБНАЯ КОНСОЛЬ с 31.10.2026.
+# Панель garage-home-panel подключается к адаптеру по выключателю «OBD link» в HA,
+# команду ELM327 пишут в текст «OBD command», ответ (до приглашения «>») приходит в
+# «OBD response». Нужна, чтобы проверить на живой машине, какие запросы e-Golf
+# отвечают; постоянные датчики делаются потом отдельно. Машину не будит: держать
+# связь только пока машина на зарядке или включена (по OBD спящая машина молчит,
+# а лишние запросы могут не дать шине уснуть).
+#
+# GATT у vLinker официально не описан. У похожих адаптеров Vgate два варианта:
+# служба 18F0 (уведомления 2AF0, запись 2AF1) и служба E7810A71-... с одной
+# характеристикой BEF8D6C9-... Подписка стоит на оба, запись идет в тот, что нашелся,
+# найденный канал виден в «OBD channel».
+ble_client:
+  - id: vl
+    mac_address: "DD:0D:30:B9:82:E6"
+    # на время пробы подключается сам; выключатель «OBD link» рвет и разрешает связь
+    auto_connect: true
+    on_connect:
+      then:
+        - delay: 2s
+        - lambda: |-
+            using esp32_ble::ESPBTUUID;
+            auto *a = id(vl).get_characteristic(ESPBTUUID::from_uint16(0x18F0), ESPBTUUID::from_uint16(0x2AF1));
+            auto *b = id(vl).get_characteristic(ESPBTUUID::from_raw("e7810a71-73ae-499d-8c15-faa9aef0c3f2"),
+                                                ESPBTUUID::from_raw("bef8d6c9-9c21-4c9e-b632-bd58c1009f9f"));
+            char s[80];
+            snprintf(s, sizeof s, "18F0/2AF1:%s(p=0x%02x) E781/BEF8:%s(p=0x%02x)",
+                     a ? "yes" : "no", a ? a->properties : 0, b ? "yes" : "no", b ? b->properties : 0);
+            ESP_LOGI("obd", "%s", s);
+            // перебор служб: 16-битные 0x1800-0x18FF и 0xFE00-0xFFFF плюс известные 128-битные
+            std::string found;
+            auto dump = [&](esp32_ble_client::BLEService *svc) {
+              if (svc == nullptr) return;
+              if (!svc->parsed) svc->parse_characteristics();
+              char ub[40]; found += std::string(svc->uuid.to_str(ub)) + "{";
+              for (auto *ch : svc->characteristics) {
+                char t[64];
+                char cb[40]; snprintf(t, sizeof t, "%s p=%02x;", ch->uuid.to_str(cb), ch->properties);
+                found += t;
+              }
+              found += "} ";
+            };
+            for (uint32_t u = 0x1800; u <= 0x18FF; u++) dump(id(vl).get_service(ESPBTUUID::from_uint16(u)));
+            for (uint32_t u = 0xFE00; u <= 0xFFFF; u++) dump(id(vl).get_service(ESPBTUUID::from_uint16(u)));
+            const char *raw[] = {"6e400001-b5a3-f393-e0a9-e50e24dcca9e", "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+                                 "e7810a71-73ae-499d-8c15-faa9aef0c3f2", "0000fff0-0000-1000-8000-00805f9b34fb"};
+            for (auto *r : raw) dump(id(vl).get_service(ESPBTUUID::from_raw(r)));
+            ESP_LOGI("obd", "services: %s", found.c_str());
+            id(obd_channel).publish_state(found.substr(0, 250));
+    on_disconnect:
+      then:
+        - lambda: 'id(obd_channel).publish_state("disconnected");'
+
+globals:
+  - id: g_obd_buf
+    type: std::string
+    restore_value: no
+
+script:
+  # кусок ответа от адаптера: копим до приглашения «>», затем публикуем целиком
+  - id: obd_rx
+    parameters:
+      chunk: string
+    then:
+      - lambda: |-
+          id(g_obd_buf) += chunk;
+          if (id(g_obd_buf).find('>') == std::string::npos && id(g_obd_buf).size() < 900) return;
+          std::string r = id(g_obd_buf);
+          id(g_obd_buf).clear();
+          for (auto &c : r) if (c == '\r' || c == '\n') c = ' ';
+          ESP_LOGI("obd", "<< %s", r.c_str());
+          id(obd_response).publish_state(r.substr(0, 250));
+
+text_sensor:
+  - platform: ble_client
+    ble_client_id: vl
+    id: obd_notify_a
+    internal: true
+    service_uuid: "18F0"
+    characteristic_uuid: "2AF0"
+    notify: true
+    update_interval: never
+    on_value:
+      - script.execute:
+          id: obd_rx
+          chunk: !lambda return x;
+  - platform: ble_client
+    ble_client_id: vl
+    id: obd_notify_b
+    internal: true
+    service_uuid: "e7810a71-73ae-499d-8c15-faa9aef0c3f2"
+    characteristic_uuid: "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f"
+    notify: true
+    update_interval: never
+    on_value:
+      - script.execute:
+          id: obd_rx
+          chunk: !lambda return x;
+  - platform: template
+    id: obd_response
+    name: "OBD response"
+    icon: mdi:car-connected
+  - platform: template
+    id: obd_channel
+    name: "OBD channel"
+    entity_category: diagnostic
+
+esp32_ble_tracker:
+  on_ble_advertise:
+    - mac_address: "DD:0D:30:B9:82:E6"
+      then:
+        - lambda: |-
+            static uint32_t last = 0;
+            if (millis() - last < 20000) return;
+            last = millis();
+            ESP_LOGI("obd", "advert rssi=%d name=%s addr_type=%d", x.get_rssi(), x.get_name().c_str(), (int) x.get_address_type());
+
+sensor:
+  - platform: ble_rssi
+    mac_address: "DD:0D:30:B9:82:E6"
+    name: "OBD adapter RSSI"
+    entity_category: diagnostic
+
+switch:
+  - platform: ble_client
+    ble_client_id: vl
+    name: "OBD link"
+    icon: mdi:bluetooth-connect
+
+text:
+  - platform: template
+    name: "OBD command"
+    icon: mdi:console
+    mode: text
+    max_length: 60
+    optimistic: true
+    # Запись штатным ble_write: он находит характеристику при подключении. Сами службы
+    # ESPHome после подключения из памяти выгружает, get_service потом пустой.
+    # Канал 18F0/2AF1 (у Vgate это запись), уведомления приходят в 2AF0.
+    set_action:
+      - lambda: |-
+          id(g_obd_buf).clear();
+          ESP_LOGI("obd", ">> %s", x.c_str());
+      - ble_client.ble_write:
+          id: vl
+          service_uuid: "18F0"
+          characteristic_uuid: "2AF1"
+          value: !lambda |-
+            std::string s = x;
+            s.push_back(13);  // CR, конец команды ELM327
+            return std::vector<uint8_t>(s.begin(), s.end());
