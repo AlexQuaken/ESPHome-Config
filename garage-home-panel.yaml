@@ -72,6 +72,8 @@ packages:
   # Ancel BM200 на 12-вольтовом аккумуляторе e-Golf, с 31.10.2026 (такой же, как на KTM в
   # кооперативе). Опрос раз в 10 минут: подключиться, команда, ответ, отключиться.
   bm6_egolf: !include {file: packages/bm6_battery.yaml, vars: {key: bm6_egolf, dev: egolf_dev, label: Battery, mac: "C8:17:F5:A7:CC:53", period_ms: "600000"}}
+  # ПРОБА 31.10.2026: консоль ELM327 к vLinker FD+ в OBD e-Golf (OBD link / command / response)
+  obd_vlinker: !include packages/obd_vlinker.yaml
 
 esphome:
   name: ${board_name}
