@@ -13,8 +13,10 @@ globals:
     restore_value: no
     initial_value: '42000'
 
+# INFO вместо DEBUG с 08.11.2026: на плате без PSRAM рядом Wi-Fi, API, MQTT и BLE,
+# память дробится, при обрывах связи копились тысячи отказов malloc.
 logger:
-  level: DEBUG
+  level: INFO
 
 esphome:
   name: ${board_name}
