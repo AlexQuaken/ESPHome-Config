@@ -25,9 +25,9 @@ esphome:
         - lambda: |-
             id(log_lines).push_back("${board_name} booted");
             id(log_lines).push_back("display OK");
-            id(display_mode) = 2;   // по умолчанию экран NAS
+            id(display_mode) = 3;   // по умолчанию перекидные часы
   includes:
-    - nasmon/nasmon.h
+    - flipclock/flipclock.h
 
 esp32:
   board: esp32-c6-devkitc-1
@@ -54,55 +54,34 @@ light:
     rgb_order: GRB
     chipset: ws2812
 
-# ---- Экран мониторинга DS1019+ (режим 2), данные от nasmon.py на NAS ----
-# Исходники: D:\MegaSync\DropBoxUtils\MyUtils\NasMonitor (nasmon.h, шрифты BDF из растров T-Display)
-http_request:
-  verify_ssl: false
-  timeout: 2s
-
+# ---- Перекидные часы на весь экран (режим 3). Часть экрана побита, поэтому цифры огромные ----
+# Исходник: D:\MegaSync\DropBoxUtils\MyUtils\NasMonitor\esphome\flipclock\flipclock.h
 font:
-  - file: "fonts/nasmon_6x8.bdf"
-    id: f_nm6
-    glyphs: ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~°↓↑'
-  - file: "fonts/nasmon_8x16.bdf"
-    id: f_nm16
-    glyphs: '0123456789%°'
-  - file: "fonts/nasmon_16x32.bdf"
-    id: f_nm32
-    glyphs: '0123456789%'
+  - file: "gfonts://Bebas Neue"
+    id: f_flip
+    size: 180
+    bpp: 4
+    glyphs: '0123456789-'
 
 switch:
   - platform: template
-    name: ${board_name} NAS Monitor
-    id: nas_monitor_sw
-    lambda: 'return id(display_mode) == 2;'
+    name: ${board_name} Flip Clock
+    id: flip_clock_sw
+    lambda: 'return id(display_mode) == 3;'
     turn_on_action:
-      - lambda: 'id(display_mode) = 2;'
+      - lambda: 'id(display_mode) = 3;'
     turn_off_action:
       - lambda: 'id(display_mode) = 1;'
 
 interval:
-  - interval: 2s
-    then:
-      - if:
-          condition:
-            lambda: 'return id(display_mode) == 2;'
-          then:
-            - http_request.get:
-                url: http://192.168.0.7:8099/nas.json
-                capture_response: true
-                max_response_buffer_size: 4096
-                on_response:
-                  then:
-                    - lambda: 'nasmon::parse(body);'
-  # экран NAS перерисовывать раз в 0,5 с, радар и журнал как раньше 33 мс
+  # часы перерисовывать раз в 50 мс (анимация переворота), радар и журнал как раньше 33 мс
   - interval: 1s
     then:
       - lambda: |-
           static int last = -1;
           int m = id(display_mode);
           if (m != last) {
-            id(lcd).set_update_interval(m == 2 ? 500 : 33);
+            id(lcd).set_update_interval(m == 3 ? 50 : 33);
             id(lcd).start_poller();
             last = m;
           }
