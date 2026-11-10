@@ -368,6 +368,10 @@ display:
     buffer_size: 25%
     update_interval: 33ms
     lambda: |-
+      #ifdef CUSTOM_SCREEN
+      // свой экран платы (2 = монитор NAS, 3 = перекидные часы) из nasmon.h или flipclock.h, подключенных в device.yaml
+      if (custom_screen::draw(it, id(display_mode), id(homeassistant_time).now())) return;
+      #endif
       id(frame_counter)++;
       uint32_t t = millis();
       int W = it.get_width();

@@ -26,6 +26,7 @@ esphome:
             id(log_lines).push_back("${board_name} booted");
             id(log_lines).push_back("display OK");
             id(display_mode) = 3;   // по умолчанию перекидные часы
+            flipclock::set_font(id(f_flip));
   includes:
     - flipclock/flipclock.h
 

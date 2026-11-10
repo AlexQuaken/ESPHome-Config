@@ -19,6 +19,7 @@ esphome:
             id(log_lines).push_back("${board_name} booted");
             id(log_lines).push_back("display OK");
             id(display_mode) = 2;   // по умолчанию экран NAS
+            nasmon::set_fonts(id(f_nm6), id(f_nm16), id(f_nm32));
   includes:
     - nasmon/nasmon.h
 
