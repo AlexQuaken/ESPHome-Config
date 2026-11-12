@@ -1,0 +1,16 @@
+# Температура кристалла (internal_temperature), с 11.11.2026 на пробу.
+#
+# Подключать одной строкой в packages: платы:
+#   diag_temp: !include packages/diag_temp.yaml
+#
+# Только ESP32-S2/S3/C3/C6/H2: там датчик штатный, точность грубая (несколько
+# градусов), меряет сам кристалл, а не воздух в корпусе, но рост нагрева видно.
+# На классическом ESP32 датчик недокументированный, у многих чипов показывает
+# застывшие 53,3 °C или прыгает; проверяется на esp32-19. На ESP8266 его нет,
+# сборка упадет, поэтому в общий diag.yaml не включен.
+
+sensor:
+  - platform: internal_temperature
+    name: ${board_name}_Chip_Temp
+    update_interval: 60s
+    entity_category: diagnostic

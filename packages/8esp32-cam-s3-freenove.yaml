@@ -22,8 +22,10 @@ esp32_camera:
   pixel_clock_pin: GPIO13
 
   name: ${board_name}_Camera
-  resolution: 1600x1200
-  jpeg_quality: 6
+  # 11.11.2026 под Frigate: 1600x1200 по Wi-Fi шло ~1,5 к/с, кадр ~100 КБ;
+  # 1024x768 (4:3, без обрезки) с качеством 10 дает кадр ~40 КБ и до 5 к/с
+  resolution: 1024x768
+  jpeg_quality: 10
   max_framerate: 5fps
   idle_framerate: 0.2fps
   frame_buffer_count: 2
